@@ -1,0 +1,491 @@
+import Phaser from "phaser";
+import type { Dir, PlayerState } from "../../contract";
+import type { Net } from "../../net/net";
+import { bus } from "../eventBus";
+import { createCharAnims, idleFrame, walkAnim } from "../avatar";
+
+const SPEED = 120;
+const ZOOM = 2.2;
+const CHARS = ["char1", "char2", "char3", "char4"];
+
+interface Remote {
+  sprite: Phaser.GameObjects.Sprite;
+  label: Phaser.GameObjects.Text;
+  tx: number;
+  ty: number;
+  dir: Dir;
+  name: string;
+}
+
+interface DoorZone {
+  roomId: string;
+  name: string;
+  rect: Phaser.Geom.Rectangle;
+}
+interface Seat {
+  roomId: string;
+  seatId: number;
+  facing: Dir;
+  rect: Phaser.Geom.Rectangle;
+  cx: number;
+  cy: number;
+}
+
+export default class WorldScene extends Phaser.Scene {
+  private net!: Net;
+  private player!: Phaser.Physics.Arcade.Sprite;
+  private playerLabel!: Phaser.GameObjects.Text;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
+  private keyE!: Phaser.Input.Keyboard.Key;
+  private remotes = new Map<string, Remote>();
+
+  private doors: DoorZone[] = [];
+  private seats: Seat[] = [];
+  private enteredRooms = new Set<string>();
+  private currentDoor: string | null = null;
+  private currentSeat: Seat | null = null;
+  private seated = false;
+
+  private dir: Dir = "down";
+  private lastSent = 0;
+  private lastTick = 0;
+
+  constructor() {
+    super("world");
+  }
+
+  create() {
+    this.net = this.registry.get("net") as Net;
+    CHARS.forEach((c) => createCharAnims(this, c));
+
+    const map = this.make.tilemap({ key: "space" });
+    const tiles = map.addTilesetImage("floors_walls", "floors_walls")!;
+    map.createLayer("ground", tiles, 0, 0);
+    const walls = map.createLayer("walls", tiles, 0, 0)!;
+    walls.setCollisionByExclusion([-1]);
+
+    this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    this.cameras.main.setZoom(ZOOM);
+    this.cameras.main.roundPixels = true;
+
+    // object layers -> doors + seats
+    this.parseObjects(map);
+
+    // spawn point
+    const spawn = map.findObject("spawn", (o) => o.name === "spawn");
+    const sx = (spawn?.x as number) ?? 320;
+    const sy = (spawn?.y as number) ?? 288;
+
+    this.player = this.physics.add.sprite(sx, sy, "char1", idleFrame("down"));
+    this.player.setSize(18, 14).setOffset(7, 16);
+    this.physics.add.collider(this.player, walls);
+    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+
+    this.buildFurniture();
+
+    this.playerLabel = this.makeLabel("You");
+
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasd = this.input.keyboard!.addKeys("W,A,S,D") as Record<
+      string,
+      Phaser.Input.Keyboard.Key
+    >;
+    this.keyE = this.input.keyboard!.addKey("E");
+    // Phaser captures WASD/E/arrows on window and preventDefaults them, which
+    // stops those characters reaching DOM inputs (chat). Drop the capture so
+    // typing works; movement still reads key state. isTyping() gates the game.
+    this.input.keyboard!.clearCaptures();
+
+    this.wireNet();
+    this.wireUi();
+    this.net.connect(localStorage.getItem("token") ?? "dev", "1");
+
+    if (import.meta.env.DEV) {
+      (window as unknown as { __mv: unknown }).__mv = {
+        sitAt: (roomId: string, seatId: number) => {
+          const seat = this.seats.find(
+            (s) => s.roomId === roomId && s.seatId === seatId
+          );
+          if (!seat) return false;
+          this.enteredRooms.add(roomId);
+          this.player.setPosition(seat.cx, seat.cy);
+          this.currentSeat = seat;
+          this.trySit();
+          return true;
+        },
+      };
+    }
+  }
+
+  private parseObjects(map: Phaser.Tilemaps.Tilemap) {
+    const doorObjs = map.getObjectLayer("doorZones")?.objects ?? [];
+    for (const o of doorObjs) {
+      const roomId = prop(o, "roomId") ?? "";
+      this.doors.push({
+        roomId,
+        name: o.name || `Room ${roomId}`,
+        rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!),
+      });
+    }
+    const seatObjs = map.getObjectLayer("seats")?.objects ?? [];
+    for (const o of seatObjs) {
+      const cx = o.x! + (o.width! || 16) / 2;
+      const cy = o.y! + (o.height! || 16) / 2;
+      this.seats.push({
+        roomId: prop(o, "roomId") ?? "",
+        seatId: Number(prop(o, "seatId") ?? 0),
+        facing: (prop(o, "facing") as Dir) ?? "down",
+        rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width! || 16, o.height! || 16),
+        cx,
+        cy,
+      });
+    }
+  }
+
+  /** Tables (room centres), chairs (every seat, facing the table), and decor. */
+  private buildFurniture() {
+    const solids = this.physics.add.staticGroup();
+
+    // group seats by room → table at the centroid, a chair on each seat
+    const byRoom = new Map<string, Seat[]>();
+    for (const s of this.seats) {
+      if (!byRoom.has(s.roomId)) byRoom.set(s.roomId, []);
+      byRoom.get(s.roomId)!.push(s);
+    }
+    for (const seats of byRoom.values()) {
+      const cx = seats.reduce((a, s) => a + s.cx, 0) / seats.length;
+      const cy = seats.reduce((a, s) => a + s.cy, 0) / seats.length;
+      this.addSolid(solids, "f_table_round", cx, cy - 4);
+      for (const s of seats) this.addChair(s);
+    }
+
+    // static office decor: [key, x, y, solid?]
+    const decor: [string, number, number, boolean][] = [
+      // Meeting Room A
+      ["f_bookshelf_tall", 40, 40, true],
+      ["f_plant_big", 196, 140, true],
+      // Meeting Room B
+      ["f_bookshelf_tall", 440, 40, true],
+      ["f_plant_big", 600, 140, true],
+      // lounge — left services column
+      ["f_water", 40, 210, true],
+      ["f_vending", 40, 250, true],
+      ["f_coffee", 44, 290, false],
+      // lounge — sofa nook
+      ["f_sofa", 110, 320, true],
+      ["f_sofa_small", 70, 320, true],
+      ["f_table_small", 150, 322, false],
+      ["f_plant_small", 150, 360, false],
+      // lounge — personal desks
+      ["f_desk", 300, 215, true],
+      ["f_desk2", 360, 215, true],
+      ["f_desk_boss", 460, 215, true],
+      // lounge — right greenery
+      ["f_plant_big", 580, 250, true],
+      ["f_plant_small", 520, 330, false],
+    ];
+    for (const [key, x, y, solid] of decor) {
+      if (solid) this.addSolid(solids, key, x, y);
+      else this.add.image(x, y, key).setDepth(y);
+    }
+
+    // desks face the lounge: drop a chair just below each desk
+    for (const [dx, dy] of [[300, 215], [360, 215], [460, 215]] as const) {
+      const chair = this.add.image(dx, dy + 18, "f_chair").setDepth(dy + 18);
+      void chair;
+    }
+
+    this.physics.add.collider(this.player, solids);
+  }
+
+  private addSolid(
+    group: Phaser.Physics.Arcade.StaticGroup,
+    key: string,
+    x: number,
+    y: number
+  ) {
+    const img = group.create(x, y, key) as Phaser.Physics.Arcade.Sprite;
+    img.setDepth(y);
+    // tighten body to the sprite footprint so movement feels fair
+    const bw = img.width * 0.8;
+    const bh = img.height * 0.55;
+    img.body!.setSize(bw, bh);
+    img.body!.setOffset((img.width - bw) / 2, img.height - bh);
+    img.refreshBody();
+  }
+
+  private addChair(seat: Seat) {
+    // Use the front-view chair for up/down seats and the side-view chair for
+    // left/right, each oriented so the seat opens toward the table.
+    const depth = seat.cy - 2;
+    let chair: Phaser.GameObjects.Image;
+    if (seat.facing === "left") {
+      chair = this.add.image(seat.cx, seat.cy, "f_chair_side"); // faces left
+    } else if (seat.facing === "right") {
+      chair = this.add.image(seat.cx, seat.cy, "f_chair_side").setFlipX(true);
+    } else if (seat.facing === "up") {
+      chair = this.add.image(seat.cx, seat.cy, "f_chair").setAngle(180);
+    } else {
+      chair = this.add.image(seat.cx, seat.cy, "f_chair"); // down
+    }
+    chair.setDepth(depth);
+  }
+
+  private wireNet() {
+    this.net.on("init", (p: { selfId: string; players: PlayerState[] }) => {
+      for (const pl of p.players) {
+        if (pl.id === this.net.selfId) {
+          this.player.setPosition(pl.x, pl.y);
+          this.playerLabel.setText(pl.name);
+        } else this.addRemote(pl);
+      }
+    });
+    this.net.on("player-joined", (p: PlayerState) => this.addRemote(p));
+    this.net.on(
+      "player-moved",
+      (p: { id: string; x: number; y: number; dir: Dir }) => {
+        const r = this.remotes.get(p.id);
+        if (!r) return;
+        r.tx = p.x;
+        r.ty = p.y;
+        r.dir = p.dir;
+      }
+    );
+    this.net.on("player-left", (p: { id: string }) => this.removeRemote(p.id));
+  }
+
+  private wireUi() {
+    bus.on("room-entered", (p: { roomId: string }) =>
+      this.enteredRooms.add(p.roomId)
+    );
+    bus.on("do-sit", () => this.trySit());
+    bus.on("do-stand", () => this.stand());
+  }
+
+  private addRemote(p: PlayerState) {
+    if (this.remotes.has(p.id) || p.id === this.net.selfId) return;
+    const char = CHARS[hash(p.id) % CHARS.length];
+    const sprite = this.add
+      .sprite(p.x, p.y, char, idleFrame(p.dir))
+      .setDepth(5);
+    const label = this.makeLabel(p.name);
+    this.remotes.set(p.id, {
+      sprite,
+      label,
+      tx: p.x,
+      ty: p.y,
+      dir: p.dir,
+      name: p.name,
+    });
+  }
+
+  private removeRemote(id: string) {
+    const r = this.remotes.get(id);
+    if (!r) return;
+    r.sprite.destroy();
+    r.label.destroy();
+    this.remotes.delete(id);
+  }
+
+  private makeLabel(text: string) {
+    return this.add
+      .text(0, 0, text, {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: "#ffffff",
+        backgroundColor: "#00000080",
+        padding: { x: 3, y: 1 },
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(20);
+  }
+
+  update(time: number) {
+    this.player.setDepth(this.player.y);
+    this.handleMovement(time);
+    this.updateRemotes();
+    this.updateLabels();
+    this.checkZones();
+    this.handleInteractKey();
+    this.emitPositions(time);
+  }
+
+  private handleMovement(time: number) {
+    const body = this.player;
+    if (this.seated || isTyping()) {
+      body.setVelocity(0, 0);
+      if (!this.seated) {
+        this.player.anims.stop();
+        this.player.setFrame(idleFrame(this.dir));
+      }
+      return;
+    }
+    let vx = 0,
+      vy = 0;
+    const left = this.cursors.left.isDown || this.wasd.A.isDown;
+    const right = this.cursors.right.isDown || this.wasd.D.isDown;
+    const up = this.cursors.up.isDown || this.wasd.W.isDown;
+    const down = this.cursors.down.isDown || this.wasd.S.isDown;
+    if (left) vx = -SPEED;
+    else if (right) vx = SPEED;
+    if (up) vy = -SPEED;
+    else if (down) vy = SPEED;
+    body.setVelocity(vx, vy);
+    if (vx !== 0 && vy !== 0) body.body!.velocity.normalize().scale(SPEED);
+
+    const moving = vx !== 0 || vy !== 0;
+    if (moving) {
+      if (Math.abs(vx) > Math.abs(vy)) this.dir = vx < 0 ? "left" : "right";
+      else this.dir = vy < 0 ? "up" : "down";
+      this.player.anims.play(walkAnim("char1", this.dir), true);
+    } else {
+      this.player.anims.stop();
+      this.player.setFrame(idleFrame(this.dir));
+    }
+
+    if (time - this.lastSent > 80) {
+      this.lastSent = time;
+      this.net.move(Math.round(body.x), Math.round(body.y), this.dir);
+    }
+  }
+
+  private updateRemotes() {
+    this.remotes.forEach((r) => {
+      const dx = r.tx - r.sprite.x;
+      const dy = r.ty - r.sprite.y;
+      const moving = Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+      r.sprite.x += dx * 0.2;
+      r.sprite.y += dy * 0.2;
+      r.sprite.setDepth(r.sprite.y);
+      const char = CHARS[hash([...this.remotes].find(([, v]) => v === r)![0]) %
+        CHARS.length];
+      if (moving) r.sprite.anims.play(walkAnim(char, r.dir), true);
+      else {
+        r.sprite.anims.stop();
+        r.sprite.setFrame(idleFrame(r.dir));
+      }
+    });
+  }
+
+  private updateLabels() {
+    this.playerLabel.setPosition(this.player.x, this.player.y - 20).setDepth(9999);
+    this.remotes.forEach((r) =>
+      r.label.setPosition(r.sprite.x, r.sprite.y - 20).setDepth(9999)
+    );
+  }
+
+  private checkZones() {
+    const fx = this.player.x;
+    const fy = this.player.y + 8;
+
+    // doors
+    let inDoor: DoorZone | null = null;
+    for (const d of this.doors)
+      if (Phaser.Geom.Rectangle.Contains(d.rect, fx, fy)) inDoor = d;
+    const doorId = inDoor ? inDoor.roomId : null;
+    if (doorId !== this.currentDoor) {
+      this.currentDoor = doorId;
+      if (inDoor && !this.enteredRooms.has(inDoor.roomId))
+        bus.emit("near-door", { roomId: inDoor.roomId, name: inDoor.name });
+      else bus.emit("leave-door");
+    }
+
+    // seats (only matter once room entered)
+    if (this.seated) return;
+    let inSeat: Seat | null = null;
+    for (const s of this.seats)
+      if (
+        this.enteredRooms.has(s.roomId) &&
+        Phaser.Geom.Rectangle.Contains(s.rect, fx, fy)
+      )
+        inSeat = s;
+    if (inSeat !== this.currentSeat) {
+      this.currentSeat = inSeat;
+      if (inSeat)
+        bus.emit("near-seat", { roomId: inSeat.roomId, seatId: inSeat.seatId });
+      else bus.emit("leave-seat");
+    }
+  }
+
+  private handleInteractKey() {
+    if (isTyping()) return;
+    if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+      if (this.seated) this.stand();
+      else this.trySit();
+    }
+  }
+
+  private trySit() {
+    if (this.seated || !this.currentSeat) return;
+    const s = this.currentSeat;
+    this.seated = true;
+    this.player.setPosition(s.cx, s.cy);
+    this.player.setVelocity(0, 0);
+    this.dir = s.facing;
+    this.player.anims.stop();
+    this.player.setFrame(idleFrame(s.facing));
+    this.net.sit(s.roomId, s.seatId);
+    bus.emit("sat", { roomId: s.roomId, seatId: s.seatId });
+  }
+
+  private stand() {
+    if (!this.seated) return;
+    this.seated = false;
+    this.player.y += 18;
+    this.net.stand();
+    bus.emit("stood");
+  }
+
+  private emitPositions(time: number) {
+    if (time - this.lastTick < 66) return;
+    this.lastTick = time;
+    const cam = this.cameras.main;
+    const toScreen = (wx: number, wy: number) => ({
+      sx: (wx - cam.worldView.x) * cam.zoom,
+      sy: (wy - cam.worldView.y) * cam.zoom,
+    });
+    const players = [
+      {
+        id: this.net.selfId,
+        self: true,
+        x: this.player.x,
+        y: this.player.y,
+        ...toScreen(this.player.x, this.player.y),
+      },
+      ...[...this.remotes].map(([id, r]) => ({
+        id,
+        self: false,
+        x: r.sprite.x,
+        y: r.sprite.y,
+        ...toScreen(r.sprite.x, r.sprite.y),
+      })),
+    ];
+    bus.emit("positions", { players, seated: this.seated });
+  }
+}
+
+function prop(o: Phaser.Types.Tilemaps.TiledObject, name: string): string | undefined {
+  const p = (o.properties as { name: string; value: unknown }[] | undefined)?.find(
+    (x) => x.name === name
+  );
+  return p ? String(p.value) : undefined;
+}
+
+function hash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** True when a DOM text field (chat, key modal) is focused — game input pauses. */
+function isTyping(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.isContentEditable === true
+  );
+}
