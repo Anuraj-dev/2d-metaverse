@@ -6,7 +6,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name API_DOMAIN;
     ssl_certificate /etc/letsencrypt/live/API_DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/API_DOMAIN/privkey.pem;
@@ -25,7 +26,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name LIVEKIT_DOMAIN;
     ssl_certificate /etc/letsencrypt/live/LIVEKIT_DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/LIVEKIT_DOMAIN/privkey.pem;
