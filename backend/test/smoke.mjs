@@ -47,8 +47,16 @@ assert.equal(worldToken.status, 200);
 assert.equal(typeof worldToken.json.livekitToken, "string");
 assert.equal((await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "room:1" } })).status, 403);
 
-const socketA = io(baseUrl, { transports: ["websocket"] });
-const socketB = io(baseUrl, { transports: ["websocket"] });
+const rejectedSocket = io(baseUrl, { transports: ["websocket"], auth: { token: "invalid" } });
+try {
+  const rejected = await once(rejectedSocket, "connect_error");
+  assert.equal(rejected.message, "unauthorized");
+} finally {
+  rejectedSocket.disconnect();
+}
+
+const socketA = io(baseUrl, { transports: ["websocket"], auth: { token: tokenA } });
+const socketB = io(baseUrl, { transports: ["websocket"], auth: { token: tokenB } });
 const occupiedSeats = new Set();
 const trackSeat = ({ roomId, seatId, playerId }) => {
   const key = `${roomId}:${seatId}`;
@@ -59,12 +67,12 @@ socketA.on("seat-update", trackSeat);
 try {
   await Promise.all([once(socketA, "connect"), once(socketB, "connect")]);
   const initA = once(socketA, "init");
-  socketA.emit("join", { token: tokenA, spaceId: "1" });
+  socketA.emit("join", { spaceId: "1" });
   const a = await initA;
   assert.ok(a.players.some((player) => player.id === a.selfId));
 
   const initB = once(socketB, "init");
-  socketB.emit("join", { token: tokenB, spaceId: "1" });
+  socketB.emit("join", { spaceId: "1" });
   const b = await initB;
   assert.ok(b.players.some((player) => player.id === a.selfId));
 
@@ -83,6 +91,30 @@ try {
   const goodEntry = once(socketA, "room-enter-result");
   socketA.emit("room-enter", { roomId: selected.roomId, key: roomKey });
   assert.deepEqual(await goodEntry, { ok: true, roomId: selected.roomId });
+
+  let chatLeakedToWorld = false;
+  socketB.once("chat", () => { chatLeakedToWorld = true; });
+  const privateChat = once(socketA, "chat");
+  socketA.emit("chat", { text: "private smoke test" });
+  assert.deepEqual(await privateChat, { id: a.selfId, name: `smokea_${suffix}`, text: "private smoke test", scope: selected.roomId });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(chatLeakedToWorld, false, "private chat leaked to a world participant");
+
+  const entryB = once(socketB, "room-enter-result");
+  socketB.emit("room-enter", { roomId: selected.roomId, key: roomKey });
+  assert.deepEqual(await entryB, { ok: true, roomId: selected.roomId });
+  const privateChatSeenByB = once(socketB, "chat");
+  socketA.emit("chat", { text: "room peer smoke test" });
+  assert.deepEqual(await privateChatSeenByB, { id: a.selfId, name: `smokea_${suffix}`, text: "room peer smoke test", scope: selected.roomId });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const rejectedEntry = once(socketA, "room-enter-result");
+    socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });
+    assert.deepEqual(await rejectedEntry, { ok: false, roomId: selected.roomId, reason: "bad-key" });
+  }
+  const rateLimitedEntry = once(socketA, "room-enter-result");
+  socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });
+  assert.deepEqual(await rateLimitedEntry, { ok: false, roomId: selected.roomId, reason: "rate-limited" });
 
   const seatSeenByB = once(socketB, "seat-update");
   socketA.emit("seat-sit", selected);
