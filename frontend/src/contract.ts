@@ -14,12 +14,14 @@ export interface PlayerState {
   dir: Dir;
 }
 
-/* ---- Socket.IO: client -> server ---- */
+/* ---- Socket.IO: client -> server ----
+ * The JWT travels in the Socket.IO handshake `auth: { token }`, NOT in `join`. */
 export interface ClientToServer {
-  join: (p: { token: string; spaceId: string }) => void;
+  join: (p: { spaceId: string }) => void;
   move: (p: { x: number; y: number; dir: Dir }) => void;
   chat: (p: { text: string }) => void;
   "room-enter": (p: { roomId: string; key: string }) => void;
+  "room-leave": () => void;
   "seat-sit": (p: { roomId: string; seatId: number }) => void;
   "seat-stand": () => void;
 }
@@ -34,7 +36,7 @@ export interface ServerToClient {
   "room-enter-result": (p: {
     ok: boolean;
     roomId: string;
-    reason?: "bad-key" | "full";
+    reason?: "bad-key" | "full" | "rate-limited";
   }) => void;
   "seat-update": (p: {
     roomId: string;

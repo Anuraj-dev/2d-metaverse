@@ -55,6 +55,71 @@ html, body, #root {
 }
 .login-card button:hover { filter: brightness(1.07); }
 .login-controls { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.login-sub code {
+  color: var(--accent2);
+  background: #0b0d13;
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+/* ---------- Auth tabs ---------- */
+.auth-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.auth-tabs button {
+  flex: 1;
+  padding: 9px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #0b0d13;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0;
+}
+.auth-tabs button.active {
+  background: var(--accent);
+  color: #06122b;
+  border-color: transparent;
+}
+
+/* ---------- Loading / connecting ---------- */
+.loading-space {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: monospace;
+  font-size: 15px;
+}
+.presence.pending { color: #e8c468; }
+
+/* ---------- Avatar picker ---------- */
+.avatar-pick {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 4px 0 18px;
+}
+.avatar-thumb {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background-color: #0b0d13;
+  background-repeat: no-repeat;
+  background-size: 144px 192px; /* 96x128 sheet scaled 1.5x */
+  background-position: -48px 0; /* down-idle frame (row 0, col 1) */
+  image-rendering: pixelated;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.avatar-thumb:hover { transform: translateY(-2px); }
+.avatar-thumb.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(110, 168, 254, 0.25);
+}
 
 /* ---------- App / canvas ---------- */
 .app { position: fixed; inset: 0; }
@@ -74,6 +139,85 @@ html, body, #root {
   padding: 6px 14px;
   font-size: 12px;
   color: var(--accent2);
+}
+
+/* ---------- Roster ---------- */
+.roster {
+  position: absolute;
+  top: 52px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.roster-head {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.roster-head:hover { filter: brightness(1.1); }
+.roster-list {
+  width: 168px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  backdrop-filter: blur(8px);
+}
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.roster-row:hover { background: #232838; }
+.roster-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent2);
+  flex: none;
+}
+.roster-you {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  background: #232838;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+/* ---------- Minimap ---------- */
+.minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  line-height: 0;
+}
+.minimap canvas {
+  display: block;
+  border-radius: 6px;
+  image-rendering: pixelated;
 }
 
 /* ---------- Chat ---------- */
@@ -146,6 +290,65 @@ html, body, #root {
   font-weight: 700;
   padding: 0 14px;
   cursor: pointer;
+}
+.chat-unread {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ff6b6b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+/* ---------- Chat toasts ---------- */
+.chat-toasts {
+  position: absolute;
+  left: 16px;
+  bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  pointer-events: none;
+}
+.chat-toast {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.18s ease-out;
+}
+.chat-toast:hover { filter: brightness(1.08); }
+.chat-toast-name { font-size: 11px; font-weight: 700; color: var(--accent); }
+.chat-toast-text {
+  font-size: 13px;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 /* ---------- Key modal ---------- */
@@ -267,6 +470,141 @@ html, body, #root {
   font-weight: 700;
   background: #ff6b6b;
   color: #fff;
+}
+
+/* ---------- Icon buttons / Settings / Help ---------- */
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.icon-btn:hover { filter: brightness(1.12); }
+.settings { position: absolute; top: 14px; left: 16px; }
+.help-btn {
+  position: absolute;
+  top: 60px;
+  left: 16px;
+  font-weight: 800;
+}
+.settings-panel {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  width: 230px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.settings-panel h4 { margin: 0 0 10px; font-size: 14px; }
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 9px 0;
+}
+.set-row input[type="range"] { width: 110px; }
+.set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.set-actions button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: #232838;
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.set-actions button:hover { filter: brightness(1.12); }
+
+.help-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px 26px;
+  width: 340px;
+}
+.help-modal h3 { margin: 0 0 14px; }
+.help-list { list-style: none; margin: 0; padding: 0; }
+.help-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.help-list li b { color: var(--accent); }
+.help-list li span { color: var(--muted); text-align: right; }
+.help-close {
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #06122b;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---------- Touch controls ---------- */
+.touch-controls {
+  position: absolute;
+  inset: auto 0 0 0;
+  bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 28px;
+  pointer-events: none;
+}
+.joystick {
+  pointer-events: auto;
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  background: rgba(23, 26, 35, 0.5);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  touch-action: none;
+}
+.joystick-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(110, 168, 254, 0.85);
+  border: 2px solid #fff;
+}
+.touch-action {
+  pointer-events: auto;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #06122b;
+  font-size: 24px;
+  font-weight: 800;
+  touch-action: none;
 }
 
 /* ---------- Interaction hint ---------- */

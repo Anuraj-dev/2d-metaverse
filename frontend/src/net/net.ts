@@ -1,20 +1,24 @@
 /**
  * Network abstraction. Game + React talk to this, never to socket.io directly.
- * Two implementations: RealNet (Socket.IO, for Codex's backend) and MockNet
- * (in-browser simulation so the frontend runs standalone).
- * Switch with VITE_USE_MOCK ("1" = mock, default mock until backend is ready).
+ * Two implementations: RealNet (Socket.IO) and MockNet (in-browser simulation so
+ * the frontend runs standalone in development).
+ *
+ * The JWT is sent in the Socket.IO handshake (`auth: { token }`); `join` carries
+ * only `{ spaceId }`. Mock mode is development-only (see ./config).
  */
-import { io, Socket } from "socket.io-client";
+import { io, type Socket } from "socket.io-client";
 import type { Dir, PlayerState } from "../contract";
+import { USE_MOCK, assertServerUrl } from "./config";
 
-type Handler = (payload: any) => void;
+type Listener<T> = (payload: T) => void;
 
 export interface Net {
   connect(token: string, spaceId: string): void;
-  on(event: string, cb: Handler): () => void;
+  on<T = unknown>(event: string, cb: (payload: T) => void): () => void;
   move(x: number, y: number, dir: Dir): void;
   chat(text: string): void;
   enterRoom(roomId: string, key: string): void;
+  leaveRoom(): void;
   sit(roomId: string, seatId: number): void;
   stand(): void;
   selfId: string;
@@ -22,45 +26,63 @@ export interface Net {
 }
 
 class Emitter {
-  private map = new Map<string, Set<Handler>>();
-  on(event: string, cb: Handler) {
-    if (!this.map.has(event)) this.map.set(event, new Set());
-    this.map.get(event)!.add(cb);
-    return () => this.map.get(event)!.delete(cb);
+  private map = new Map<string, Set<Listener<never>>>();
+  on<T = unknown>(event: string, cb: Listener<T>): () => void {
+    const set = this.map.get(event) ?? new Set<Listener<never>>();
+    this.map.set(event, set);
+    set.add(cb as Listener<never>);
+    return () => {
+      set.delete(cb as Listener<never>);
+    };
   }
-  emit(event: string, payload: any) {
-    this.map.get(event)?.forEach((cb) => cb(payload));
+  emit<T = unknown>(event: string, payload?: T): void {
+    this.map.get(event)?.forEach((cb) => (cb as Listener<T>)(payload as T));
   }
 }
 
 /* ----------------------- Real (Socket.IO) ----------------------- */
-class RealNet implements Net {
+const FORWARDED = [
+  "init",
+  "player-joined",
+  "player-moved",
+  "player-left",
+  "chat",
+  "room-enter-result",
+  "seat-update",
+] as const;
+
+export class RealNet implements Net {
   private socket: Socket;
   private bus = new Emitter();
+  private spaceId = "";
   selfId = "";
+
   constructor(url: string) {
     this.socket = io(url, { autoConnect: false, transports: ["websocket"] });
-    const forward = [
-      "init",
-      "player-joined",
-      "player-moved",
-      "player-left",
-      "chat",
-      "room-enter-result",
-      "seat-update",
-    ];
-    forward.forEach((ev) =>
-      this.socket.on(ev, (p: any) => {
-        if (ev === "init") this.selfId = p.selfId;
+
+    for (const ev of FORWARDED) {
+      this.socket.on(ev, (p: unknown) => {
+        if (ev === "init") this.selfId = (p as { selfId: string }).selfId;
         this.bus.emit(ev, p);
-      })
+      });
+    }
+
+    // JWT validated in the handshake; (re)send join on every (re)connect.
+    this.socket.on("connect", () => {
+      if (this.spaceId) this.socket.emit("join", { spaceId: this.spaceId });
+    });
+    // Handshake rejection / network failure → surface so the UI can sign out.
+    this.socket.on("connect_error", (err: Error) =>
+      this.bus.emit("connect_error", { message: err.message })
     );
   }
+
   connect(token: string, spaceId: string) {
+    this.spaceId = spaceId;
+    this.socket.auth = { token }; // JWT in handshake, not in `join`
     this.socket.connect();
-    this.socket.emit("join", { token, spaceId });
   }
-  on(event: string, cb: Handler) {
+  on<T = unknown>(event: string, cb: (payload: T) => void) {
     return this.bus.on(event, cb);
   }
   move(x: number, y: number, dir: Dir) {
@@ -71,6 +93,9 @@ class RealNet implements Net {
   }
   enterRoom(roomId: string, key: string) {
     this.socket.emit("room-enter", { roomId, key });
+  }
+  leaveRoom() {
+    this.socket.emit("room-leave");
   }
   sit(roomId: string, seatId: number) {
     this.socket.emit("seat-sit", { roomId, seatId });
@@ -83,9 +108,9 @@ class RealNet implements Net {
   }
 }
 
-/* ----------------------- Mock (standalone) ----------------------- */
+/* ----------------------- Mock (standalone, dev only) ----------------------- */
 const NAMES = ["Aanya", "Rohan", "Mei", "Diego"];
-const ROOM_KEYS: Record<string, string> = { "1": "1234", "2": "4321" };
+const ROOM_KEYS: Record<string, string> = { "1": "1234", "2": "4321", "3": "3333" };
 
 export class MockNet implements Net {
   private bus = new Emitter();
@@ -94,17 +119,18 @@ export class MockNet implements Net {
   private timer?: number;
   private name = "You";
 
-  connect(_token: string, _spaceId: string) {
-    // two wandering NPCs near the lounge
+  connect() {
+    // a few wandering NPCs around the plaza
     this.npcs = [
-      { id: "npc1", name: NAMES[0], x: 300, y: 300, dir: "down" },
-      { id: "npc2", name: NAMES[1], x: 360, y: 320, dir: "down" },
+      { id: "npc1", name: NAMES[0], x: 360, y: 460, dir: "down" },
+      { id: "npc2", name: NAMES[1], x: 440, y: 500, dir: "down" },
+      { id: "npc3", name: NAMES[2], x: 300, y: 540, dir: "down" },
     ];
     setTimeout(() => {
       this.bus.emit("init", {
         selfId: this.selfId,
         players: [
-          { id: this.selfId, name: this.name, x: 320, y: 288, dir: "down" },
+          { id: this.selfId, name: this.name, x: 384, y: 480, dir: "down" },
           ...this.npcs,
         ],
       });
@@ -120,16 +146,17 @@ export class MockNet implements Net {
       else if (dir === "right") npc.x += step;
       else if (dir === "up") npc.y -= step;
       else npc.y += step;
-      npc.x = Math.max(32, Math.min(600, npc.x));
-      npc.y = Math.max(180, Math.min(380, npc.y));
+      // keep them roaming the open central band (mock has no collisions)
+      npc.x = Math.max(48, Math.min(1000, npc.x));
+      npc.y = Math.max(280, Math.min(820, npc.y));
       npc.dir = dir;
       this.bus.emit("player-moved", { id: npc.id, x: npc.x, y: npc.y, dir });
     }
   }
-  on(event: string, cb: Handler) {
+  on<T = unknown>(event: string, cb: (payload: T) => void) {
     return this.bus.on(event, cb);
   }
-  move(_x: number, _y: number, _dir: Dir) {
+  move() {
     /* local player; nothing to echo in mock */
   }
   chat(text: string) {
@@ -159,6 +186,9 @@ export class MockNet implements Net {
       reason: ok ? undefined : "bad-key",
     });
   }
+  leaveRoom() {
+    /* no server in mock; the scene owns local room state */
+  }
   sit(roomId: string, seatId: number) {
     this.bus.emit("seat-update", { roomId, seatId, playerId: this.selfId });
   }
@@ -171,10 +201,9 @@ export class MockNet implements Net {
 }
 
 export function createNet(): Net {
-  const useMock = (import.meta.env.VITE_USE_MOCK ?? "1") !== "0";
-  if (useMock) return new MockNet();
-  const url = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
-  return new RealNet(url);
+  if (USE_MOCK) return new MockNet();
+  // Production / real mode: a backend URL is mandatory (throws if missing).
+  return new RealNet(assertServerUrl());
 }
 
 /** Mock room keys, surfaced so the dev UI can hint them. */

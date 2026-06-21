@@ -38,14 +38,30 @@ export default class WorldScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
+  private keyShift!: Phaser.Input.Keyboard.Key;
+  private touchAxis = { x: 0, y: 0 };
+  private interactQueued = false;
   private remotes = new Map<string, Remote>();
+  private chatBubbles = new Map<
+    string,
+    {
+      container: Phaser.GameObjects.Container;
+      sprite: Phaser.GameObjects.Sprite;
+      offsetY: number;
+      expires: number;
+    }
+  >();
 
   private doors: DoorZone[] = [];
   private seats: Seat[] = [];
+  private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
+  private roomAreas: { roomId: string; rect: Phaser.Geom.Rectangle }[] = [];
   private enteredRooms = new Set<string>();
   private currentDoor: string | null = null;
   private currentSeat: Seat | null = null;
   private seated = false;
+  private currentRoom: string | null = null;
+  private avatar = "char1";
 
   private dir: Dir = "down";
   private lastSent = 0;
@@ -58,6 +74,8 @@ export default class WorldScene extends Phaser.Scene {
   create() {
     this.net = this.registry.get("net") as Net;
     CHARS.forEach((c) => createCharAnims(this, c));
+    const saved = localStorage.getItem("avatar");
+    this.avatar = saved && CHARS.includes(saved) ? saved : "char1";
 
     const map = this.make.tilemap({ key: "space" });
     const tiles = map.addTilesetImage("floors_walls", "floors_walls")!;
@@ -78,12 +96,13 @@ export default class WorldScene extends Phaser.Scene {
     const sx = (spawn?.x as number) ?? 320;
     const sy = (spawn?.y as number) ?? 288;
 
-    this.player = this.physics.add.sprite(sx, sy, "char1", idleFrame("down"));
+    this.player = this.physics.add.sprite(sx, sy, this.avatar, idleFrame("down"));
     this.player.setSize(18, 14).setOffset(7, 16);
     this.physics.add.collider(this.player, walls);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     this.buildFurniture();
+    this.emitWorldInfo(map);
 
     this.playerLabel = this.makeLabel("You");
 
@@ -93,6 +112,7 @@ export default class WorldScene extends Phaser.Scene {
       Phaser.Input.Keyboard.Key
     >;
     this.keyE = this.input.keyboard!.addKey("E");
+    this.keyShift = this.input.keyboard!.addKey("SHIFT");
     // Phaser captures WASD/E/arrows on window and preventDefaults them, which
     // stops those characters reaching DOM inputs (chat). Drop the capture so
     // typing works; movement still reads key state. isTyping() gates the game.
@@ -100,6 +120,7 @@ export default class WorldScene extends Phaser.Scene {
 
     this.wireNet();
     this.wireUi();
+    this.wireChat();
     this.net.connect(localStorage.getItem("token") ?? "dev", "1");
 
     if (import.meta.env.DEV) {
@@ -142,6 +163,26 @@ export default class WorldScene extends Phaser.Scene {
         cy,
       });
     }
+    const furnObjs = map.getObjectLayer("furniture")?.objects ?? [];
+    for (const o of furnObjs) {
+      const key = prop(o, "key");
+      if (!key) continue;
+      this.furniture.push({
+        key,
+        x: o.x!,
+        y: o.y!,
+        solid: prop(o, "solid") === "true",
+      });
+    }
+    const roomObjs = map.getObjectLayer("roomBounds")?.objects ?? [];
+    for (const o of roomObjs) {
+      const roomId = prop(o, "roomId");
+      if (!roomId) continue;
+      this.roomAreas.push({
+        roomId,
+        rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!),
+      });
+    }
   }
 
   /** Tables (room centres), chairs (every seat, facing the table), and decor. */
@@ -161,40 +202,10 @@ export default class WorldScene extends Phaser.Scene {
       for (const s of seats) this.addChair(s);
     }
 
-    // static office decor: [key, x, y, solid?]
-    const decor: [string, number, number, boolean][] = [
-      // Meeting Room A
-      ["f_bookshelf_tall", 40, 40, true],
-      ["f_plant_big", 196, 140, true],
-      // Meeting Room B
-      ["f_bookshelf_tall", 440, 40, true],
-      ["f_plant_big", 600, 140, true],
-      // lounge — left services column
-      ["f_water", 40, 210, true],
-      ["f_vending", 40, 250, true],
-      ["f_coffee", 44, 290, false],
-      // lounge — sofa nook
-      ["f_sofa", 110, 320, true],
-      ["f_sofa_small", 70, 320, true],
-      ["f_table_small", 150, 322, false],
-      ["f_plant_small", 150, 360, false],
-      // lounge — personal desks
-      ["f_desk", 300, 215, true],
-      ["f_desk2", 360, 215, true],
-      ["f_desk_boss", 460, 215, true],
-      // lounge — right greenery
-      ["f_plant_big", 580, 250, true],
-      ["f_plant_small", 520, 330, false],
-    ];
-    for (const [key, x, y, solid] of decor) {
-      if (solid) this.addSolid(solids, key, x, y);
-      else this.add.image(x, y, key).setDepth(y);
-    }
-
-    // desks face the lounge: drop a chair just below each desk
-    for (const [dx, dy] of [[300, 215], [360, 215], [460, 215]] as const) {
-      const chair = this.add.image(dx, dy + 18, "f_chair").setDepth(dy + 18);
-      void chair;
+    // zone decor authored in the map's `furniture` object layer (data-driven)
+    for (const f of this.furniture) {
+      if (f.solid) this.addSolid(solids, f.key, f.x, f.y);
+      else this.add.image(f.x, f.y, f.key).setDepth(f.y);
     }
 
     this.physics.add.collider(this.player, solids);
@@ -257,11 +268,110 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private wireUi() {
-    bus.on("room-entered", (p: { roomId: string }) =>
-      this.enteredRooms.add(p.roomId)
-    );
+    bus.on("room-entered", (p: { roomId: string }) => {
+      this.enteredRooms.add(p.roomId);
+      this.currentRoom = p.roomId; // membership starts at the door on key accept
+    });
     bus.on("do-sit", () => this.trySit());
     bus.on("do-stand", () => this.stand());
+    bus.on("locate", (p: { id: string }) => this.locate(p.id));
+    bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p));
+    bus.on("do-interact", () => (this.interactQueued = true));
+  }
+
+  /** One-time snapshot of map size + room footprints for the minimap. */
+  private emitWorldInfo(map: Phaser.Tilemaps.Tilemap) {
+    const byRoom = new Map<string, Seat[]>();
+    for (const s of this.seats) {
+      if (!byRoom.has(s.roomId)) byRoom.set(s.roomId, []);
+      byRoom.get(s.roomId)!.push(s);
+    }
+    const pad = 24;
+    const rooms = [...byRoom.entries()].map(([id, seats]) => {
+      const x = Math.min(...seats.map((s) => s.rect.x)) - pad;
+      const y = Math.min(...seats.map((s) => s.rect.y)) - pad;
+      const w = Math.max(...seats.map((s) => s.rect.x + s.rect.width)) + pad - x;
+      const h = Math.max(...seats.map((s) => s.rect.y + s.rect.height)) + pad - y;
+      return { id, x, y, w, h };
+    });
+    bus.emit("world-info", {
+      width: map.widthInPixels,
+      height: map.heightInPixels,
+      rooms,
+    });
+  }
+
+  /** Briefly pan the camera to a player and pulse their sprite, then resume follow. */
+  private locate(id: string) {
+    const sprite =
+      id === this.net.selfId ? this.player : this.remotes.get(id)?.sprite;
+    if (!sprite) return;
+    const cam = this.cameras.main;
+    cam.stopFollow();
+    cam.pan(sprite.x, sprite.y, 450, "Sine.easeInOut");
+    this.tweens.add({
+      targets: sprite,
+      scale: 1.4,
+      duration: 180,
+      yoyo: true,
+      repeat: 2,
+    });
+    this.time.delayedCall(1500, () =>
+      cam.startFollow(this.player, true, 0.12, 0.12)
+    );
+  }
+
+  private wireChat() {
+    this.net.on("chat", (m: { id: string; text: string }) =>
+      this.showChatBubble(m.id, m.text)
+    );
+  }
+
+  /** Gather-style speech bubble floating above whoever spoke. Pure visual. */
+  private showChatBubble(id: string, text: string) {
+    const sprite =
+      id === this.net.selfId ? this.player : this.remotes.get(id)?.sprite;
+    if (!sprite) return;
+
+    this.chatBubbles.get(id)?.container.destroy();
+
+    const txt = this.add
+      .text(0, 0, text, {
+        fontFamily: "sans-serif",
+        fontSize: "9px",
+        color: "#10131a",
+        align: "center",
+        wordWrap: { width: 120 },
+      })
+      .setOrigin(0.5, 0.5);
+    const padX = 6,
+      padY = 4;
+    const w = txt.width + padX * 2;
+    const h = txt.height + padY * 2;
+    const g = this.add.graphics();
+    g.fillStyle(0xffffff, 0.96);
+    g.lineStyle(1, 0x2a2f3d, 1);
+    g.fillRoundedRect(-w / 2, -h / 2, w, h, 6);
+    g.strokeRoundedRect(-w / 2, -h / 2, w, h, 6);
+    g.fillStyle(0xffffff, 0.96);
+    g.fillTriangle(-4, h / 2, 4, h / 2, 0, h / 2 + 5);
+
+    const offsetY = h / 2 + 5 + 18; // tail tip rests just above the head
+    const container = this.add
+      .container(sprite.x, sprite.y - offsetY, [g, txt])
+      .setDepth(10000);
+    this.chatBubbles.set(id, { container, sprite, offsetY, expires: this.time.now + 4500 });
+  }
+
+  private updateChatBubbles(time: number) {
+    this.chatBubbles.forEach((b, id) => {
+      if (!b.sprite.active || time > b.expires) {
+        b.container.destroy();
+        this.chatBubbles.delete(id);
+        return;
+      }
+      b.container.setPosition(b.sprite.x, b.sprite.y - b.offsetY);
+    });
   }
 
   private addRemote(p: PlayerState) {
@@ -307,7 +417,9 @@ export default class WorldScene extends Phaser.Scene {
     this.handleMovement(time);
     this.updateRemotes();
     this.updateLabels();
+    this.updateChatBubbles(time);
     this.checkZones();
+    this.checkRoomMembership();
     this.handleInteractKey();
     this.emitPositions(time);
   }
@@ -322,24 +434,32 @@ export default class WorldScene extends Phaser.Scene {
       }
       return;
     }
-    let vx = 0,
-      vy = 0;
-    const left = this.cursors.left.isDown || this.wasd.A.isDown;
-    const right = this.cursors.right.isDown || this.wasd.D.isDown;
-    const up = this.cursors.up.isDown || this.wasd.W.isDown;
-    const down = this.cursors.down.isDown || this.wasd.S.isDown;
-    if (left) vx = -SPEED;
-    else if (right) vx = SPEED;
-    if (up) vy = -SPEED;
-    else if (down) vy = SPEED;
+    const speed = this.keyShift.isDown ? SPEED * 1.6 : SPEED;
+    let ax = 0,
+      ay = 0;
+    if (this.cursors.left.isDown || this.wasd.A.isDown) ax -= 1;
+    if (this.cursors.right.isDown || this.wasd.D.isDown) ax += 1;
+    if (this.cursors.up.isDown || this.wasd.W.isDown) ay -= 1;
+    if (this.cursors.down.isDown || this.wasd.S.isDown) ay += 1;
+    // on-screen joystick (mobile) overrides keyboard when engaged
+    if (this.touchAxis.x !== 0 || this.touchAxis.y !== 0) {
+      ax = this.touchAxis.x;
+      ay = this.touchAxis.y;
+    }
+    let vx = ax * speed,
+      vy = ay * speed;
+    const mag = Math.hypot(vx, vy);
+    if (mag > speed) {
+      vx = (vx / mag) * speed;
+      vy = (vy / mag) * speed;
+    }
     body.setVelocity(vx, vy);
-    if (vx !== 0 && vy !== 0) body.body!.velocity.normalize().scale(SPEED);
 
-    const moving = vx !== 0 || vy !== 0;
+    const moving = mag > 0.01;
     if (moving) {
       if (Math.abs(vx) > Math.abs(vy)) this.dir = vx < 0 ? "left" : "right";
       else this.dir = vy < 0 ? "up" : "down";
-      this.player.anims.play(walkAnim("char1", this.dir), true);
+      this.player.anims.play(walkAnim(this.avatar, this.dir), true);
     } else {
       this.player.anims.stop();
       this.player.setFrame(idleFrame(this.dir));
@@ -409,9 +529,35 @@ export default class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** Detect a genuine walk-out of the private room the player is currently inside. */
+  private checkRoomMembership() {
+    if (!this.currentRoom) return;
+    const area = this.roomAreas.find((a) => a.roomId === this.currentRoom);
+    if (!area) return;
+    if (!Phaser.Geom.Rectangle.Contains(area.rect, this.player.x, this.player.y + 8)) {
+      this.exitRoom(this.currentRoom);
+    }
+  }
+
+  /** Player left a private room: free the seat, drop local room state so re-entry
+   *  needs the key again, and tell the server to stop routing room traffic to us. */
+  private exitRoom(roomId: string) {
+    this.currentRoom = null;
+    this.enteredRooms.delete(roomId);
+    if (this.seated) this.stand();
+    this.net.leaveRoom();
+    bus.emit("room-left", { roomId });
+  }
+
   private handleInteractKey() {
-    if (isTyping()) return;
-    if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+    if (isTyping()) {
+      this.interactQueued = false;
+      return;
+    }
+    const pressed =
+      Phaser.Input.Keyboard.JustDown(this.keyE) || this.interactQueued;
+    this.interactQueued = false;
+    if (pressed) {
       if (this.seated) this.stand();
       else this.trySit();
     }
