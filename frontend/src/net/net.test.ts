@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { MockNet } from "./net";
+import { MockNet, type Net } from "./net";
 
 describe("MockNet", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
   it("emits init with self + NPCs on connect", () => {
-    const net = new MockNet();
+    const net: Net = new MockNet();
     const seen: { selfId: string; players: unknown[] }[] = [];
-    net.on("init", (p) => seen.push(p));
+    net.on<{ selfId: string; players: unknown[] }>("init", (p) => seen.push(p));
     net.connect("tok", "1");
     vi.advanceTimersByTime(200);
     expect(seen).toHaveLength(1);
@@ -18,9 +18,9 @@ describe("MockNet", () => {
   });
 
   it("echoes the sender's chat then an NPC reply", () => {
-    const net = new MockNet();
+    const net: Net = new MockNet();
     const msgs: { name: string; text: string }[] = [];
-    net.on("chat", (m) => msgs.push(m));
+    net.on<{ name: string; text: string }>("chat", (m) => msgs.push(m));
     net.connect("tok", "1");
     vi.advanceTimersByTime(200);
     net.chat("hello");
@@ -31,9 +31,12 @@ describe("MockNet", () => {
   });
 
   it("accepts the correct room key and rejects a wrong one", () => {
-    const net = new MockNet();
+    const net: Net = new MockNet();
     const results: { ok: boolean; roomId: string; reason?: string }[] = [];
-    net.on("room-enter-result", (r) => results.push(r));
+    net.on<{ ok: boolean; roomId: string; reason?: string }>(
+      "room-enter-result",
+      (r) => results.push(r)
+    );
     net.connect("tok", "1");
     net.enterRoom("1", "1234");
     net.enterRoom("1", "nope");
@@ -43,9 +46,9 @@ describe("MockNet", () => {
   });
 
   it("broadcasts NPC movement over time", () => {
-    const net = new MockNet();
+    const net: Net = new MockNet();
     const moves: { id: string }[] = [];
-    net.on("player-moved", (m) => moves.push(m));
+    net.on<{ id: string }>("player-moved", (m) => moves.push(m));
     net.connect("tok", "1");
     vi.advanceTimersByTime(1500); // wander interval is 700ms
     expect(moves.length).toBeGreaterThan(0);
