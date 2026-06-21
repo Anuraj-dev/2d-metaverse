@@ -1,0 +1,99 @@
+x-backend-environment: &backend-environment
+  NODE_ENV: ${NODE_ENV:-development}
+  PORT: 3001
+  DATABASE_URL: ${DATABASE_URL:-postgres://metaverse:metaverse@postgres:5432/metaverse}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me-now}
+  JWT_TTL: ${JWT_TTL:-7d}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  LIVEKIT_URL: ${LIVEKIT_URL:-ws://localhost:7880}
+  LIVEKIT_API_URL: ${LIVEKIT_API_URL:-http://livekit:7880}
+  LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+  LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-local-development-livekit-secret-change-me}
+  ROOM_1_KEY: ${ROOM_1_KEY:-1234}
+  ROOM_2_KEY: ${ROOM_2_KEY:-4321}
+  MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/space.json}
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metaverse}
+      POSTGRES_USER: ${POSTGRES_USER:-metaverse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-metaverse}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        redis:
+          address: redis:6379
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50100
+          use_external_ip: true
+        keys:
+          "${LIVEKIT_API_KEY:-devkey}": "${LIVEKIT_API_SECRET:-local-development-livekit-secret-change-me}"
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+
+  setup:
+    build: ./backend
+    restart: "no"
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "node dist/migrate.js && node dist/seed.js"]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: *backend-environment
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:

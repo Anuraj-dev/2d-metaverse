@@ -1,0 +1,111 @@
+import assert from "node:assert/strict";
+import { io } from "socket.io-client";
+
+const baseUrl = process.env.SMOKE_URL ?? "http://localhost:3001";
+const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+async function api(path, { token, body, method = body ? "POST" : "GET" } = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {})
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+  let json;
+  try { json = await response.json(); } catch { json = null; }
+  return { status: response.status, json };
+}
+
+function once(socket, event, timeoutMs = 3000) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${event}`)), timeoutMs);
+    socket.once(event, (payload) => { clearTimeout(timeout); resolve(payload); });
+  });
+}
+
+async function createUser(username) {
+  const password = "testing-password-123";
+  assert.equal((await api("/api/v1/signup", { body: { username, password } })).status, 200);
+  const signin = await api("/api/v1/signin", { body: { username, password } });
+  assert.equal(signin.status, 200);
+  assert.equal(typeof signin.json.token, "string");
+  return signin.json.token;
+}
+
+const tokenA = await createUser(`smokea_${suffix}`);
+const tokenB = await createUser(`smokeb_${suffix}`);
+
+const space = await api("/api/v1/space/1", { token: tokenA });
+assert.equal(space.status, 200);
+assert.equal(space.json.rooms.length, 2);
+assert.equal(space.json.rooms[0].seats.length, 4);
+
+const worldToken = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "world:1" } });
+assert.equal(worldToken.status, 200);
+assert.equal(typeof worldToken.json.livekitToken, "string");
+assert.equal((await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "room:1" } })).status, 403);
+
+const socketA = io(baseUrl, { transports: ["websocket"] });
+const socketB = io(baseUrl, { transports: ["websocket"] });
+const occupiedSeats = new Set();
+const trackSeat = ({ roomId, seatId, playerId }) => {
+  const key = `${roomId}:${seatId}`;
+  if (playerId) occupiedSeats.add(key);
+  else occupiedSeats.delete(key);
+};
+socketA.on("seat-update", trackSeat);
+try {
+  await Promise.all([once(socketA, "connect"), once(socketB, "connect")]);
+  const initA = once(socketA, "init");
+  socketA.emit("join", { token: tokenA, spaceId: "1" });
+  const a = await initA;
+  assert.ok(a.players.some((player) => player.id === a.selfId));
+
+  const initB = once(socketB, "init");
+  socketB.emit("join", { token: tokenB, spaceId: "1" });
+  const b = await initB;
+  assert.ok(b.players.some((player) => player.id === a.selfId));
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const candidateSeats = space.json.rooms.flatMap((room) =>
+    room.seats.map((seat) => ({ roomId: room.id, seatId: seat.id }))
+  );
+  const selected = candidateSeats.find(({ roomId, seatId }) => !occupiedSeats.has(`${roomId}:${seatId}`));
+  assert.ok(selected, "No free seat available for smoke test");
+  const roomKey = selected.roomId === "1" ? "1234" : "4321";
+
+  const badEntry = once(socketA, "room-enter-result");
+  socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });
+  assert.deepEqual(await badEntry, { ok: false, roomId: selected.roomId, reason: "bad-key" });
+
+  const goodEntry = once(socketA, "room-enter-result");
+  socketA.emit("room-enter", { roomId: selected.roomId, key: roomKey });
+  assert.deepEqual(await goodEntry, { ok: true, roomId: selected.roomId });
+
+  const seatSeenByB = once(socketB, "seat-update");
+  socketA.emit("seat-sit", selected);
+  assert.deepEqual(await seatSeenByB, { ...selected, playerId: a.selfId });
+
+  const privateToken = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: `room:${selected.roomId}` } });
+  assert.equal(privateToken.status, 200);
+
+  const moveSeen = once(socketB, "player-moved");
+  socketA.emit("move", { x: 321, y: 288, dir: "right" });
+  assert.deepEqual(await moveSeen, { id: a.selfId, x: 321, y: 288, dir: "right" });
+
+  const chatSeen = once(socketB, "chat");
+  socketA.emit("chat", { text: "smoke test" });
+  assert.equal((await chatSeen).scope, selected.roomId);
+
+  const standSeen = once(socketB, "seat-update");
+  socketA.emit("seat-stand");
+  assert.deepEqual(await standSeen, { ...selected, playerId: null });
+  assert.equal((await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: `room:${selected.roomId}` } })).status, 403);
+} finally {
+  socketA.disconnect();
+  socketB.disconnect();
+}
+
+console.log("Backend smoke test passed");

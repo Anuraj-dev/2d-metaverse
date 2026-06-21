@@ -1,0 +1,28 @@
+# Production override enabling LiveKit's embedded TURN server.
+# Run with: docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
+services:
+  livekit:
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        redis:
+          address: redis:6379
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50100
+          use_external_ip: true
+        turn:
+          enabled: true
+          domain: ${TURN_DOMAIN:?TURN_DOMAIN is required}
+          udp_port: 3478
+          tls_port: 5349
+          cert_file: /etc/letsencrypt/live/${TURN_DOMAIN}/fullchain.pem
+          key_file: /etc/letsencrypt/live/${TURN_DOMAIN}/privkey.pem
+        keys:
+          "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}": "${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
+    ports:
+      - "3478:3478/udp"
+      - "5349:5349/tcp"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro

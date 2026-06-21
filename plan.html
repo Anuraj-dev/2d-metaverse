@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2D Metaverse — Build Plan & Contract</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1d2130; --ink:#e6e9f0; --muted:#9aa3b5;
+    --accent:#6ea8fe; --accent2:#7ee787; --warn:#ffd166; --line:#2a2f3d; --code:#0b0d13;
+    --fe:#6ea8fe; --be:#7ee787;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:30px;margin:0 0 4px} h2{font-size:21px;margin:34px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:20px 0 8px;color:var(--accent)}
+  p{color:var(--ink)} .sub{color:var(--muted);margin-top:0}
+  a{color:var(--accent)}
+  code{background:var(--code);padding:2px 6px;border-radius:5px;font:13px/1.5 "SF Mono",ui-monospace,Menlo,Consolas,monospace;color:#cdd6f4}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font:12.5px/1.55 "SF Mono",ui-monospace,Menlo,Consolas,monospace;color:#cdd6f4}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;letter-spacing:.3px;vertical-align:middle}
+  .tag.fe{background:rgba(110,168,254,.15);color:var(--fe);border:1px solid rgba(110,168,254,.4)}
+  .tag.be{background:rgba(126,231,135,.15);color:var(--be);border:1px solid rgba(126,231,135,.4)}
+  .tag.both{background:rgba(255,209,102,.13);color:var(--warn);border:1px solid rgba(255,209,102,.4)}
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  ul{margin:8px 0 8px 0;padding-left:20px} li{margin:4px 0}
+  .pill{font-size:12px;color:var(--muted)}
+  .callout{border-left:3px solid var(--warn);background:var(--panel2);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+  .legend span{margin-right:16px;font-size:13px}
+  hr{border:none;border-top:1px solid var(--line);margin:30px 0}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>2D Metaverse — Build Plan &amp; Contract</h1>
+  <p class="sub">A Gather/Zep-style single styled space. Hosted on one AWS <code>t3.medium</code>.</p>
+  <p class="legend">
+    <span><span class="tag fe">FRONTEND</span> built by Claude</span>
+    <span><span class="tag be">BACKEND</span> built by Codex</span>
+    <span><span class="tag both">SHARED</span> agree jointly</span>
+  </p>
+
+  <div class="callout">
+    <b>Read this first, Codex.</b> The single source of truth for how the two halves talk is
+    <a href="#contract">§4 The Contract</a> (REST + Socket.IO + LiveKit). Build the backend to that
+    contract. The frontend is being coded against a mock of it so both sides progress in parallel.
+    Lock <code>contract.ts</code> field names jointly before wiring real endpoints.
+  </div>
+
+  <h2>1. The Experience</h2>
+  <div class="panel">
+    <ul>
+      <li><b>Open space</b> — players move on a tilemap; <b>proximity audio</b> turns on as avatars get
+        near (audio only out here, no video). Gather-style spatial audio.</li>
+      <li><b>Private rooms</b> — key-gated. Walk to a room's door zone → prompted for a key → correct
+        key lets you in.</li>
+      <li><b>Inside a room</b> — 4–5 seats. Sit down → full <b>video + audio</b> call with others seated.</li>
+      <li><b>The twist</b> — the 2D environment stays visible during the call. In-room webcams render as
+        <b>bubbles floating above each seated avatar</b>, not a Meet-style panel.</li>
+    </ul>
+  </div>
+
+  <h2>2. Tech Decisions (locked)</h2>
+  <table>
+    <tr><th>Concern</th><th>Choice</th><th>Owner</th></tr>
+    <tr><td>Game client</td><td>React + Phaser 3 + Vite + TypeScript</td><td><span class="tag fe">FE</span></td></tr>
+    <tr><td>Game-state transport</td><td>Socket.IO (movement, presence, chat, rooms, seats)</td><td><span class="tag both">SHARED</span></td></tr>
+    <tr><td>Media (audio/video)</td><td>LiveKit (open-source SFU = the "Meet architecture")</td><td><span class="tag both">SHARED</span></td></tr>
+    <tr><td>Maps</td><td>Authored in Tiled → exported JSON, loaded by Phaser</td><td><span class="tag fe">FE</span></td></tr>
+    <tr><td>HTTP API + auth</td><td>Token-based (username/password → token in localStorage)</td><td><span class="tag be">BE</span></td></tr>
+    <tr><td>Persistence</td><td>Postgres (users, spaces, rooms, keys) + Redis (presence/scale)</td><td><span class="tag be">BE</span></td></tr>
+  </table>
+
+  <h2>3. Architecture</h2>
+  <pre>
+            Browser (FRONTEND — Claude)                         Server (BACKEND — Codex)
+  ┌─────────────────────────────────────────┐        ┌──────────────────────────────────────┐
+  │ React shell                              │  REST  │ HTTP API: auth, space, livekit-token │
+  │  ├─ Auth screen ─────────────────────────┼───────▶│   (Postgres for users/spaces/keys)   │
+  │  ├─ Phaser GameCanvas                     │        │                                      │
+  │  │   • tilemap, avatars, movement         │ Socket │ Socket.IO server                     │
+  │  │   • door zones, seats, proximity calc  │◀──────▶│   • movement broadcast (rooms)       │
+  │  ├─ HUD: Chat, KeyModal, Bubbles, MicCam  │  .IO   │   • presence (Redis), seats, keys    │
+  │  └─ LiveKit client                        │        │                                      │
+  │       • world room (spatial AUDIO)        │ WebRTC │ LiveKit SFU + token endpoint         │
+  │       • per-room rooms (AUDIO+VIDEO)      │◀──────▶│   (self-hosted on the t3.medium)     │
+  └─────────────────────────────────────────┘        └──────────────────────────────────────┘
+  </pre>
+  <h3>Two media contexts (LiveKit)</h3>
+  <ul>
+    <li><b>World room</b> — one LiveKit room everyone joins, <b>audio tracks only</b>. The frontend
+      scales each remote participant's volume by 2D distance (from Phaser positions). Beyond a cutoff
+      radius → volume 0. This is the proximity audio.</li>
+    <li><b>Private rooms</b> — each private room is its own LiveKit room with <b>audio + video</b>,
+      joined only after a correct key + sitting in a seat; left on standing up.</li>
+  </ul>
+
+  <h2 id="contract">4. The Contract <span class="tag both">SHARED — this is what Codex builds to</span></h2>
+
+  <h3>4a. REST (HTTP API)</h3>
+  <table>
+    <tr><th>Method &amp; Path</th><th>Body / Auth</th><th>Returns</th></tr>
+    <tr><td class="mono">POST /api/v1/signup</td><td>{username, password}</td><td>200 ok / 400 if taken</td></tr>
+    <tr><td class="mono">POST /api/v1/signin</td><td>{username, password}</td><td>{ token }</td></tr>
+    <tr><td class="mono">GET /api/v1/space/:id</td><td>Bearer token</td><td>{ mapJsonUrl, rooms:[{id,name,doorZone,seats:[{id,x,y,facing}]}] }</td></tr>
+    <tr><td class="mono">POST /api/v1/livekit/token</td><td>Bearer token, {roomName}</td><td>{ livekitToken, url }</td></tr>
+  </table>
+  <p class="pill">Notes: token authenticates both REST and the Socket.IO handshake. Room keys are
+    validated server-side only — never trust the client. The LiveKit token must be scoped to the
+    requested <code>roomName</code> and the caller's identity.</p>
+
+  <h3>4b. Socket.IO events</h3>
+  <pre>
+// client → server
+join         { token, spaceId }
+move         { x, y, dir }                 // dir: 'down'|'left'|'right'|'up'
+chat         { text }
+room-enter   { roomId, key }               // server validates key
+seat-sit     { roomId, seatId }
+seat-stand   { }
+
+// server → client
+init          { selfId, players:[{id,name,x,y,dir}] }      // sent once after join
+player-joined { id, name, x, y, dir }
+player-moved  { id, x, y, dir }                            // broadcast to space
+player-left   { id }
+chat          { id, name, text, scope }                    // scope:'world'|roomId
+room-enter-result { ok, roomId, reason? }                  // reason: 'bad-key'|'full'
+seat-update   { roomId, seatId, playerId|null }            // occupied / freed
+  </pre>
+  <p class="pill">Movement is broadcast per space; for scale use Socket.IO rooms (one per space, and
+    optionally one per private room for chat scoping). Throttle inbound <code>move</code> server-side
+    if needed; the client already throttles to ~10–15/s and interpolates remotes.</p>
+
+  <h3>4c. Shared types — <code>contract.ts</code></h3>
+  <p>The frontend keeps the canonical event/payload types in
+    <code>frontend/src/contract.ts</code>. Codex should mirror these exactly (copy the file or generate
+    matching types). Any change is a joint change.</p>
+
+  <h2>5. Backend Responsibilities <span class="tag be">Codex</span></h2>
+  <div class="grid">
+    <div class="panel">
+      <h3>Services</h3>
+      <ul>
+        <li><b>HTTP API</b> — auth (token issue/verify), space fetch, LiveKit token minting.</li>
+        <li><b>Socket.IO server</b> — movement broadcast, presence, chat, key validation, seat state.</li>
+        <li><b>LiveKit SFU</b> — self-hosted; the "Meet architecture" for in-room A/V and world audio.
+          Backend mints scoped access tokens; LiveKit handles the media.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Data model (Postgres)</h3>
+      <ul>
+        <li><span class="mono">users</span>(id, username, password_hash)</li>
+        <li><span class="mono">spaces</span>(id, name, map_json_url)</li>
+        <li><span class="mono">rooms</span>(id, space_id, name, key_hash, door_zone, capacity)</li>
+        <li><span class="mono">seats</span>(id, room_id, x, y, facing)</li>
+      </ul>
+      <p class="pill">Redis: presence + (later) multi-WS-server fan-out so people in one space share a
+        sticky server. Single server is fine for the first ~10k users / handful of rooms.</p>
+    </div>
+  </div>
+
+  <h2>6. Asset Pipeline <span class="tag fe">Frontend</span></h2>
+  <ul>
+    <li>Packs unzipped into <code>frontend/public/assets/</code> (tilesets, characters, furniture, doors, audio).</li>
+    <li>Primary tileset: <b>TopDownHouse</b> (Retro Interior), 16×16 tiles — clean, cozy, Zep-like.
+      Characters: <b>Pipoya 32×32</b> (sheets are 96×128 = 3 cols × 4 rows → down/left/right/up walk).</li>
+    <li>Map authored in <b>Tiled</b> → exported to <code>public/assets/maps/space.json</code>; layers:
+      <code>ground</code>, <code>walls</code> (collision), <code>furniture</code>; object layers
+      <code>doorZones</code> (prop <code>roomId</code>) and <code>seats</code> (props
+      <code>roomId</code>, <code>seatId</code>, <code>facing</code>).</li>
+  </ul>
+
+  <h2>7. Frontend Build Order <span class="tag fe">Claude</span></h2>
+  <ol>
+    <li>Scaffold Vite React-TS + phaser/socket.io-client/livekit-client. ✅</li>
+    <li>Asset prep + Tiled map (space.json).</li>
+    <li>WorldScene: tilemap, wall collision, local avatar, 4-dir walk, camera follow.</li>
+    <li>Networking (mock first): remote avatars, interpolation, throttled move emit.</li>
+    <li>ChatBox overlay.</li>
+    <li>Proximity audio (world LiveKit room, volume by distance).</li>
+    <li>Door zones + RoomKeyModal.</li>
+    <li>Seats + in-room video bubbles (BubbleLayer anchored to seated avatars).</li>
+    <li>Polish; swap mocks for Codex's real backend.</li>
+  </ol>
+
+  <h2>8. Deployment (single t3.medium)</h2>
+  <ul>
+    <li>Nginx reverse proxy + Let's Encrypt TLS (WSS required for Socket.IO + WebRTC in prod).</li>
+    <li>Node HTTP + Socket.IO under PM2. Postgres + Redis local or managed.</li>
+    <li><b>LiveKit self-hosted</b> on the box (CPU-only is fine for a few small video rooms). Frontend
+      only needs the token endpoint + ws URL. Add a TURN/STUN config for NAT traversal.</li>
+    <li>2 GB swap recommended (Node + WS + LiveKit can spike memory on t3.medium).</li>
+  </ul>
+
+  <hr/>
+  <h2>9. Open items to settle jointly <span class="tag both">SHARED</span></h2>
+  <ul>
+    <li>LiveKit self-hosted vs LiveKit Cloud (frontend is agnostic — needs token + url only).</li>
+    <li>Exact key-validation flow + capacity/full handling on <code>room-enter</code>.</li>
+    <li>Freeze <code>contract.ts</code> names/payloads before removing frontend mocks.</li>
+  </ul>
+
+</div>
+</body>
+</html>
