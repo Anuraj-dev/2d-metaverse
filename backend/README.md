@@ -11,9 +11,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The API and Socket.IO server are at `http://localhost:3001`; LiveKit signaling is at `ws://localhost:7880`. The setup container applies migrations and seeds space `1`, rooms `1`/`2`, their map coordinates, and four seats each.
+The API and Socket.IO server are at `http://localhost:3001`; LiveKit signaling is at `ws://localhost:7880`. The setup container applies migrations and seeds space `1`, rooms `1`/`2`/`3`, their map coordinates, and four seats each.
 
-Default development room keys are `1234` and `4321`. Never use those defaults in production.
+Default development room keys are `1234`, `4321`, and `3333`. Never use those defaults in production.
 
 ## Contract details
 
