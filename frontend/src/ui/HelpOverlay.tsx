@@ -5,6 +5,7 @@ const CONTROLS: [string, string][] = [
   ["Run", "Hold Shift"],
   ["Sit / Stand", "E — when near a chair"],
   ["Enter a room", "Walk to its door, type the key"],
+  ["Chat", "Click the chat box and type"],
   ["Find someone", "Open the 👥 roster, click a name"],
   ["Help", "Press ?"],
 ];

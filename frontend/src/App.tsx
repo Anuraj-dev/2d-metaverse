@@ -1,4 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from "react";
+import ChatBox from "./ui/ChatBox";
+import ChatToast from "./ui/ChatToast";
 import Roster from "./ui/Roster";
 import Minimap from "./ui/Minimap";
 import Settings from "./ui/Settings";
@@ -222,6 +224,8 @@ export default function App() {
         <InteractionHint />
         <BubbleLayer />
         <MediaControls />
+        <ChatBox />
+        <ChatToast />
         <Roster />
         <Minimap />
         <Settings />
