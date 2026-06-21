@@ -33,7 +33,7 @@ fi
 aws ecr put-lifecycle-policy \
   --region "$AWS_REGION" \
   --repository-name "$ECR_REPOSITORY" \
-  --lifecycle-policy-text '{"rules":[{"rulePriority":1,"description":"Keep 20 releases","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}' >/dev/null
+  --lifecycle-policy-text '{"rules":[{"rulePriority":1,"description":"Keep the current release and two rollback releases","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}' >/dev/null
 
 aws ssm put-parameter \
   --region "$AWS_REGION" \

@@ -29,3 +29,10 @@ The script creates the ECR repository, encrypted SSM environment parameter, GitH
 Obtain Let's Encrypt certificates for the API, LiveKit, and TURN domains on the EC2 host before the first deployment, then install `nginx.conf.example` with its placeholders replaced. LiveKit cannot start its embedded TURN/TLS listener until the TURN certificate exists.
 
 The remote deployment keeps the previous image tag and automatically restores it if `/health/ready` does not become healthy. Database migrations run before the backend is replaced and must therefore remain backward-compatible.
+
+# Release image retention
+
+The AWS setup creates an ECR lifecycle policy that keeps the current image plus
+the two most recent rollback images (three releases total). The production
+deployment script records the same three-image history on the EC2 host and
+removes older local release images after a successful health check.
