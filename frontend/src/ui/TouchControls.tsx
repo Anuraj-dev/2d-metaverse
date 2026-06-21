@@ -2,18 +2,23 @@ import { useRef, useState } from "react";
 import { bus } from "../game/eventBus";
 
 const R = 46; // joystick travel radius (px)
+const MOBILE_LANDSCAPE_QUERY =
+  "(max-width: 960px) and (orientation: landscape) and (pointer: coarse)";
 
 /** On-screen joystick + action button for touch devices. Feeds the game an analog
  *  vector via `move-axis` and triggers sit/stand via `do-interact`. */
 export default function TouchControls() {
-  const isTouch =
+  const isTouchDevice =
     typeof window !== "undefined" &&
     ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  const isMobileLandscape =
+    typeof window !== "undefined" &&
+    window.matchMedia?.(MOBILE_LANDSCAPE_QUERY).matches;
   const baseRef = useRef<HTMLDivElement>(null);
   const activeId = useRef<number | null>(null);
   const [thumb, setThumb] = useState({ x: 0, y: 0 });
 
-  if (!isTouch) return null;
+  if (!isTouchDevice || !isMobileLandscape) return null;
 
   const apply = (clientX: number, clientY: number) => {
     const rect = baseRef.current!.getBoundingClientRect();
