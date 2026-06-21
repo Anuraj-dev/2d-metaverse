@@ -25,5 +25,8 @@ frontend/dist/
 # raw source asset archives (extracted, used files live in frontend/public/assets)
 Assets/
 
+# local docs / scratch (not part of the app)
+architecture.html
+
 # local multi-agent coordination brief
 fullstack_agent.md

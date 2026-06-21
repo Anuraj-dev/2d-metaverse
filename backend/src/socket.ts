@@ -20,7 +20,13 @@ const moveSchema = z.object({
   y: z.number().finite().min(0).max(100_000),
   dir: z.enum(["down", "left", "right", "up"])
 });
-const chatSchema = z.object({ text: z.string().trim().min(1).max(500) });
+const chatSchema = z.object({
+  text: z.string().trim().min(1).max(500),
+  scope: z.enum(["world", "room"]).optional()
+});
+const whisperSchema = z.object({ to: z.string().min(1).max(64), text: z.string().trim().min(1).max(500) });
+const WHISPER_LIMIT = 20;
+const WHISPER_WINDOW_SECONDS = 60;
 const roomEnterSchema = z.object({ roomId: z.string().min(1).max(64), key: z.string().min(1).max(128) });
 const seatSitSchema = z.object({ roomId: z.string().min(1).max(64), seatId: z.number().int().nonnegative() });
 const LEAVE_GRACE_MS = 4_000;
@@ -76,6 +82,8 @@ async function leaveCurrentRoom(socket: GameSocket): Promise<void> {
   socket.leave(roomChannel(currentRoomId));
   delete socket.data.currentRoomId;
   await redis.del(`room-access:${playerId}:${currentRoomId}`);
+  // A client must not remain connected to a room after its socket membership ends.
+  await removeMediaParticipant(`room:${currentRoomId}`, playerId);
 }
 
 export function createGameServer(httpServer: HttpServer) {
@@ -167,13 +175,40 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = chatSchema.safeParse(payload);
       const { playerId, username, spaceId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
-      const scope = currentRoomId ?? "world";
-      io.to(currentRoomId ? roomChannel(currentRoomId) : spaceChannel(spaceId)).emit("chat", {
+      // Default to your current room; "world" breaks out, "room" is a no-op outside one.
+      // World chat reaches the whole space (incl. private-room members, whose client
+      // shows it only under the "All" filter). Room chat stays room-only — no leak out.
+      const toWorld = parsed.data.scope === "world" || !currentRoomId;
+      const message = {
         id: playerId,
         name: username,
         text: parsed.data.text,
-        scope
-      });
+        scope: toWorld ? "world" : currentRoomId!
+      };
+      io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId!)).emit("chat", message);
+    }));
+
+    socket.on("whisper", safeHandler(async (payload) => {
+      const parsed = whisperSchema.safeParse(payload);
+      const { playerId, username, spaceId } = socket.data;
+      if (!parsed.success || !playerId || !username || !spaceId) return;
+      if (await isRateLimitExceeded(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS)) return;
+      const target = activeSockets.get(parsed.data.to);
+      const targetName = target?.data.username;
+      // Deliver only when the target is online and in the same space.
+      if (!target || !targetName || target.data.spaceId !== spaceId) {
+        socket.emit("whisper-fail", { name: parsed.data.to });
+        return;
+      }
+      const message = {
+        from: playerId,
+        fromName: username,
+        to: parsed.data.to,
+        toName: targetName,
+        text: parsed.data.text
+      };
+      target.emit("whisper", message);
+      socket.emit("whisper", message); // echo so the sender sees their own line
     }));
 
     socket.on("room-enter", safeHandler(async (payload) => {
@@ -203,6 +238,9 @@ export function createGameServer(httpServer: HttpServer) {
       socket.data.currentRoomId = room.id;
       await socket.join(roomChannel(room.id));
       await redis.set(`room-access:${playerId}:${room.id}`, "1", { EX: 8 * 60 * 60 });
+      // World and private-room media are mutually exclusive. This server-side
+      // eviction prevents a stale client from leaking or receiving world audio.
+      await removeMediaParticipant(`world:${spaceId}`, playerId);
       socket.emit("room-enter-result", { ok: true, roomId: room.id });
     }));
 

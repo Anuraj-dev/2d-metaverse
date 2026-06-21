@@ -40,7 +40,13 @@ class WorldAudio {
     try {
       const { token, url } = await fetchToken(`world:${spaceId}`);
       const { Room, RoomEvent, Track } = await import("livekit-client");
-      const room = new Room();
+      const room = new Room({
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       this.room = room;
       room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
         if (track.kind !== Track.Kind.Audio) return;
@@ -50,7 +56,11 @@ class WorldAudio {
         document.body.appendChild(el);
         this.audioEls.set(participant.identity, el);
       });
-      room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach());
+      room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+        track.detach().forEach((el) => el.remove());
+        this.audioEls.get(participant.identity)?.remove();
+        this.audioEls.delete(participant.identity);
+      });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.audioEls.get(p.identity)?.remove();
         this.audioEls.delete(p.identity);
@@ -103,6 +113,7 @@ class RoomVideo {
   private room: LKRoom | null = null;
   private listeners = new Set<(tracks: RoomTrack[]) => void>();
   private tracks = new Map<string, MediaStreamTrack>();
+  private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
 
   onTracks(cb: (tracks: RoomTrack[]) => void) {
@@ -123,11 +134,18 @@ class RoomVideo {
   }
 
   async join(roomId: string, selfId: string) {
+    if (this.room) return;
     this.selfId = selfId;
     try {
       const { token, url } = await fetchToken(`room:${roomId}`);
       const { Room, RoomEvent, Track } = await import("livekit-client");
-      const room = new Room();
+      const room = new Room({
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       this.room = room;
       room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
         if (track.kind === Track.Kind.Video) {
@@ -136,14 +154,23 @@ class RoomVideo {
         } else if (track.kind === Track.Kind.Audio) {
           const el = track.attach() as HTMLAudioElement;
           document.body.appendChild(el);
+          this.audioEls.set(participant.identity, el);
         }
       });
-      room.on(RoomEvent.TrackUnsubscribed, (_t, _p, participant) => {
-        this.tracks.delete(participant.identity);
-        this.emit();
+      room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+        if (track.kind === Track.Kind.Video) {
+          this.tracks.delete(participant.identity);
+          this.emit();
+          return;
+        }
+        track.detach().forEach((el) => el.remove());
+        this.audioEls.get(participant.identity)?.remove();
+        this.audioEls.delete(participant.identity);
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.tracks.delete(p.identity);
+        this.audioEls.get(p.identity)?.remove();
+        this.audioEls.delete(p.identity);
         this.emit();
       });
       await room.connect(url, token);
@@ -170,6 +197,8 @@ class RoomVideo {
 
   async leave() {
     this.tracks.clear();
+    this.audioEls.forEach((el) => el.remove());
+    this.audioEls.clear();
     this.emit();
     await this.room?.disconnect();
     this.room = null;
