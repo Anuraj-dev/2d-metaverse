@@ -12,6 +12,7 @@ x-backend-environment: &backend-environment
   LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
   ROOM_1_KEY: ${ROOM_1_KEY}
   ROOM_2_KEY: ${ROOM_2_KEY}
+  ROOM_3_KEY: ${ROOM_3_KEY}
   MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/space.json}
   TRUST_PROXY: "true"
 

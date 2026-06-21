@@ -39,8 +39,9 @@ const tokenB = await createUser(`smokeb_${suffix}`);
 
 const space = await api("/api/v1/space/1", { token: tokenA });
 assert.equal(space.status, 200);
-assert.equal(space.json.rooms.length, 2);
-assert.equal(space.json.rooms[0].seats.length, 4);
+assert.equal(space.json.rooms.length, 3);
+const room3 = space.json.rooms.find((room) => room.id === "3");
+assert.equal(room3?.seats.length, 4);
 
 const worldToken = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "world:1" } });
 assert.equal(worldToken.status, 200);
@@ -77,12 +78,11 @@ try {
   assert.ok(b.players.some((player) => player.id === a.selfId));
 
   await new Promise((resolve) => setTimeout(resolve, 100));
-  const candidateSeats = space.json.rooms.flatMap((room) =>
-    room.seats.map((seat) => ({ roomId: room.id, seatId: seat.id }))
-  );
-  const selected = candidateSeats.find(({ roomId, seatId }) => !occupiedSeats.has(`${roomId}:${seatId}`));
+  const selected = room3.seats
+    .map((seat) => ({ roomId: room3.id, seatId: seat.id }))
+    .find(({ roomId, seatId }) => !occupiedSeats.has(`${roomId}:${seatId}`));
   assert.ok(selected, "No free seat available for smoke test");
-  const roomKey = selected.roomId === "1" ? "1234" : "4321";
+  const roomKey = "3333";
 
   const badEntry = once(socketA, "room-enter-result");
   socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });

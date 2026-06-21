@@ -7,25 +7,33 @@ import { hashSecret } from "./password.js";
 const rooms = [
   {
     id: "1", name: "Meeting Room A", key: config.ROOM_1_KEY ?? "1234",
-    doorZone: { x: 96, y: 144, width: 32, height: 16 },
+    doorZone: { x: 576, y: 192, width: 32, height: 16 },
     seats: [
-      { id: 0, x: 80, y: 80, facing: "right" }, { id: 1, x: 144, y: 80, facing: "left" },
-      { id: 2, x: 112, y: 48, facing: "down" }, { id: 3, x: 112, y: 96, facing: "up" }
+      { id: 0, x: 568, y: 104, facing: "right" }, { id: 1, x: 632, y: 104, facing: "left" },
+      { id: 2, x: 600, y: 72, facing: "down" }, { id: 3, x: 600, y: 120, facing: "up" }
     ]
   },
   {
     id: "2", name: "Meeting Room B", key: config.ROOM_2_KEY ?? "4321",
-    doorZone: { x: 496, y: 144, width: 32, height: 16 },
+    doorZone: { x: 784, y: 192, width: 32, height: 16 },
     seats: [
-      { id: 0, x: 480, y: 80, facing: "right" }, { id: 1, x: 544, y: 80, facing: "left" },
-      { id: 2, x: 512, y: 48, facing: "down" }, { id: 3, x: 512, y: 96, facing: "up" }
+      { id: 0, x: 776, y: 104, facing: "right" }, { id: 1, x: 840, y: 104, facing: "left" },
+      { id: 2, x: 808, y: 72, facing: "down" }, { id: 3, x: 808, y: 120, facing: "up" }
+    ]
+  },
+  {
+    id: "3", name: "Meeting Room C", key: config.ROOM_3_KEY ?? "3333",
+    doorZone: { x: 992, y: 192, width: 32, height: 16 },
+    seats: [
+      { id: 0, x: 984, y: 104, facing: "right" }, { id: 1, x: 1048, y: 104, facing: "left" },
+      { id: 2, x: 1016, y: 72, facing: "down" }, { id: 3, x: 1016, y: 120, facing: "up" }
     ]
   }
 ] as const;
 
 export async function seed(): Promise<void> {
-  if (config.NODE_ENV === "production" && (!config.ROOM_1_KEY || !config.ROOM_2_KEY)) {
-    throw new Error("ROOM_1_KEY and ROOM_2_KEY are required when seeding production");
+  if (config.NODE_ENV === "production" && (!config.ROOM_1_KEY || !config.ROOM_2_KEY || !config.ROOM_3_KEY)) {
+    throw new Error("ROOM_1_KEY, ROOM_2_KEY, and ROOM_3_KEY are required when seeding production");
   }
   const client = await pool.connect();
   try {
@@ -53,7 +61,7 @@ export async function seed(): Promise<void> {
       }
     }
     await client.query("COMMIT");
-    console.log("Seeded space 1 with rooms 1 and 2");
+    console.log("Seeded space 1 with rooms 1, 2, and 3");
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
