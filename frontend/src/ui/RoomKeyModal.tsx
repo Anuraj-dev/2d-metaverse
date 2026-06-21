@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { bus } from "../game/eventBus";
 import { sharedNet } from "../net/shared";
 import { MOCK_ROOM_KEYS } from "../net/net";
+import { roomEnterErrorMessage } from "./roomEnter";
 
 export default function RoomKeyModal() {
   const [room, setRoom] = useState<{ roomId: string; name: string } | null>(
@@ -24,7 +25,7 @@ export default function RoomKeyModal() {
           bus.emit("room-entered", { roomId: p.roomId });
           setRoom(null);
         } else {
-          setError(p.reason === "full" ? "Room is full" : "Wrong key, try again");
+          setError(roomEnterErrorMessage(p.reason));
         }
       }
     );
@@ -62,9 +63,11 @@ export default function RoomKeyModal() {
           </button>
           <button type="submit">Enter</button>
         </div>
-        <div className="key-hint">
-          dev keys — Room {room.roomId}: <code>{MOCK_ROOM_KEYS[room.roomId]}</code>
-        </div>
+        {import.meta.env.DEV && (
+          <div className="key-hint">
+            dev keys — Room {room.roomId}: <code>{MOCK_ROOM_KEYS[room.roomId]}</code>
+          </div>
+        )}
       </form>
     </div>
   );

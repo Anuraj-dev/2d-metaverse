@@ -4,7 +4,7 @@ import { z } from "zod";
 import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
-import { redis } from "./redis.js";
+import { isRateLimitExceeded, redis } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import type { SeatRef } from "./seat-key.js";
 import { verifySecret } from "./password.js";
@@ -13,7 +13,8 @@ import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketDat
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
-const joinSchema = z.object({ token: z.string().min(1), spaceId: z.string().min(1).max(64) });
+const socketAuthSchema = z.object({ token: z.string().min(1) });
+const joinSchema = z.object({ spaceId: z.string().min(1).max(64) });
 const moveSchema = z.object({
   x: z.number().finite().min(0).max(100_000),
   y: z.number().finite().min(0).max(100_000),
@@ -23,8 +24,12 @@ const chatSchema = z.object({ text: z.string().trim().min(1).max(500) });
 const roomEnterSchema = z.object({ roomId: z.string().min(1).max(64), key: z.string().min(1).max(128) });
 const seatSitSchema = z.object({ roomId: z.string().min(1).max(64), seatId: z.number().int().nonnegative() });
 const LEAVE_GRACE_MS = 4_000;
+const JOIN_TIMEOUT_MS = 10_000;
+const ROOM_KEY_ATTEMPT_LIMIT = 5;
+const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = 5 * 60;
 
 const spaceChannel = (spaceId: string) => `space:${spaceId}`;
+const roomChannel = (roomId: string) => `room:${roomId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
 
@@ -65,6 +70,14 @@ function broadcastFreedSeat(io: ReturnType<typeof createGameServer>, spaceId: st
   if (seat) io.to(spaceChannel(spaceId)).emit("seat-update", { ...seat, playerId: null });
 }
 
+async function leaveCurrentRoom(socket: GameSocket): Promise<void> {
+  const { currentRoomId, playerId } = socket.data;
+  if (!currentRoomId || !playerId) return;
+  socket.leave(roomChannel(currentRoomId));
+  delete socket.data.currentRoomId;
+  await redis.del(`room-access:${playerId}:${currentRoomId}`);
+}
+
 export function createGameServer(httpServer: HttpServer) {
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
     cors: { origin: config.corsOrigins, credentials: false },
@@ -72,7 +85,21 @@ export function createGameServer(httpServer: HttpServer) {
     connectionStateRecovery: { maxDisconnectionDuration: LEAVE_GRACE_MS, skipMiddlewares: false }
   });
 
+  io.use((socket, next) => {
+    const parsed = socketAuthSchema.safeParse(socket.handshake.auth);
+    const user = parsed.success ? verifyToken(parsed.data.token) : null;
+    if (!user) {
+      next(new Error("unauthorized"));
+      return;
+    }
+    socket.data.userId = user.id;
+    socket.data.username = user.username;
+    next();
+  });
+
   io.on("connection", (socket) => {
+    let joined = false;
+    let joinTimeout: NodeJS.Timeout | undefined;
     if (socket.recovered && socket.data.playerId && socket.data.spaceId) {
       const timeout = pendingLeaves.get(socket.data.playerId);
       if (timeout) clearTimeout(timeout);
@@ -86,35 +113,38 @@ export function createGameServer(httpServer: HttpServer) {
         dir: "down",
         connectionId: socket.id
       }));
+      joined = true;
     }
 
+    if (!joined) joinTimeout = setTimeout(() => socket.disconnect(true), JOIN_TIMEOUT_MS);
+
     socket.on("join", safeHandler(async (payload) => {
-      if (socket.data.playerId) return;
+      if (joined) return;
       const parsed = joinSchema.safeParse(payload);
-      const user = parsed.success ? verifyToken(parsed.data.token) : null;
-      if (!parsed.success || !user || !(await spaceExists(parsed.data.spaceId))) {
+      const { userId, username } = socket.data;
+      if (!parsed.success || !userId || !username || !(await spaceExists(parsed.data.spaceId))) {
         socket.disconnect(true);
         return;
       }
+      joined = true;
+      if (joinTimeout) clearTimeout(joinTimeout);
 
-      const previousSocket = activeSockets.get(user.id);
-      activeSockets.set(user.id, socket);
+      const previousSocket = activeSockets.get(userId);
+      activeSockets.set(userId, socket);
       if (previousSocket && previousSocket.id !== socket.id) previousSocket.disconnect(true);
 
-      const pending = pendingLeaves.get(user.id);
+      const pending = pendingLeaves.get(userId);
       if (pending) clearTimeout(pending);
-      pendingLeaves.delete(user.id);
+      pendingLeaves.delete(userId);
 
-      socket.data.userId = user.id;
-      socket.data.username = user.username;
-      socket.data.playerId = user.id;
+      socket.data.playerId = userId;
       socket.data.spaceId = parsed.data.spaceId;
       await socket.join(spaceChannel(parsed.data.spaceId));
 
-      const players = (await presenceFor(parsed.data.spaceId)).filter((player) => player.id !== user.id);
-      const self: PlayerState = { id: user.id, name: user.username, x: 320, y: 288, dir: "down" };
-      await redis.hSet(`presence:${parsed.data.spaceId}`, user.id, JSON.stringify({ ...self, connectionId: socket.id }));
-      socket.emit("init", { selfId: user.id, players: [self, ...players] });
+      const players = (await presenceFor(parsed.data.spaceId)).filter((player) => player.id !== userId);
+      const self: PlayerState = { id: userId, name: username, x: 320, y: 288, dir: "down" };
+      await redis.hSet(`presence:${parsed.data.spaceId}`, userId, JSON.stringify({ ...self, connectionId: socket.id }));
+      socket.emit("init", { selfId: userId, players: [self, ...players] });
       socket.to(spaceChannel(parsed.data.spaceId)).emit("player-joined", self);
 
       const spaceRooms = await getSpace(parsed.data.spaceId);
@@ -137,11 +167,12 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = chatSchema.safeParse(payload);
       const { playerId, username, spaceId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
-      io.to(spaceChannel(spaceId)).emit("chat", {
+      const scope = currentRoomId ?? "world";
+      io.to(currentRoomId ? roomChannel(currentRoomId) : spaceChannel(spaceId)).emit("chat", {
         id: playerId,
         name: username,
         text: parsed.data.text,
-        scope: currentRoomId ?? "world"
+        scope
       });
     }));
 
@@ -149,6 +180,14 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = roomEnterSchema.safeParse(payload);
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
+      if (await isRateLimitExceeded(
+        `room-key-attempt:${playerId}:${parsed.data.roomId}`,
+        ROOM_KEY_ATTEMPT_LIMIT,
+        ROOM_KEY_ATTEMPT_WINDOW_SECONDS
+      )) {
+        socket.emit("room-enter-result", { ok: false, roomId: parsed.data.roomId, reason: "rate-limited" });
+        return;
+      }
       const room = await getRoom(parsed.data.roomId);
       if (!room || room.spaceId !== spaceId || !(await verifySecret(parsed.data.key, room.keyHash))) {
         socket.emit("room-enter-result", { ok: false, roomId: parsed.data.roomId, reason: "bad-key" });
@@ -160,9 +199,15 @@ export function createGameServer(httpServer: HttpServer) {
         socket.emit("room-enter-result", { ok: false, roomId: room.id, reason: "full" });
         return;
       }
+      if (socket.data.currentRoomId && socket.data.currentRoomId !== room.id) await leaveCurrentRoom(socket);
       socket.data.currentRoomId = room.id;
+      await socket.join(roomChannel(room.id));
       await redis.set(`room-access:${playerId}:${room.id}`, "1", { EX: 8 * 60 * 60 });
       socket.emit("room-enter-result", { ok: true, roomId: room.id });
+    }));
+
+    socket.on("room-leave", safeHandler(async () => {
+      await leaveCurrentRoom(socket);
     }));
 
     socket.on("seat-sit", safeHandler(async (payload) => {
@@ -194,6 +239,7 @@ export function createGameServer(httpServer: HttpServer) {
     }));
 
     socket.on("disconnect", () => {
+      if (joinTimeout) clearTimeout(joinTimeout);
       const { playerId, spaceId } = socket.data;
       if (!playerId || !spaceId) return;
       const oldTimeout = pendingLeaves.get(playerId);
@@ -205,6 +251,7 @@ export function createGameServer(httpServer: HttpServer) {
         const current = raw ? JSON.parse(raw) as { connectionId?: string } : null;
         if (current?.connectionId !== socket.id) return;
         await redis.hDel(`presence:${spaceId}`, playerId);
+        if (socket.data.currentRoomId) await redis.del(`room-access:${playerId}:${socket.data.currentRoomId}`);
         const previous = await standPlayer(playerId);
         broadcastFreedSeat(io, spaceId, previous);
         if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);

@@ -4,13 +4,9 @@
  *  - Private room `room:<roomId>`   : cam + mic, remote video surfaced for avatar bubbles.
  * LiveKit participant identity === playerId, so positions/seat events map 1:1 to tracks.
  */
-import {
-  Room,
-  RoomEvent,
-  Track,
-  type RemoteTrack,
-  type RemoteParticipant,
-} from "livekit-client";
+// `livekit-client` is loaded dynamically (only when audio/video is actually used)
+// so it stays out of the initial bundle. Types are erased type-only imports.
+import type { Room as LKRoom } from "livekit-client";
 import { serverBase } from "../net/auth";
 import { bus } from "../game/eventBus";
 import { proximityVolume } from "../game/proximity";
@@ -34,7 +30,7 @@ async function fetchToken(roomName: string): Promise<{ token: string; url: strin
 
 /* ----------------------------- World audio ----------------------------- */
 class WorldAudio {
-  private room: Room | null = null;
+  private room: LKRoom | null = null;
   private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
   private offPositions?: () => void;
@@ -43,11 +39,17 @@ class WorldAudio {
     this.selfId = selfId;
     try {
       const { token, url } = await fetchToken(`world:${spaceId}`);
+      const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room();
       this.room = room;
-      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) =>
-        this.onTrack(track, participant)
-      );
+      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+        if (track.kind !== Track.Kind.Audio) return;
+        const el = track.attach() as HTMLAudioElement;
+        el.dataset.identity = participant.identity;
+        el.volume = 0;
+        document.body.appendChild(el);
+        this.audioEls.set(participant.identity, el);
+      });
       room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach());
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.audioEls.get(p.identity)?.remove();
@@ -61,15 +63,6 @@ class WorldAudio {
     } catch (e) {
       console.warn("World audio unavailable:", e);
     }
-  }
-
-  private onTrack(track: RemoteTrack, participant: RemoteParticipant) {
-    if (track.kind !== Track.Kind.Audio) return;
-    const el = track.attach() as HTMLAudioElement;
-    el.dataset.identity = participant.identity;
-    el.volume = 0;
-    document.body.appendChild(el);
-    this.audioEls.set(participant.identity, el);
   }
 
   private updateVolumes(p: PositionsPayload) {
@@ -107,7 +100,7 @@ export interface RoomTrack {
 }
 
 class RoomVideo {
-  private room: Room | null = null;
+  private room: LKRoom | null = null;
   private listeners = new Set<(tracks: RoomTrack[]) => void>();
   private tracks = new Map<string, MediaStreamTrack>();
   private selfId = "";
@@ -133,6 +126,7 @@ class RoomVideo {
     this.selfId = selfId;
     try {
       const { token, url } = await fetchToken(`room:${roomId}`);
+      const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room();
       this.room = room;
       room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {

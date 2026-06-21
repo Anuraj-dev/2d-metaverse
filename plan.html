@@ -120,10 +120,12 @@
   <h3>4b. Socket.IO events</h3>
   <pre>
 // client → server
-join         { token, spaceId }
+// Socket.IO handshake auth: { token }
+join         { spaceId }
 move         { x, y, dir }                 // dir: 'down'|'left'|'right'|'up'
 chat         { text }
 room-enter   { roomId, key }               // server validates key
+room-leave   { }                           // leave private chat scope
 seat-sit     { roomId, seatId }
 seat-stand   { }
 
@@ -133,12 +135,13 @@ player-joined { id, name, x, y, dir }
 player-moved  { id, x, y, dir }                            // broadcast to space
 player-left   { id }
 chat          { id, name, text, scope }                    // scope:'world'|roomId
-room-enter-result { ok, roomId, reason? }                  // reason: 'bad-key'|'full'
+room-enter-result { ok, roomId, reason? }                  // reason: 'bad-key'|'full'|'rate-limited'
 seat-update   { roomId, seatId, playerId|null }            // occupied / freed
   </pre>
-  <p class="pill">Movement is broadcast per space; for scale use Socket.IO rooms (one per space, and
-    optionally one per private room for chat scoping). Throttle inbound <code>move</code> server-side
-    if needed; the client already throttles to ~10–15/s and interpolates remotes.</p>
+  <p class="pill">The JWT is mandatory in the Socket.IO handshake; the server rejects unauthenticated
+    connections and disconnects clients that do not join a valid space promptly. Movement is broadcast
+    per space. Private chat is emitted only to <code>room:&lt;roomId&gt;</code>; the client must emit
+    <code>room-leave</code> when the avatar exits the room. Room-key attempts are rate-limited server-side.</p>
 
   <h3>4c. Shared types — <code>contract.ts</code></h3>
   <p>The frontend keeps the canonical event/payload types in
@@ -209,6 +212,21 @@ seat-update   { roomId, seatId, playerId|null }            // occupied / freed
     <li>Exact key-validation flow + capacity/full handling on <code>room-enter</code>.</li>
     <li>Freeze <code>contract.ts</code> names/payloads before removing frontend mocks.</li>
   </ul>
+
+  <hr/>
+  <h2>10. Security &amp; Release TODO <span class="tag both">SHARED</span></h2>
+  <div class="callout"><b>Coordination rule:</b> the backend contract above is now authoritative. The frontend
+    must update its typed contract and real Socket.IO adapter in the same change before mock mode is disabled.</div>
+  <table>
+    <tr><th>Priority</th><th>Work</th><th>Owner / definition of done</th></tr>
+    <tr><td>P0</td><td>Production networking</td><td><span class="tag fe">FE</span> Mock mode is development-only. Production hosting supplies <code>VITE_SERVER_URL</code>; a production build without it fails clearly instead of simulating a world.</td></tr>
+    <tr><td>P0</td><td>Authentication UX</td><td><span class="tag fe">FE</span> Separate explicit sign-up and sign-in. Remove automatic signup and the <code>Guest</code>/<code>password123</code> fallback. Use the existing REST endpoints.</td></tr>
+    <tr><td>P0</td><td>Private room chat</td><td><span class="tag both">SHARED</span> <span class="tag be">BE</span> completed server room routing. <span class="tag fe">FE</span> send token in Socket.IO handshake, emit <code>join {spaceId}</code>, emit <code>room-leave</code> on room exit, and surface <code>rate-limited</code> cleanly.</td></tr>
+    <tr><td>P0</td><td>Socket abuse controls</td><td><span class="tag be">BE</span> completed handshake JWT validation, a 10-second join timeout, and Redis room-key throttling. <span class="tag fe">FE</span> handle <code>connect_error</code> by returning the player to sign-in.</td></tr>
+    <tr><td>P1</td><td>Lint gate</td><td><span class="tag fe">FE</span> replace current <code>any</code>/unused values with typed event payloads, then add <code>npm run lint</code> to frontend CI.</td></tr>
+    <tr><td>P1</td><td>Frontend payload</td><td><span class="tag fe">FE</span> lazy-load Phaser after entering the space and LiveKit only when media is used; record a bundle budget in CI.</td></tr>
+    <tr><td>P1</td><td>Critical-path tests</td><td><span class="tag both">SHARED</span> Backend Docker smoke covers handshake rejection and room-chat isolation. Frontend adds real-adapter tests for handshake auth, room leave, authentication UI, and rate-limit feedback.</td></tr>
+  </table>
 
 </div>
 </body>
