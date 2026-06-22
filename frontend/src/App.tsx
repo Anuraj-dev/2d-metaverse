@@ -9,6 +9,7 @@ import RoomKeyModal from "./ui/RoomKeyModal";
 import BubbleLayer from "./ui/BubbleLayer";
 import MediaControls from "./ui/MediaControls";
 import InteractionHint from "./ui/InteractionHint";
+import InteractableModal from "./ui/InteractableModal";
 import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
@@ -154,6 +155,7 @@ export default function App() {
         <TouchControls />
         <SfxBridge />
         <RoomKeyModal />
+        <InteractableModal />
         <ChatBox />
         <ChatToast />
         <div className={`presence ${connected ? "" : "pending"}`}>
