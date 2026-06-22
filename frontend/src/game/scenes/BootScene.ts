@@ -35,6 +35,12 @@ export default class BootScene extends Phaser.Scene {
       });
     }
 
+    // animated door sprite (48×96 per frame, 4 frames × 4 directions)
+    this.load.spritesheet("door", `${BASE}/doors/door1.png`, {
+      frameWidth: 48,
+      frameHeight: 96,
+    });
+
     // furniture (office interior)
     const furniture = [
       "chair", "chair_side", "chair_boss", "table_round", "table_small", "desk", "desk2",

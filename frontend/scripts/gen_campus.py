@@ -111,6 +111,58 @@ fill(ground, 1, 62, 55, 88, PARK_ACC)     # warm accent ground
 # ── COWORKING (SE) ───────────────────────────────────────────────────────
 fill(ground, 57, 62, 118, 88, FLOOR_ACC)  # indoor accent ground
 
+# ── PRIVATE MEETING ROOMS IN HQ ──────────────────────────────────────────────
+# 3 keyed rooms (IDs 4, 5, 6) along the north interior wall of the HQ building.
+# Each room: 13×10 outer tiles with a 2-tile door gap on the south wall.
+door_zones  = []
+room_bounds = []
+seats_objs  = []
+
+
+def make_room(room_id, x0, y0, x1, y1, door_x):
+    wall_rect(x0, y0, x1, y1)
+    door_gap(door_x, y1, width=2)
+
+    cx = (x0 + x1) // 2   # tile centre x
+    cy = (y0 + y1) // 2   # tile centre y
+
+    door_zones.append({
+        "id": 10000 + room_id, "name": f"room_{room_id}_door",
+        "x": door_x * TS, "y": y1 * TS,
+        "width": 2 * TS, "height": TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [{"name": "roomId", "type": "string", "value": str(room_id)}],
+    })
+    room_bounds.append({
+        "id": 11000 + room_id, "name": f"room_{room_id}_bounds",
+        "x": (x0 + 1) * TS, "y": (y0 + 1) * TS,
+        "width": (x1 - x0 - 1) * TS, "height": (y1 - y0 - 1) * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [{"name": "roomId", "type": "string", "value": str(room_id)}],
+    })
+    for seat_id, (tx, ty, facing) in enumerate([
+        (cx - 2, cy,     "right"),
+        (cx + 2, cy,     "left"),
+        (cx,     cy - 2, "down"),
+        (cx,     cy + 2, "up"),
+    ]):
+        seats_objs.append({
+            "id": 12000 + room_id * 10 + seat_id, "name": f"room_{room_id}_seat_{seat_id}",
+            "x": tx * TS, "y": ty * TS,
+            "width": TS, "height": TS,
+            "rotation": 0, "type": "", "visible": True,
+            "properties": [
+                {"name": "roomId",  "type": "string", "value": str(room_id)},
+                {"name": "seatId",  "type": "int",    "value": seat_id},
+                {"name": "facing",  "type": "string", "value": facing},
+            ],
+        })
+
+
+make_room(4, x0=31, y0=2, x1=43, y1=11, door_x=36)  # Room D
+make_room(5, x0=44, y0=2, x1=57, y1=11, door_x=49)  # Room E
+make_room(6, x0=58, y0=2, x1=71, y1=11, door_x=63)  # Room F
+
 # ── SPAWN ────────────────────────────────────────────────────────────────
 SPAWN_TX, SPAWN_TY = 60, 44              # center of plaza, on the E-W artery
 spawn_obj = {
@@ -248,11 +300,11 @@ tilemap = {
         {"id": 9,  "name": "decor_above", "type": "tilelayer",  "visible": True,
          "opacity": 1, "x": 0, "y": 0, "width": W, "height": H, "data": decor_above},
         {"id": 3,  "name": "doorZones",   "type": "objectgroup", "visible": True,
-         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": []},
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": door_zones},
         {"id": 4,  "name": "seats",       "type": "objectgroup", "visible": True,
-         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": []},
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": seats_objs},
         {"id": 7,  "name": "roomBounds",  "type": "objectgroup", "visible": True,
-         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": []},
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": room_bounds},
         {"id": 6,  "name": "furniture",   "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": furniture},
         {"id": 5,  "name": "spawn",       "type": "objectgroup", "visible": True,
@@ -275,4 +327,5 @@ print(f"  {W}×{H} tiles = {W*TS}×{H*TS} px")
 print(f"  ground tile types: {sorted(ground_tiles)}")
 print(f"  wall tiles placed: {wall_count}")
 print(f"  furniture objects: {len(furniture)}")
+print(f"  rooms: {len(door_zones)} doorZones, {len(room_bounds)} roomBounds, {len(seats_objs)} seats")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")
