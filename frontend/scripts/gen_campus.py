@@ -163,6 +163,63 @@ make_room(4, x0=31, y0=2, x1=43, y1=11, door_x=36)  # Room D
 make_room(5, x0=44, y0=2, x1=57, y1=11, door_x=49)  # Room E
 make_room(6, x0=58, y0=2, x1=71, y1=11, door_x=63)  # Room F
 
+# ── INTERACTABLES ─────────────────────────────────────────────────────────────
+# Each object is a 32×32 px zone (2×2 tiles) at the tile's top-left corner.
+# Properties: interactType (portal|info|whiteboard|arcade), label, and type-
+# specific payload (targetX/targetY for portal; content for info/whiteboard).
+interactables_objs = [
+    {
+        "id": 40001, "name": "portal_east",
+        "x": 27 * TS, "y": 43 * TS, "width": 2 * TS, "height": 2 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "portal"},
+            {"name": "label",        "type": "string", "value": "Shortcut → East"},
+            {"name": "targetX",      "type": "int",    "value": 80 * TS},
+            {"name": "targetY",      "type": "int",    "value": 43 * TS},
+        ],
+    },
+    {
+        "id": 40002, "name": "info_board_plaza",
+        "x": 18 * TS, "y": 38 * TS, "width": 2 * TS, "height": 2 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "info"},
+            {"name": "label",        "type": "string", "value": "Campus Map"},
+            {"name": "content",      "type": "string",
+             "value": (
+                 "Welcome to Hyprverse Campus!\n\n"
+                 "  HQ (north)       — meeting rooms D, E, F\n"
+                 "  Auditorium (NE)  — presentations & broadcast\n"
+                 "  Plaza (center)   — open collaboration\n"
+                 "  Cafe (SW)        — social lounge\n"
+                 "  Coworking (SE)   — open desk pods\n\n"
+                 "Tip: use the portal in the park\n"
+                 "to shortcut across campus!"
+             )},
+        ],
+    },
+    {
+        "id": 40003, "name": "whiteboard_hq",
+        "x": 55 * TS, "y": 19 * TS, "width": 2 * TS, "height": 2 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "whiteboard"},
+            {"name": "label",        "type": "string", "value": "Today's Agenda"},
+            {"name": "content",      "type": "string",
+             "value": (
+                 "Today's Agenda\n"
+                 "──────────────\n"
+                 "10:00  Sprint planning  (Room D)\n"
+                 "12:00  Lunch break\n"
+                 "14:00  Campus tour\n"
+                 "16:00  All-hands meeting\n\n"
+                 "Room keys: ask your host"
+             )},
+        ],
+    },
+]
+
 # ── SPAWN ────────────────────────────────────────────────────────────────
 SPAWN_TX, SPAWN_TY = 60, 44              # center of plaza, on the E-W artery
 spawn_obj = {
@@ -272,7 +329,7 @@ tilemap = {
     "type": "map",
     "version": "1.10",
     "tiledversion": "1.10.2",
-    "nextlayerid": 12,
+    "nextlayerid": 13,
     "nextobjectid": 30000,
     "tilesets": [
         {
@@ -307,6 +364,8 @@ tilemap = {
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": room_bounds},
         {"id": 6,  "name": "furniture",   "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": furniture},
+        {"id": 10, "name": "interactables", "type": "objectgroup", "visible": True,
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": interactables_objs},
         {"id": 5,  "name": "spawn",       "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown",
          "objects": [spawn_obj]},
@@ -328,4 +387,5 @@ print(f"  ground tile types: {sorted(ground_tiles)}")
 print(f"  wall tiles placed: {wall_count}")
 print(f"  furniture objects: {len(furniture)}")
 print(f"  rooms: {len(door_zones)} doorZones, {len(room_bounds)} roomBounds, {len(seats_objs)} seats")
+print(f"  interactables: {len(interactables_objs)} objects")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")
