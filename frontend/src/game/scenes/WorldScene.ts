@@ -3,6 +3,7 @@ import type { Dir, PlayerState } from "../../contract";
 import type { Net } from "../../net/net";
 import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
+import { activeMap } from "../maps";
 
 const SPEED = 120;
 const ZOOM = 2.2;
@@ -78,8 +79,10 @@ export default class WorldScene extends Phaser.Scene {
     const saved = localStorage.getItem("avatar");
     this.avatar = saved && CHARS.includes(saved) ? saved : "char1";
 
-    const map = this.make.tilemap({ key: "space" });
-    const tiles = map.addTilesetImage("floors_walls", "floors_walls")!;
+    const map = this.make.tilemap({ key: activeMap().key });
+    // A map may reference multiple tilesets; add each by its Tiled name (which
+    // equals the loaded image key per the maps registry convention).
+    const tiles = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
     map.createLayer("ground", tiles, 0, 0);
     const walls = map.createLayer("walls", tiles, 0, 0)!;
     walls.setCollisionByExclusion([-1]);
