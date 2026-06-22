@@ -19,6 +19,7 @@ const schema = z.object({
   ROOM_4_KEY: z.string().min(1).optional(),
   ROOM_5_KEY: z.string().min(1).optional(),
   ROOM_6_KEY: z.string().min(1).optional(),
+  STAGE_KEY: z.string().min(1).optional(),
   MAP_JSON_URL: z.string().default("/assets/maps/space.json"),
   TRUST_PROXY: z.enum(["true", "false"]).default("false")
 });
@@ -41,6 +42,7 @@ if (parsed.data.NODE_ENV === "production") {
     !parsed.data.ROOM_4_KEY || parsed.data.ROOM_4_KEY === "4444" ||
     !parsed.data.ROOM_5_KEY || parsed.data.ROOM_5_KEY === "5555" ||
     !parsed.data.ROOM_6_KEY || parsed.data.ROOM_6_KEY === "6666" ||
+    !parsed.data.STAGE_KEY || parsed.data.STAGE_KEY === "stage-presenter-123" ||
     parsed.data.DATABASE_URL.includes("metaverse:metaverse@");
   if (usesDevelopmentSecret) {
     console.error("Refusing to start production with development credentials");

@@ -59,6 +59,10 @@ export default class WorldScene extends Phaser.Scene {
   private seats: Seat[] = [];
   private interactables: InteractableDef[] = [];
   private currentInteractable: InteractableDef | null = null;
+  private stageZone: Phaser.Geom.Rectangle | null = null;
+  private presenterZone: Phaser.Geom.Rectangle | null = null;
+  private inStage = false;
+  private inPresenterSlot = false;
   private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
   private roomAreas: { roomId: string; rect: Phaser.Geom.Rectangle }[] = [];
   private enteredRooms = new Set<string>();
@@ -229,6 +233,15 @@ export default class WorldScene extends Phaser.Scene {
     this.interactables = parseInteractables(
       iaObjs as Parameters<typeof parseInteractables>[0]
     );
+
+    const stageObjs = map.getObjectLayer("stage")?.objects ?? [];
+    for (const o of stageObjs) {
+      const zoneType = prop(o, "zoneType");
+      if (zoneType === "stage")
+        this.stageZone = new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!);
+      else if (zoneType === "presenter")
+        this.presenterZone = new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!);
+    }
   }
 
   /** Tables (room centres), chairs (every seat, facing the table), and decor. */
@@ -573,6 +586,26 @@ export default class WorldScene extends Phaser.Scene {
         bus.emit("near-interactable", { id: nearIa.id, label: nearIa.label, type: nearIa.type, payload: nearIa.payload });
       else
         bus.emit("leave-interactable");
+    }
+
+    // stage zone (auditorium audience area)
+    if (this.stageZone) {
+      const nowInStage = Phaser.Geom.Rectangle.Contains(this.stageZone, fx, fy);
+      if (nowInStage !== this.inStage) {
+        this.inStage = nowInStage;
+        if (nowInStage) bus.emit("near-stage");
+        else bus.emit("leave-stage");
+      }
+    }
+
+    // presenter zone (podium — emit regardless of seated state)
+    if (this.presenterZone) {
+      const nowInPresenter = Phaser.Geom.Rectangle.Contains(this.presenterZone, fx, fy);
+      if (nowInPresenter !== this.inPresenterSlot) {
+        this.inPresenterSlot = nowInPresenter;
+        if (nowInPresenter) bus.emit("near-presenter-slot");
+        else bus.emit("leave-presenter-slot");
+      }
     }
 
     // seats (only matter once room entered)

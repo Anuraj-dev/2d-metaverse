@@ -220,6 +220,34 @@ interactables_objs = [
     },
 ]
 
+# ── STAGE (Auditorium) ───────────────────────────────────────────────────
+# stage_zone   — audience area (tiles 82-117, y=16-43)
+# presenter_zone — podium area (tiles 90-110, y=2-15)
+# screen        — point marking the broadcast screen (tile 99, 5)
+stage_objs = [
+    {
+        "id": 50001, "name": "stage_zone",
+        "x": 82 * TS, "y": 16 * TS,
+        "width": 36 * TS, "height": 28 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [{"name": "zoneType", "type": "string", "value": "stage"}],
+    },
+    {
+        "id": 50002, "name": "presenter_zone",
+        "x": 90 * TS, "y": 2 * TS,
+        "width": 21 * TS, "height": 14 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [{"name": "zoneType", "type": "string", "value": "presenter"}],
+    },
+    {
+        "id": 50003, "name": "screen",
+        "x": 99 * TS, "y": 5 * TS,
+        "width": 0, "height": 0,
+        "point": True, "rotation": 0, "type": "", "visible": True,
+        "properties": [],
+    },
+]
+
 # ── SPAWN ────────────────────────────────────────────────────────────────
 SPAWN_TX, SPAWN_TY = 60, 44              # center of plaza, on the E-W artery
 spawn_obj = {
@@ -329,8 +357,8 @@ tilemap = {
     "type": "map",
     "version": "1.10",
     "tiledversion": "1.10.2",
-    "nextlayerid": 13,
-    "nextobjectid": 30000,
+    "nextlayerid": 14,
+    "nextobjectid": 50004,
     "tilesets": [
         {
             "firstgid": 1, "name": "floors_walls",
@@ -366,6 +394,8 @@ tilemap = {
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": furniture},
         {"id": 10, "name": "interactables", "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": interactables_objs},
+        {"id": 11, "name": "stage",        "type": "objectgroup", "visible": True,
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": stage_objs},
         {"id": 5,  "name": "spawn",       "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown",
          "objects": [spawn_obj]},
@@ -388,4 +418,5 @@ print(f"  wall tiles placed: {wall_count}")
 print(f"  furniture objects: {len(furniture)}")
 print(f"  rooms: {len(door_zones)} doorZones, {len(room_bounds)} roomBounds, {len(seats_objs)} seats")
 print(f"  interactables: {len(interactables_objs)} objects")
+print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen)")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")

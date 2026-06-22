@@ -13,7 +13,10 @@ const credentialsSchema = z.object({
   username: z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9_-]+$/),
   password: z.string().min(8).max(128)
 });
-const liveKitSchema = z.object({ roomName: z.string().min(1).max(128) });
+const liveKitSchema = z.object({
+  roomName: z.string().min(1).max(128),
+  presenterKey: z.string().max(128).optional(),
+});
 
 export const api = Router();
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 40, standardHeaders: "draft-8", legacyHeaders: false });
@@ -73,7 +76,9 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
   }
   const user = (request as AuthenticatedRequest).user;
   const roomName = parsed.data.roomName;
+  let canPublish = true;
   let canPublishVideo = false;
+  let lkRoom = roomName;  // LiveKit room name (may differ from request roomName)
 
   if (roomName.startsWith("world:")) {
     const spaceId = roomName.slice("world:".length);
@@ -90,6 +95,22 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
       return;
     }
     canPublishVideo = true;
+  } else if (roomName.startsWith("stage:")) {
+    const spaceId = roomName.slice("stage:".length);
+    if (!spaceId || !(await spaceExists(spaceId))) {
+      response.status(404).json({ error: "space-not-found" });
+      return;
+    }
+    const pKey = parsed.data.presenterKey;
+    if (pKey !== undefined) {
+      if (!config.STAGE_KEY || pKey !== config.STAGE_KEY) {
+        response.status(403).json({ error: "bad-presenter-key" });
+        return;
+      }
+      canPublishVideo = true;  // presenter: cam + screen + mic
+    } else {
+      canPublish = false;  // audience: subscribe-only
+    }
   } else {
     response.status(400).json({ error: "invalid-room-name" });
     return;
@@ -101,12 +122,12 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
     ttl: "15m"
   });
   token.addGrant({
-    room: roomName,
+    room: lkRoom,
     roomJoin: true,
-    canPublish: true,
+    canPublish,
     canSubscribe: true,
-    canPublishData: true,
-    ...(canPublishVideo ? {} : { canPublishSources: [TrackSource.MICROPHONE] })
+    canPublishData: canPublish,
+    ...(canPublish && !canPublishVideo ? { canPublishSources: [TrackSource.MICROPHONE] } : {})
   });
   response.json({ livekitToken: await token.toJwt(), url: config.LIVEKIT_URL });
 });

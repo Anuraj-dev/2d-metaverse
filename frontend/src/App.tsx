@@ -10,6 +10,7 @@ import BubbleLayer from "./ui/BubbleLayer";
 import MediaControls from "./ui/MediaControls";
 import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
+import StageScreen from "./ui/StageScreen";
 import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
@@ -17,7 +18,7 @@ import { USE_MOCK } from "./net/auth";
 import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
 import { bus } from "./game/eventBus";
-import { worldAudio, roomVideo } from "./media/livekit";
+import { worldAudio, roomVideo, stageVideo } from "./media/livekit";
 import "./App.css";
 
 // Phaser (and the whole game scene) is heavy — load it only after entering.
@@ -97,6 +98,10 @@ export default function App() {
         if (selfId) await worldAudio.start(SPACE_ID, selfId);
       });
     });
+    const offNearStage = bus.on("near-stage", () => {
+      if (selfId) transition(() => stageVideo.joinAsAudience(SPACE_ID, selfId));
+    });
+    const offLeaveStage = bus.on("leave-stage", () => transition(() => stageVideo.leave()));
     startWorldAudio();
     return () => {
       disposed = true;
@@ -105,8 +110,11 @@ export default function App() {
       offSeat();
       offStood();
       offRoomLeft();
+      offNearStage();
+      offLeaveStage();
       void mediaTransition.finally(async () => {
         await roomVideo.leave();
+        await stageVideo.leave();
         await worldAudio.stop();
       });
     };
@@ -156,6 +164,7 @@ export default function App() {
         <SfxBridge />
         <RoomKeyModal />
         <InteractableModal />
+        <StageScreen />
         <ChatBox />
         <ChatToast />
         <div className={`presence ${connected ? "" : "pending"}`}>
