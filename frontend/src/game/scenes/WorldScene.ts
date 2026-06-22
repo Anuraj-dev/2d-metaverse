@@ -3,11 +3,11 @@ import type { Dir, PlayerState } from "../../contract";
 import type { Net } from "../../net/net";
 import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
+import { CHARS, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 
 const SPEED = 120;
 const ZOOM = 2.2;
-const CHARS = ["char1", "char2", "char3", "char4"];
 
 interface Remote {
   sprite: Phaser.GameObjects.Sprite;
@@ -77,7 +77,7 @@ export default class WorldScene extends Phaser.Scene {
     this.net = this.registry.get("net") as Net;
     CHARS.forEach((c) => createCharAnims(this, c));
     const saved = localStorage.getItem("avatar");
-    this.avatar = saved && CHARS.includes(saved) ? saved : "char1";
+    this.avatar = saved && isCharKey(saved) ? saved : "char1";
 
     const map = this.make.tilemap({ key: activeMap().key });
     // A map may reference multiple tilesets; add each by its Tiled name (which
