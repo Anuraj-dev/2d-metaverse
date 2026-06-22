@@ -135,6 +135,16 @@ try {
   socketA.emit("seat-stand");
   assert.deepEqual(await standSeen, { ...selected, playerId: null });
   assert.equal((await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: `room:${selected.roomId}` } })).status, 403);
+
+  // stage token: audience (no presenterKey) → 200
+  const stageAudience = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "stage:1" } });
+  assert.equal(stageAudience.status, 200);
+  assert.equal(typeof stageAudience.json.livekitToken, "string");
+
+  // stage token: bad presenterKey → 403
+  const stageBadKey = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "stage:1", presenterKey: "wrong-key" } });
+  assert.equal(stageBadKey.status, 403);
+  assert.equal(stageBadKey.json.error, "bad-presenter-key");
 } finally {
   socketA.disconnect();
   socketB.disconnect();
