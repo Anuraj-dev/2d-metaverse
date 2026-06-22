@@ -84,8 +84,15 @@ export default class WorldScene extends Phaser.Scene {
     // equals the loaded image key per the maps registry convention).
     const tiles = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
     map.createLayer("ground", tiles, 0, 0);
+    // Optional decorative layers below the player (no collision).
+    if (map.getLayer("ground_decor")) map.createLayer("ground_decor", tiles, 0, 0);
+    if (map.getLayer("decor_below"))  map.createLayer("decor_below",  tiles, 0, 0);
     const walls = map.createLayer("walls", tiles, 0, 0)!;
     walls.setCollisionByExclusion([-1]);
+    // decor_above renders over the player so tree canopies/awnings overlap correctly.
+    if (map.getLayer("decor_above")) {
+      map.createLayer("decor_above", tiles, 0, 0)!.setDepth(3000);
+    }
 
     this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
