@@ -54,6 +54,7 @@ export default class WorldScene extends Phaser.Scene {
   >();
 
   private doors: DoorZone[] = [];
+  private doorSprites = new Map<string, Phaser.GameObjects.Sprite>();
   private seats: Seat[] = [];
   private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
   private roomAreas: { roomId: string; rect: Phaser.Geom.Rectangle }[] = [];
@@ -76,6 +77,26 @@ export default class WorldScene extends Phaser.Scene {
   create() {
     this.net = this.registry.get("net") as Net;
     CHARS.forEach((c) => createCharAnims(this, c));
+
+    // Door open/close: 4 frames in the first row of door1.png (48×96 per frame)
+    this.anims.create({
+      key: "door-open",
+      frames: this.anims.generateFrameNumbers("door", { start: 0, end: 3 }),
+      frameRate: 8,
+      repeat: 0,
+    });
+    this.anims.create({
+      key: "door-close",
+      frames: [
+        { key: "door", frame: 3 },
+        { key: "door", frame: 2 },
+        { key: "door", frame: 1 },
+        { key: "door", frame: 0 },
+      ],
+      frameRate: 8,
+      repeat: 0,
+    });
+
     const saved = localStorage.getItem("avatar");
     this.avatar = saved && isCharKey(saved) ? saved : "char1";
 
@@ -156,11 +177,16 @@ export default class WorldScene extends Phaser.Scene {
     const doorObjs = map.getObjectLayer("doorZones")?.objects ?? [];
     for (const o of doorObjs) {
       const roomId = prop(o, "roomId") ?? "";
-      this.doors.push({
-        roomId,
-        name: o.name || `Room ${roomId}`,
-        rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!),
-      });
+      const rect = new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!);
+      this.doors.push({ roomId, name: o.name || `Room ${roomId}`, rect });
+
+      // Animated door sprite — scales to match the door gap width
+      const scale = rect.width / 48;
+      const sprite = this.add
+        .sprite(rect.centerX, rect.centerY, "door", 0)
+        .setScale(scale)
+        .setDepth(3500);
+      this.doorSprites.set(roomId, sprite);
     }
     const seatObjs = map.getObjectLayer("seats")?.objects ?? [];
     for (const o of seatObjs) {
@@ -282,7 +308,11 @@ export default class WorldScene extends Phaser.Scene {
   private wireUi() {
     bus.on("room-entered", (p: { roomId: string }) => {
       this.enteredRooms.add(p.roomId);
-      this.currentRoom = p.roomId; // membership starts at the door on key accept
+      this.currentRoom = p.roomId;
+      const door = this.doorSprites.get(p.roomId);
+      if (door) {
+        door.play("door-open").once("animationcomplete", () => door.setVisible(false));
+      }
     });
     bus.on("do-sit", () => this.trySit());
     bus.on("do-stand", () => this.stand());
@@ -577,6 +607,11 @@ export default class WorldScene extends Phaser.Scene {
     if (this.seated) this.stand();
     this.net.leaveRoom();
     bus.emit("room-left", { roomId });
+    const door = this.doorSprites.get(roomId);
+    if (door) {
+      door.setVisible(true);
+      door.play("door-close");
+    }
   }
 
   private handleInteractKey() {
