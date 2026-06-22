@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { FRAME_W, FRAME_H } from "../avatar";
+import { CHARS } from "../chars";
 import { activeMap } from "../maps";
 
 const BASE = "/assets";
@@ -27,8 +28,8 @@ export default class BootScene extends Phaser.Scene {
     }
 
     // character spritesheets
-    for (let i = 1; i <= 4; i++) {
-      this.load.spritesheet(`char${i}`, `${BASE}/characters/char${i}.png`, {
+    for (const c of CHARS) {
+      this.load.spritesheet(c, `${BASE}/characters/${c}.png`, {
         frameWidth: FRAME_W,
         frameHeight: FRAME_H,
       });

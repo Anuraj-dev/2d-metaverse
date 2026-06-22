@@ -1,10 +1,9 @@
 import { useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { signUp, signIn, USE_MOCK } from "../net/auth";
+import { CHARS } from "../game/chars";
 import Logo from "./Logo";
 import SphereScene from "./SphereScene";
-
-const CHARS = ["char1", "char2", "char3", "char4"];
 type Mode = "signin" | "signup";
 
 /**
