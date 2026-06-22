@@ -5,6 +5,7 @@ import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
 import { CHARS, isCharKey } from "../chars";
 import { activeMap } from "../maps";
+import { parseInteractables, findNear, type InteractableDef } from "../interactables";
 
 const SPEED = 120;
 const ZOOM = 2.2;
@@ -56,6 +57,8 @@ export default class WorldScene extends Phaser.Scene {
   private doors: DoorZone[] = [];
   private doorSprites = new Map<string, Phaser.GameObjects.Sprite>();
   private seats: Seat[] = [];
+  private interactables: InteractableDef[] = [];
+  private currentInteractable: InteractableDef | null = null;
   private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
   private roomAreas: { roomId: string; rect: Phaser.Geom.Rectangle }[] = [];
   private enteredRooms = new Set<string>();
@@ -221,6 +224,11 @@ export default class WorldScene extends Phaser.Scene {
         rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!),
       });
     }
+
+    const iaObjs = map.getObjectLayer("interactables")?.objects ?? [];
+    this.interactables = parseInteractables(
+      iaObjs as Parameters<typeof parseInteractables>[0]
+    );
   }
 
   /** Tables (room centres), chairs (every seat, facing the table), and decor. */
@@ -557,6 +565,16 @@ export default class WorldScene extends Phaser.Scene {
       else bus.emit("leave-door");
     }
 
+    // interactables
+    const nearIa = findNear(this.interactables, fx, fy);
+    if (nearIa !== this.currentInteractable) {
+      this.currentInteractable = nearIa;
+      if (nearIa)
+        bus.emit("near-interactable", { id: nearIa.id, label: nearIa.label, type: nearIa.type, payload: nearIa.payload });
+      else
+        bus.emit("leave-interactable");
+    }
+
     // seats (only matter once room entered)
     if (this.seated) return;
     let inSeat: Seat | null = null;
@@ -624,7 +642,18 @@ export default class WorldScene extends Phaser.Scene {
     this.interactQueued = false;
     if (pressed) {
       if (this.seated) this.stand();
+      else if (this.currentInteractable) this.triggerInteractable(this.currentInteractable);
       else this.trySit();
+    }
+  }
+
+  private triggerInteractable(ia: InteractableDef) {
+    if (ia.type === "portal") {
+      const tx = Number(ia.payload.targetX);
+      const ty = Number(ia.payload.targetY);
+      if (!isNaN(tx) && !isNaN(ty)) this.player.setPosition(tx, ty);
+    } else {
+      bus.emit("open-interactable", { type: ia.type, label: ia.label, payload: ia.payload });
     }
   }
 
