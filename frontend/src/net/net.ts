@@ -16,7 +16,8 @@ export interface Net {
   connect(token: string, spaceId: string): void;
   on<T = unknown>(event: string, cb: (payload: T) => void): () => void;
   move(x: number, y: number, dir: Dir): void;
-  chat(text: string): void;
+  chat(text: string, scope?: "world" | "room"): void;
+  whisper(to: string, text: string): void;
   enterRoom(roomId: string, key: string): void;
   leaveRoom(): void;
   sit(roomId: string, seatId: number): void;
@@ -47,6 +48,8 @@ const FORWARDED = [
   "player-moved",
   "player-left",
   "chat",
+  "whisper",
+  "whisper-fail",
   "room-enter-result",
   "seat-update",
 ] as const;
@@ -88,8 +91,11 @@ export class RealNet implements Net {
   move(x: number, y: number, dir: Dir) {
     this.socket.emit("move", { x, y, dir });
   }
-  chat(text: string) {
-    this.socket.emit("chat", { text });
+  chat(text: string, scope?: "world" | "room") {
+    this.socket.emit("chat", { text, scope });
+  }
+  whisper(to: string, text: string) {
+    this.socket.emit("whisper", { to, text });
   }
   enterRoom(roomId: string, key: string) {
     this.socket.emit("room-enter", { roomId, key });
@@ -159,24 +165,45 @@ export class MockNet implements Net {
   move() {
     /* local player; nothing to echo in mock */
   }
-  chat(text: string) {
-    this.bus.emit("chat", {
-      id: this.selfId,
-      name: this.name,
-      text,
-      scope: "world",
-    });
-    // a friendly NPC reply
+  chat(text: string, scope?: "world" | "room") {
+    const s = scope === "room" ? "room" : "world";
+    this.bus.emit("chat", { id: this.selfId, name: this.name, text, scope: s });
+    // a friendly NPC reply on the same channel
     setTimeout(
       () =>
         this.bus.emit("chat", {
           id: "npc1",
           name: NAMES[0],
           text: "hey! 👋",
-          scope: "world",
+          scope: s,
         }),
       800
     );
+  }
+  whisper(to: string, text: string) {
+    const target = this.npcs.find((n) => n.id === to);
+    const toName = target?.name ?? "someone";
+    // Mirror the server: echo the outgoing line back to the sender…
+    this.bus.emit("whisper", {
+      from: this.selfId,
+      fromName: this.name,
+      to,
+      toName,
+      text,
+    });
+    // …then a private reply from the target.
+    if (target)
+      setTimeout(
+        () =>
+          this.bus.emit("whisper", {
+            from: target.id,
+            fromName: target.name,
+            to: this.selfId,
+            toName: this.name,
+            text: "(psst) got your whisper 🤫",
+          }),
+        900
+      );
   }
   enterRoom(roomId: string, key: string) {
     const ok = ROOM_KEYS[roomId] === key;

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { FRAME_W, FRAME_H } from "../avatar";
+import { activeMap } from "../maps";
 
 const BASE = "/assets";
 
@@ -18,9 +19,12 @@ export default class BootScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.load.on("complete", () => loadBar.destroy());
 
-    // tilemap + tileset image
-    this.load.tilemapTiledJSON("space", `${BASE}/maps/space.json`);
-    this.load.image("floors_walls", `${BASE}/tilesets/floors_walls.png`);
+    // active tilemap + its tileset image(s)
+    const map = activeMap();
+    this.load.tilemapTiledJSON(map.key, `${BASE}/maps/${map.key}.json`);
+    for (const ts of map.tilesets) {
+      this.load.image(ts.key, `${BASE}/tilesets/${ts.file}`);
+    }
 
     // character spritesheets
     for (let i = 1; i <= 4; i++) {

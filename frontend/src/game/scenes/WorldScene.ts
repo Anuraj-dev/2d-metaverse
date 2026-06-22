@@ -3,6 +3,7 @@ import type { Dir, PlayerState } from "../../contract";
 import type { Net } from "../../net/net";
 import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
+import { activeMap } from "../maps";
 
 const SPEED = 120;
 const ZOOM = 2.2;
@@ -61,6 +62,7 @@ export default class WorldScene extends Phaser.Scene {
   private currentSeat: Seat | null = null;
   private seated = false;
   private currentRoom: string | null = null;
+  private lastPublicPosition = new Phaser.Math.Vector2();
   private avatar = "char1";
 
   private dir: Dir = "down";
@@ -77,8 +79,10 @@ export default class WorldScene extends Phaser.Scene {
     const saved = localStorage.getItem("avatar");
     this.avatar = saved && CHARS.includes(saved) ? saved : "char1";
 
-    const map = this.make.tilemap({ key: "space" });
-    const tiles = map.addTilesetImage("floors_walls", "floors_walls")!;
+    const map = this.make.tilemap({ key: activeMap().key });
+    // A map may reference multiple tilesets; add each by its Tiled name (which
+    // equals the loaded image key per the maps registry convention).
+    const tiles = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
     map.createLayer("ground", tiles, 0, 0);
     const walls = map.createLayer("walls", tiles, 0, 0)!;
     walls.setCollisionByExclusion([-1]);
@@ -98,6 +102,7 @@ export default class WorldScene extends Phaser.Scene {
 
     this.player = this.physics.add.sprite(sx, sy, this.avatar, idleFrame("down"));
     this.player.setSize(18, 14).setOffset(7, 16);
+    this.lastPublicPosition.set(sx, sy);
     this.physics.add.collider(this.player, walls);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
@@ -356,7 +361,7 @@ export default class WorldScene extends Phaser.Scene {
     g.fillStyle(0xffffff, 0.96);
     g.fillTriangle(-4, h / 2, 4, h / 2, 0, h / 2 + 5);
 
-    const offsetY = h / 2 + 5 + 18; // tail tip rests just above the head
+    const offsetY = h / 2 + 5 + 34; // tail tip clears the gold nameplate above the head
     const container = this.add
       .container(sprite.x, sprite.y - offsetY, [g, txt])
       .setDepth(10000);
@@ -400,13 +405,15 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private makeLabel(text: string) {
+    // Minecraft-style gold nameplate with a dark outline, always above the head.
     return this.add
       .text(0, 0, text, {
         fontFamily: "monospace",
         fontSize: "10px",
-        color: "#ffffff",
-        backgroundColor: "#00000080",
-        padding: { x: 3, y: 1 },
+        fontStyle: "bold",
+        color: "#ffd24a",
+        stroke: "#16100a",
+        strokeThickness: 3,
       })
       .setOrigin(0.5, 1)
       .setDepth(20);
@@ -415,6 +422,7 @@ export default class WorldScene extends Phaser.Scene {
   update(time: number) {
     this.player.setDepth(this.player.y);
     this.handleMovement(time);
+    this.keepLockedRoomsClosed();
     this.updateRemotes();
     this.updateLabels();
     this.updateChatBubbles(time);
@@ -527,6 +535,21 @@ export default class WorldScene extends Phaser.Scene {
         bus.emit("near-seat", { roomId: inSeat.roomId, seatId: inSeat.seatId });
       else bus.emit("leave-seat");
     }
+  }
+
+  /** Prevent walking through a door gap until the server has accepted its key. */
+  private keepLockedRoomsClosed() {
+    const room = this.roomAreas.find((area) =>
+      Phaser.Geom.Rectangle.Contains(area.rect, this.player.x, this.player.y + 8)
+    );
+    if (!room) {
+      this.lastPublicPosition.set(this.player.x, this.player.y);
+      return;
+    }
+    if (this.enteredRooms.has(room.roomId)) return;
+
+    this.player.setPosition(this.lastPublicPosition.x, this.lastPublicPosition.y);
+    this.player.setVelocity(0, 0);
   }
 
   /** Detect a genuine walk-out of the private room the player is currently inside. */

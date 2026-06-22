@@ -19,7 +19,12 @@ export interface PlayerState {
 export interface ClientToServer {
   join: (p: { spaceId: string }) => void;
   move: (p: { x: number; y: number; dir: Dir }) => void;
-  chat: (p: { text: string }) => void;
+  // `scope` lets a player inside a private room still broadcast to the world
+  // ("world") or force the room channel ("room"). Omitted = room if inside one,
+  // else world.
+  chat: (p: { text: string; scope?: "world" | "room" }) => void;
+  // Direct message routed only to the target player's socket (id, not name).
+  whisper: (p: { to: string; text: string }) => void;
   "room-enter": (p: { roomId: string; key: string }) => void;
   "room-leave": () => void;
   "seat-sit": (p: { roomId: string; seatId: number }) => void;
@@ -33,6 +38,16 @@ export interface ServerToClient {
   "player-moved": (p: { id: string; x: number; y: number; dir: Dir }) => void;
   "player-left": (p: { id: string }) => void;
   chat: (p: { id: string; name: string; text: string; scope: string }) => void;
+  // Delivered to both the recipient and (as an echo) the sender.
+  whisper: (p: {
+    from: string;
+    fromName: string;
+    to: string;
+    toName: string;
+    text: string;
+  }) => void;
+  // The target wasn't found / is offline — surfaced to the sender only.
+  "whisper-fail": (p: { name: string }) => void;
   "room-enter-result": (p: {
     ok: boolean;
     roomId: string;
