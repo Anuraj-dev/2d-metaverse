@@ -51,10 +51,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shellcheck deploy scripts
-        run: shellcheck deploy/*.sh deploy/aws/*.sh
+        run: shellcheck deploy/*.sh deploy/aws/*.sh deploy/test/*.sh
       - name: Alerter unit tests
         working-directory: deploy/alerter
         run: node --test
+      - name: Deploy script gate harness (stubbed docker/aws/curl)
+        run: bash deploy/test/deploy-gate.test.sh
 
   integration:
     name: Docker integration
