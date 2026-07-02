@@ -82,7 +82,17 @@ There are two vitest suites plus the CI smoke test:
   Connection env (defaults target the dev compose): `DATABASE_URL` (`postgres://metaverse:metaverse@localhost:5432/metaverse`) and `REDIS_URL` (`redis://localhost:6379/1` — logical DB 1, so test state never touches a dev server on DB 0). The suite fails fast with instructions if either service is unreachable. Isolation: each run migrates+seeds idempotently, flushes the dedicated Redis DB, uses per-run usernames it deletes afterwards, and runs the migration tests in a throwaway Postgres schema — so back-to-back runs are safe and no manual cleanup is needed.
 - **Smoke** — `npm run smoke` against a fully composed stack (`http://localhost:3001` or `SMOKE_URL`).
 
-In CI, the `test` job (no services) runs typecheck + unit tests + build; the Docker `integration` job composes the full stack, runs `npm run test:integration` against the published `5432`/`6379` host ports, then the smoke test. The dev compose host-port mappings are overridable via `POSTGRES_HOST_PORT`/`REDIS_HOST_PORT` if they clash locally.
+In CI, the `test` job (no services) runs lint + typecheck + unit tests + build; the Docker `integration` job composes the full stack, runs `npm run test:integration` against the published `5432`/`6379` host ports, then the smoke test. The dev compose host-port mappings are overridable via `POSTGRES_HOST_PORT`/`REDIS_HOST_PORT` if they clash locally.
+
+## Lint & typecheck
+
+- `npm run lint` — ESLint over `src` + `test` (flat config, `eslint.config.js`). The baseline is `typescript-eslint`'s **type-checked** recommended set (mirrors the frontend). Two enforced conventions on top:
+  - **`no-console` errors in `src`** (the `src/logger.ts` module is the one exception) — mechanically enforcing the pino logging convention, so a stray `console.log` fails CI, not review.
+  - **Vitest hygiene on `test/**`** (`@vitest/eslint-plugin`): `no-focused-tests` errors — a committed `.only` can never silently shrink the suite CI reports as green; `expect-expect`, `no-conditional-expect`, `no-standalone-expect` error; `no-disabled-tests` warns.
+  - The type-checked `no-unsafe-*`/`no-explicit-any` family is relaxed **for test files only** (they assert over inherently-`any` JSON and socket payloads) — production `src` keeps the full baseline.
+- `npm run typecheck` — `tsc -p tsconfig.json --noEmit` (production `src`). Lint's type info comes from `tsconfig.eslint.json`, which additionally covers `test/`.
+- **`.skip`-justification convention:** a skipped test must carry a comment on the line above saying *why* and *when it comes back* (e.g. `// SKIP: needs LiveKit stub — re-enable after #123`), so disabled tests stay visible debts.
+- Root convenience: from the repo root, `npm run lint` / `npm run typecheck` / `npm test` run the frontend and backend commands back to back (root `package.json`).
 
 ## Contract details
 

@@ -38,8 +38,9 @@ const netMock = vi.hoisted(() => {
   const net = {
     selfId: "",
     on: (ev: string, cb: (p: unknown) => void) => {
-      (handlers[ev] ??= new Set()).add(cb);
-      return () => handlers[ev].delete(cb);
+      const set = (handlers[ev] ??= new Set());
+      set.add(cb);
+      return () => set.delete(cb);
     },
     emit: (ev: string, p?: unknown) => handlers[ev]?.forEach((cb) => cb(p)),
     connect: vi.fn(),

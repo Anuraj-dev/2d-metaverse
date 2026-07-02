@@ -18,7 +18,9 @@ async function observePeer(
     return !!positions?.players.some((p) => !p.self && p.id === id);
   }, playerId);
   return observer.evaluate((id) => {
-    const positions = window.__testHook!.state.last["positions"] as {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    const positions = hook.state.last["positions"] as {
       players: { id: string; x: number; y: number }[];
     };
     const player = positions.players.find((p) => p.id === id)!;

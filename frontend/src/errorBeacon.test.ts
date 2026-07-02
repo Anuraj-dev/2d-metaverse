@@ -9,6 +9,18 @@ import {
 
 const fetchMock = vi.fn();
 
+/** Parsed JSON body POSTed by the nth captured fetch call; guards the index
+ *  (throws descriptively) instead of a bare non-null assertion. */
+function sentBody(callIndex = 0): { message: string; stack?: string; [k: string]: unknown } {
+  const call = fetchMock.mock.calls[callIndex];
+  if (!call) throw new Error(`expected a fetch call at index ${callIndex}, but none was made`);
+  return JSON.parse((call[1] as RequestInit).body as string) as {
+    message: string;
+    stack?: string;
+    [k: string]: unknown;
+  };
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
   fetchMock.mockReturnValue(Promise.resolve(new Response(null, { status: 204 })));
@@ -130,7 +142,7 @@ describe("installErrorBeacon", () => {
       window.dispatchEvent(event);
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      const body = sentBody();
       expect(body.message).toBe("rejected!");
     } finally {
       uninstall();
@@ -193,7 +205,7 @@ describe("installErrorBeacon", () => {
         }),
       ).not.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      const body = sentBody();
       expect(body.message).toBe("unhandled rejection: [unserializable]");
     } finally {
       uninstall();
@@ -213,7 +225,7 @@ describe("installErrorBeacon", () => {
       };
       expect(() => dispatchRejection(hostile)).not.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      const body = sentBody();
       // JSON.stringify ignores Symbol.toPrimitive/toString (no own enumerable
       // props here), so the exact expected serialization is "{}" — the point
       // is that no string-coercion path ever invokes the throwing methods.
@@ -230,7 +242,7 @@ describe("installErrorBeacon", () => {
       revoke();
       expect(() => dispatchRejection(proxy)).not.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      const body = sentBody();
       expect(body.message).toBe("unhandled rejection: [unserializable]");
       expect(body.stack).toBeUndefined();
     } finally {
@@ -247,7 +259,7 @@ describe("installErrorBeacon", () => {
         window.dispatchEvent(new ErrorEvent("error", { error: proxy })),
       ).not.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      const body = sentBody();
       expect(body.message).toBe("[unserializable]");
       expect(body.stack).toBeUndefined();
     } finally {
@@ -275,8 +287,8 @@ describe("installErrorBeacon", () => {
         window.dispatchEvent(new ErrorEvent("error", { error: new EvilError() })),
       ).not.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      const first = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
-      const second = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
+      const first = sentBody();
+      const second = sentBody(1);
       expect(first.message).toBe("[unserializable]");
       expect(first.stack).toBeUndefined();
       expect(second.message).toBe("[unserializable]");

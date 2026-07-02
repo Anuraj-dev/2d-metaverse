@@ -9,7 +9,9 @@ import { enterRoom, MAPS, signUpAndJoin, signInAndJoin, uniqueUser, walkTo } fro
 
 async function roomIdsFromWorldInfo(page: import("@playwright/test").Page): Promise<string[]> {
   return page.evaluate(() => {
-    const info = window.__testHook!.state.last["world-info"] as {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    const info = hook.state.last["world-info"] as {
       rooms: { id: string }[];
     };
     return info.rooms.map((room) => room.id).sort();

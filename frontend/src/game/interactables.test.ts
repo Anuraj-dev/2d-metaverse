@@ -32,6 +32,7 @@ describe("parseInteractables", () => {
     }]);
     expect(result).toHaveLength(1);
     const [p] = result;
+    if (!p) throw new Error("expected one parsed interactable");
     expect(p.type).toBe("portal");
     expect(p.id).toBe("portal_east");
     expect(p.label).toBe("Shortcut East");
@@ -49,8 +50,10 @@ describe("parseInteractables", () => {
         { name: "content", value: "Welcome!" },
       ],
     }]);
-    expect(result[0].type).toBe("info");
-    expect(result[0].payload.content).toBe("Welcome!");
+    const [board] = result;
+    if (!board) throw new Error("expected one parsed interactable");
+    expect(board.type).toBe("info");
+    expect(board.payload.content).toBe("Welcome!");
   });
 
   it("falls back to object name when label property is absent", () => {
@@ -58,7 +61,9 @@ describe("parseInteractables", () => {
       name: "my_whiteboard",
       properties: [{ name: "interactType", value: "whiteboard" }],
     }]);
-    expect(result[0].label).toBe("my_whiteboard");
+    const [whiteboard] = result;
+    if (!whiteboard) throw new Error("expected one parsed interactable");
+    expect(whiteboard.label).toBe("my_whiteboard");
   });
 
   it("excludes interactType and label from payload", () => {
@@ -70,9 +75,11 @@ describe("parseInteractables", () => {
         { name: "targetX", value: 100 },
       ],
     }]);
-    expect(result[0].payload).not.toHaveProperty("interactType");
-    expect(result[0].payload).not.toHaveProperty("label");
-    expect(result[0].payload.targetX).toBe(100);
+    const [portal] = result;
+    if (!portal) throw new Error("expected one parsed interactable");
+    expect(portal.payload).not.toHaveProperty("interactType");
+    expect(portal.payload).not.toHaveProperty("label");
+    expect(portal.payload.targetX).toBe(100);
   });
 });
 

@@ -27,6 +27,10 @@ test("wrong key shows error; repeated attempts hit the rate limit", async ({ pag
   );
 
   // Never entered the room.
-  const currentRoom = await page.evaluate(() => window.__testHook!.state.currentRoomId);
+  const currentRoom = await page.evaluate(() => {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    return hook.state.currentRoomId;
+  });
   expect(currentRoom).toBeNull();
 });

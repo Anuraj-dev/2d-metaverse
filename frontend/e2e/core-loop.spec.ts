@@ -14,7 +14,9 @@ test("happy path: signup → join → move → door → key → sit → chat", a
   const start = await selfPosition(page);
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction((x0) => {
-    const positions = window.__testHook!.state.last["positions"] as {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    const positions = hook.state.last["positions"] as {
       players: { self: boolean; x: number }[];
     };
     return positions.players.find((p) => p.self)!.x > x0 + 16;

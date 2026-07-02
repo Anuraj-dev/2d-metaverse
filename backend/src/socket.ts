@@ -78,7 +78,7 @@ function broadcastFreedSeat(io: ReturnType<typeof createGameServer>, spaceId: st
 async function leaveCurrentRoom(socket: GameSocket): Promise<void> {
   const { currentRoomId, playerId } = socket.data;
   if (!currentRoomId || !playerId) return;
-  socket.leave(roomChannel(currentRoomId));
+  await socket.leave(roomChannel(currentRoomId));
   delete socket.data.currentRoomId;
   await redis.del(`room-access:${playerId}:${currentRoomId}`);
   // A client must not remain connected to a room after its socket membership ends.
@@ -194,9 +194,9 @@ export function createGameServer(httpServer: HttpServer) {
         id: playerId,
         name: username,
         text: parsed.data.text,
-        scope: toWorld ? "world" : currentRoomId!
+        scope: toWorld ? "world" : currentRoomId
       };
-      io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId!)).emit("chat", message);
+      io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId)).emit("chat", message);
     }));
 
     socket.on("whisper", safeHandler("whisper", async (payload) => {

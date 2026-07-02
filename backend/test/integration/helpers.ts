@@ -41,7 +41,7 @@ export async function startServer(): Promise<TestServer> {
   return {
     baseUrl,
     close: async () => {
-      io.close();
+      void io.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   };
@@ -75,7 +75,7 @@ export async function api(
     },
     ...(body ? { body: JSON.stringify(body) } : {})
   });
-  let json: unknown = null;
+  let json: unknown;
   try {
     json = await response.json();
   } catch {

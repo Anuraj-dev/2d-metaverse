@@ -9,7 +9,11 @@ import { backendSha, signUpAndJoin } from "./helpers";
 test("frontend build SHA matches backend /health/ready SHA", async ({ page }) => {
   await signUpAndJoin(page, { map: "space" });
 
-  const frontendSha = await page.evaluate(() => window.__testHook!.sha);
+  const frontendSha = await page.evaluate(() => {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    return hook.sha;
+  });
   const serverSha = await backendSha(page);
 
   expect(frontendSha, "frontend must be stamped (VITE_GIT_SHA)").not.toBe("");

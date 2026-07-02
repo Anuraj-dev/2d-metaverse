@@ -42,11 +42,14 @@ sign-in.
 | Script | What it does |
 | --- | --- |
 | `npm run dev` | Vite dev server |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | `tsc -b` |
+| `npm run lint` | ESLint (app + tests; `@vitest/eslint-plugin` rules on `src/**/*.test.ts(x)`) |
+| `npm run typecheck` | `tsc -b` — app, node, **e2e, and unit tests** (`tsconfig.test.json`) |
 | `npm test` | Vitest unit tests |
 | `npm run build` | Typecheck + production build |
 | `npm run size` | Bundle-budget check (gzipped entry chunk) |
+
+Root convenience: from the repo root, `npm run lint` / `npm run typecheck` /
+`npm test` run the frontend and backend commands back to back (root `package.json`).
 
 ## Type safety (strict baseline)
 
@@ -61,9 +64,21 @@ runtime surprise. Keep it that way — never relax a flag or add a laxer tsconfi
 prefer a narrowing guard, an early return, or a schema-derived type. The rare
 genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a
 comment explaining why it is safe. Frontend **production (non-test) source under
-`src/` currently has zero non-null assertions**; unit-test files (`*.test.ts(x)`,
-excluded from `tsconfig.app.json`) keep theirs until PRD 6 strict-cleans the test
-projects.
+`src/` currently has zero non-null assertions**. Test files are strict-typechecked
+too — unit tests via `tsconfig.test.json` (folded into `tsc -b`), e2e specs via
+`tsconfig.e2e.json` — so they get the same treatment: prefer a narrowing guard, and
+for guaranteed test-harness values like `window.__testHook` use a helper that throws
+descriptively rather than a bare `!`.
+
+### Test linting (`@vitest/eslint-plugin`)
+
+`npm run lint` runs vitest hygiene rules over `src/**/*.test.ts(x)`:
+`no-focused-tests` (**error** — a committed `.only` can never silently shrink CI),
+`expect-expect`, `no-conditional-expect`, `no-standalone-expect` (errors), and
+`no-disabled-tests` (**warn**). **`.skip`-justification convention:** a skipped test
+must carry a comment on the line above saying *why* and *when it comes back* (e.g.
+`// SKIP: flaky under jsdom timers — re-enable after #123`), so disabled tests are
+visible debts, not invisible ones.
 
 **Required-loud vs optional-soft.** When a strict-mode `| undefined`/`| null`
 forces a decision, classify the value first:

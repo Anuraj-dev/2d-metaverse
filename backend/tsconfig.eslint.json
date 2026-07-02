@@ -1,0 +1,15 @@
+{
+  "//": "Type-checked-lint project: like tsconfig.json but also covers test/ and",
+  "// ": "the vitest config files, which the emit build (tsconfig.json) excludes.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ]
+}
