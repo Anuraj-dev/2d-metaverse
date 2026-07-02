@@ -12,11 +12,7 @@ import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone } from "../zone
 import { seatTransition, doorTransition } from "../seatDoor";
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
-import {
-  throttleReady,
-  POSITIONS_INTERVAL_MS,
-  MOVE_SEND_INTERVAL_MS,
-} from "../throttle";
+import { positionsEmitDue, moveSendDue } from "../throttle";
 
 const ZOOM = 2.2;
 
@@ -540,7 +536,7 @@ export default class WorldScene extends Phaser.Scene {
       this.player.setFrame(idleFrame(this.dir));
     }
 
-    if (throttleReady(time, this.lastSent, MOVE_SEND_INTERVAL_MS)) {
+    if (moveSendDue(time, this.lastSent)) {
       this.lastSent = time;
       this.net.move(Math.round(body.x), Math.round(body.y), this.dir);
     }
@@ -713,7 +709,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private emitPositions(time: number) {
-    if (!throttleReady(time, this.lastTick, POSITIONS_INTERVAL_MS)) return;
+    if (!positionsEmitDue(time, this.lastTick)) return;
     this.lastTick = time;
     const cam = this.cameras.main;
     const toScreen = (wx: number, wy: number) => ({
