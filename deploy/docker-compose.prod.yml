@@ -1,5 +1,13 @@
+# Log rotation on every service so a chatty container can never fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-backend-environment: &backend-environment
   NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
   PORT: 3001
   DATABASE_URL: ${DATABASE_URL}
   REDIS_URL: ${REDIS_URL}
@@ -24,6 +32,7 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -39,6 +48,7 @@ services:
   redis:
     image: redis:8-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -51,6 +61,7 @@ services:
   livekit:
     image: livekit/livekit-server:v1.9.1
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       redis:
         condition: service_healthy
@@ -87,6 +98,7 @@ services:
   setup:
     image: ${BACKEND_IMAGE}
     restart: "no"
+    logging: *default-logging
     environment: *backend-environment
     depends_on:
       postgres:
@@ -96,6 +108,7 @@ services:
   backend:
     image: ${BACKEND_IMAGE}
     restart: unless-stopped
+    logging: *default-logging
     environment: *backend-environment
     depends_on:
       postgres:
@@ -116,6 +129,7 @@ services:
     image: ${ALERTER_IMAGE:-metaverse-alerter:local}
     build: ./alerter
     restart: unless-stopped
+    logging: *default-logging
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
