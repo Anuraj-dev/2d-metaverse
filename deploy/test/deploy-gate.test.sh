@@ -35,6 +35,13 @@ make_stubs() {
 #!/usr/bin/env bash
 printf 'docker %s\n' "$*" >> "$STUB_LOG"
 case "$*" in
+  *"up -d --no-deps alerter"*)
+    # Record the DOCKER_GID this compose invocation would interpolate into
+    # group_add, so tests pin the script's `export DOCKER_GID` itself — not
+    # just its stdout echo of the value.
+    printf 'ALERTER_UP_DOCKER_GID=[%s]\n' "${DOCKER_GID-}" >> "$STUB_LOG"
+    exit 0
+    ;;
   *"run --rm setup"*)
     echo "stub setup output"
     exit "${STUB_SETUP_EXIT:-0}"
@@ -57,6 +64,11 @@ case "$*" in
     esac
     exit 0
     ;;
+  *"logs --tail"*)
+    # Emit a recognizable line so tests can assert the abort alert embeds it.
+    echo "STUB-CONTAINER-LOG-LINE EACCES /var/run/docker.sock"
+    exit 0
+    ;;
   *) exit 0 ;;
 esac
 STUB
@@ -77,11 +89,14 @@ STUB
   chmod +x "$bin/docker" "$bin/curl" "$bin/aws"
 }
 
-# Usage: run_scenario <setup_exit_code> <alerter_mode>
+# Usage: run_scenario <setup_exit_code> <alerter_mode> [docker_sock] [docker_gid]
 # Sets SCENARIO_RC, SCENARIO_LOG (stub invocations), SCENARIO_OUT (script
 # output), SCENARIO_APP (the app dir, for release-state assertions).
+# docker_sock overrides DOCKER_SOCK so the DOCKER_GID derivation is testable
+# without touching the host's real /var/run/docker.sock; docker_gid presets
+# DOCKER_GID (empty = unset, letting the script derive it).
 run_scenario() {
-  local setup_exit=$1 alerter_mode=$2
+  local setup_exit=$1 alerter_mode=$2 docker_sock=${3:-/var/run/docker.sock} docker_gid=${4:-}
   local work
   work=$(mktemp -d)
   WORK_DIRS+=("$work")
@@ -96,13 +111,22 @@ TELEGRAM_CHAT_ID=123456
 TELEGRAM_API_BASE=http://telegram.stub
 ENV
 
+  # DOCKER_GID is only placed in the environment when a preset is requested:
+  # an exported-but-empty DOCKER_GID would leak the assignment to child
+  # processes even without the script's own `export`, hiding a missing export
+  # from the scenario-5/6 assertions.
+  local gid_env=()
+  [[ -n "$docker_gid" ]] && gid_env=("DOCKER_GID=$docker_gid")
+
   local rc=0
+  env -u DOCKER_GID ${gid_env[@]+"${gid_env[@]}"} \
   PATH="$work/bin:$PATH" \
-  APP_DIR=$app_dir \
-  STUB_LOG=$work/stub.log \
-  STUB_STATE=$work/state \
-  STUB_SETUP_EXIT=$setup_exit \
-  STUB_ALERTER_MODE=$alerter_mode \
+  APP_DIR="$app_dir" \
+  STUB_LOG="$work/stub.log" \
+  STUB_STATE="$work/state" \
+  STUB_SETUP_EXIT="$setup_exit" \
+  STUB_ALERTER_MODE="$alerter_mode" \
+  DOCKER_SOCK="$docker_sock" \
   SKIP_SSM_ENV=1 SKIP_ECR_LOGIN=1 SKIP_PULL=1 ALERTER_HEALTH_TIMEOUT=1 \
     bash "$DEPLOY_SCRIPT" registry.stub/metaverse:cafe123 eu-west-1 /stub/param registry.stub/metaverse:alerter-cafe123 \
     > "$work/out.log" 2>&1 || rc=$?
@@ -142,6 +166,7 @@ assert_no_stub "run --rm setup" "setup must NOT run when the alerter gate fails"
 assert_no_stub "up -d --no-deps backend" "backend must NOT be switched when the alerter gate fails"
 assert_not_recorded
 assert_stub "sendMessage" "a Telegram alert must be attempted when the alerter gate fails"
+assert_stub "STUB-CONTAINER-LOG-LINE" "the alerter abort alert must embed the container's log excerpt"
 
 echo "Scenario 2: alerter never becomes healthy"
 run_scenario 0 never-healthy
@@ -150,6 +175,7 @@ assert_no_stub "run --rm setup" "setup must NOT run when the alerter never becom
 assert_no_stub "up -d --no-deps backend" "backend must NOT be switched when the alerter never becomes healthy"
 assert_not_recorded
 assert_stub "sendMessage" "a Telegram alert must be attempted when the alerter never becomes healthy"
+assert_stub "STUB-CONTAINER-LOG-LINE" "the alerter abort alert must embed the container's log excerpt"
 
 echo "Scenario 3: setup container exits 7 (alerter healthy)"
 run_scenario 7 healthy
@@ -168,6 +194,29 @@ grep -q "Deployed registry.stub/metaverse:cafe123" "$SCENARIO_OUT" \
   || fail "success output must report the deployed image"
 [[ -f "$SCENARIO_APP/.backend-image" && "$(<"$SCENARIO_APP/.backend-image")" == "registry.stub/metaverse:cafe123" ]] \
   || fail "successful deploy must record the image in .backend-image"
+
+echo "Scenario 5: DOCKER_GID is derived from the docker socket's group"
+# A regular file stands in for the socket — `stat -c %g` reports its group
+# the same way, so the derivation is exercised without a real docker.sock.
+FAKE_SOCK=$(mktemp)
+WORK_DIRS+=("$FAKE_SOCK")
+SOCK_GID=$(stat -c '%g' "$FAKE_SOCK")
+run_scenario 0 healthy "$FAKE_SOCK"
+assert_rc 0 "happy path with an overridden socket must still exit 0"
+assert_stub "ALERTER_UP_DOCKER_GID=\[$SOCK_GID\]" \
+  "the compose alerter invocation must see the derived DOCKER_GID ($SOCK_GID) in its environment"
+
+echo "Scenario 6: DOCKER_GID falls back to 109 when the socket is absent"
+run_scenario 0 healthy /nonexistent/docker.sock
+assert_rc 0 "happy path with a missing socket must still exit 0"
+assert_stub "ALERTER_UP_DOCKER_GID=\[109\]" \
+  "the compose alerter invocation must see the 109 fallback DOCKER_GID in its environment"
+
+echo "Scenario 7: a preset DOCKER_GID overrides derivation"
+run_scenario 0 healthy "$FAKE_SOCK" 424242
+assert_rc 0 "happy path with a preset DOCKER_GID must still exit 0"
+assert_stub "ALERTER_UP_DOCKER_GID=\[424242\]" \
+  "a non-empty preset DOCKER_GID must be preserved untouched (not re-derived from the socket)"
 
 if [[ "$FAILURES" -gt 0 ]]; then
   echo "$FAILURES assertion(s) failed" >&2

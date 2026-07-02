@@ -133,6 +133,13 @@ services:
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    # The image runs as `node` (uid 1000), but the mounted docker.sock is
+    # root:docker mode 0660, so the container must be a member of the socket's
+    # group to read the events stream — otherwise its /events subscription fails
+    # with EACCES and the healthcheck never passes. deploy-remote.sh derives
+    # DOCKER_GID from the socket on the box; 109 is the common Debian default.
+    group_add:
+      - "${DOCKER_GID:-109}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
