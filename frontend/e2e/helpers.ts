@@ -163,10 +163,16 @@ export async function signUpAndJoin(
 async function waitForWorld(page: Page): Promise<void> {
   const handle = await page.waitForFunction(
     () => {
-      if (
-        window.__testHook?.state.last["world-info"] &&
-        window.__testHook?.state.last["positions"]
-      ) {
+      // world-info/positions prove the LOCAL game loop booted; the self
+      // player's id only becomes truthy once the socket join/init round-trip
+      // completed (net.selfId). Under CI CPU pressure the local world can
+      // boot seconds before the socket init lands — reading ids before that
+      // yields undefined and poisons every subsequent id-based assertion.
+      const positions = window.__testHook?.state.last["positions"] as
+        | { players: { self: boolean; id?: string }[] }
+        | undefined;
+      const self = positions?.players.find((p) => p.self);
+      if (window.__testHook?.state.last["world-info"] && self?.id) {
         return "ok";
       }
       const error = document.querySelector(".console-error")?.textContent;
@@ -212,12 +218,18 @@ export async function selfPosition(page: Page): Promise<{ x: number; y: number }
 
 /** Self player id (from the positions payload). */
 export async function selfId(page: Page): Promise<string> {
-  return page.evaluate(() => {
+  const id = await page.evaluate(() => {
     const positions = window.__testHook!.state.last["positions"] as {
-      players: { id: string; self: boolean }[];
+      players: { id?: string; self: boolean }[];
     };
-    return positions.players.find((p) => p.self)!.id;
+    return positions.players.find((p) => p.self)?.id ?? null;
   });
+  if (!id) {
+    throw new Error(
+      "selfId: socket init has not completed (self id missing from positions)",
+    );
+  }
+  return id;
 }
 
 /**

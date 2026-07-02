@@ -56,8 +56,22 @@ async function expectChatSeen(
 }
 
 test("two players see each other move and chat (both directions)", async ({ browser }) => {
+  // Two live game contexts on one CI runner is roughly double the work of
+  // every other scenario, so this test gets a proportionate budget (the waits
+  // themselves stay event-driven).
+  test.setTimeout(120_000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
+  // Media is out of scope here (livekit.spec.ts owns it). Refuse the LiveKit
+  // token in both contexts: worldAudio.start() catches the failed fetch and
+  // gives up cleanly, which spares the CI runner the livekit-client reconnect
+  // storm (two contexts retrying RTC against the dev server starves the
+  // Phaser frame loops and blows the test budget).
+  for (const context of [contextA, contextB]) {
+    await context.route("**/api/v1/livekit/token", (route) =>
+      route.fulfill({ status: 403, json: { error: "e2e-media-disabled" } }),
+    );
+  }
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
   try {
