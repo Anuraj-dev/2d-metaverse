@@ -86,7 +86,7 @@ export async function seed(): Promise<void> {
       }
     }
     await client.query("COMMIT");
-    console.log("Seeded space 1 with rooms 1, 2, and 3");
+    console.log(`Seeded space 1 with ${rooms.length} rooms (1 through 6)`);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

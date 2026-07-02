@@ -1,0 +1,11 @@
+{
+  "name": "metaverse-alerter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Docker events watchdog that alerts to Telegram on container failures.",
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "node --test"
+  }
+}

@@ -11,9 +11,25 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The API and Socket.IO server are at `http://localhost:3001`; LiveKit signaling is at `ws://localhost:7880`. The setup container applies migrations and seeds space `1`, rooms `1`/`2`/`3`, their map coordinates, and four seats each.
+The API and Socket.IO server are at `http://localhost:3001`; LiveKit signaling is at `ws://localhost:7880`. The setup container applies migrations and seeds space `1`, rooms `1`–`6`, their map coordinates, and their seats.
 
-Default development room keys are `1234`, `4321`, and `3333`. Never use those defaults in production.
+Default development room keys are `1234`, `4321`, `3333`, `4444`, `5555`, and `6666` for rooms 1–6. The auditorium stage uses a separate `STAGE_KEY` (dev default `stage-presenter-123`). Never use any of these defaults in production — production seeding refuses to run unless `ROOM_1_KEY` through `ROOM_6_KEY` are all set.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `NODE_ENV`, `PORT` | Runtime mode and listen port. |
+| `DATABASE_URL`, `REDIS_URL` | Postgres and Redis connection strings. |
+| `JWT_SECRET`, `JWT_TTL` | Auth token signing secret and lifetime. |
+| `CORS_ORIGINS` | Comma-separated allowed frontend origins. |
+| `LIVEKIT_URL`, `LIVEKIT_API_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | LiveKit client URL, server-to-server URL, and credentials. |
+| `ROOM_1_KEY` … `ROOM_6_KEY` | Join keys for the six private rooms (required in production). |
+| `STAGE_KEY` | Presenter key for the auditorium stage broadcast. |
+| `MAP_JSON_URL` | Path/URL the client loads the map from. |
+| `TRUST_PROXY` | `true` behind the production Nginx proxy. |
+| `GIT_SHA` | Build stamp surfaced in `/health/live` and `/health/ready` (baked into the image at build time). |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Consumed by the deploy watchdog/alerter, not the backend itself (see `deploy/README.md`). |
 
 ## Contract details
 

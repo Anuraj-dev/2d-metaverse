@@ -148,7 +148,7 @@ done
 
 BOOTSTRAP_B64=$(base64 -w0 "$(dirname "$0")/bootstrap-host.sh")
 jq -n --arg script "$BOOTSTRAP_B64" '{commands:[("echo " + $script + " | base64 -d > /tmp/metaverse-bootstrap.sh"),"chmod 700 /tmp/metaverse-bootstrap.sh","/tmp/metaverse-bootstrap.sh"]}' > /tmp/metaverse-bootstrap-command.json
-for attempt in $(seq 1 30); do
+for _ in $(seq 1 30); do
   PING_STATUS=$(aws ssm describe-instance-information \
     --region "$AWS_REGION" \
     --filters "Key=InstanceIds,Values=$EC2_INSTANCE_ID" \
