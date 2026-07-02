@@ -43,7 +43,14 @@ async function main() {
     return;
   }
 
-  await sendTelegram(TOKEN, CHAT_ID, `🟢 alerter online ${HOSTNAME}`);
+  const announced = await sendTelegram(TOKEN, CHAT_ID, `🟢 alerter online ${HOSTNAME}`);
+  if (!announced) {
+    // A configured token that cannot deliver means alerting is broken. Exit
+    // non-zero so the compose restart policy retries and the deploy gate's
+    // running-container check surfaces persistent failure loudly.
+    console.error("alerter: startup announcement failed with a configured token — exiting");
+    process.exit(1);
+  }
   console.log(`alerter: online on ${HOSTNAME}, subscribing to Docker events`);
 
   // Reconnect loop: if the events stream ends or errors, wait and resubscribe.

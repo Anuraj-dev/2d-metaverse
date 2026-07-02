@@ -25,11 +25,16 @@ send_alert() {
     echo "WARNING: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set; skipping Telegram alert" >&2
     return 0
   fi
-  curl --silent --show-error --max-time 10 \
+  # --fail-with-body makes non-2xx responses exit non-zero (body kept for
+  # diagnosis); --retry 1 retries once on transient failures. The request URL
+  # contains the bot token, so it is never echoed — only the response body is.
+  local response
+  if ! response=$(curl --silent --fail-with-body --max-time 10 --retry 1 \
     --request POST "${TELEGRAM_API_BASE}/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-    --data-urlencode "text=${message}" \
-    >/dev/null || echo "WARNING: Telegram alert POST failed" >&2
+    --data-urlencode "text=${message}" 2>/dev/null); then
+    echo "WARNING: Telegram alert POST failed (response: ${response:-<none>})" >&2
+  fi
 }
 
 if [[ "$SKIP_SSM_ENV" != "1" ]]; then
@@ -135,12 +140,36 @@ printf '%s\n' "$IMAGE" > .backend-image
 update_image_history
 prune_local_release_images
 echo "Retained release images: $(paste -sd ', ' "$IMAGE_HISTORY_FILE")"
-echo "Deployed $IMAGE"
+
+# Watchdog deployment is a hard gate: a deploy that leaves the box without a
+# running alerter is a failed deploy (the exact silent-failure mode this
+# script exists to eliminate). Each step returns non-zero on failure.
+deploy_alerter() {
+  if [[ "$SKIP_PULL" != "1" ]]; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull alerter || return 1
+  fi
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps alerter || return 1
+  # The alerter exits non-zero if a configured-token startup announcement
+  # fails, so require the container to still be running after a grace period.
+  local attempt
+  for attempt in $(seq 1 "${ALERTER_START_ATTEMPTS:-5}"); do
+    [[ "$attempt" -gt 1 ]] && sleep 2
+    if [[ -n "$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps --status running --quiet alerter)" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 if [[ "$SKIP_ALERTER" != "1" && -n "$ALERTER_IMAGE" ]]; then
   export ALERTER_IMAGE
-  if [[ "$SKIP_PULL" != "1" ]]; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull alerter || echo "WARNING: alerter pull failed" >&2
+  if ! deploy_alerter; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50 alerter || true
+    send_alert "$(printf '🔴 Deploy failed on %s: watchdog alerter (%s) failed to pull/start or is not running; deploy for %s treated as failed.' \
+      "$(hostname)" "$ALERTER_IMAGE" "$IMAGE")"
+    exit 1
   fi
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps alerter || echo "WARNING: alerter failed to start" >&2
+  echo "Alerter watchdog running"
 fi
+
+echo "Deployed $IMAGE"
