@@ -99,22 +99,36 @@ function safeStringProp(source: unknown, key: "message" | "stack"): string | und
 }
 
 /**
- * Fully non-throwing normalization. Never blindly coerce an arbitrary reason:
- * a throwing `toJSON`, `toString`, or `Symbol.toPrimitive` would otherwise
- * escape the listener and make the beacon emit its own error event (self-loop).
+ * Non-throwing `instanceof Error`. A revoked Proxy (or one with a throwing
+ * `getPrototypeOf` trap) throws from the instanceof check itself.
+ */
+function isError(value: unknown): value is Error {
+  try {
+    return value instanceof Error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fully non-throwing normalization. Never blindly coerce or inspect an
+ * arbitrary reason outside a fallback boundary: throwing `toJSON`/`toString`/
+ * `Symbol.toPrimitive`, hostile getters, and even `instanceof` on a revoked
+ * Proxy would otherwise escape the listener — and the event must still yield
+ * the fallback payload rather than being dropped.
  */
 function describeRejectionReason(reason: unknown): { message: string; stack?: string } {
-  if (typeof reason === "string") return { message: reason || UNSERIALIZABLE };
-  if (reason instanceof Error) {
-    const stack = safeStringProp(reason, "stack");
-    return { message: safeStringProp(reason, "message") ?? UNSERIALIZABLE, ...(stack ? { stack } : {}) };
-  }
-  // Primitives coerce without invoking user code.
-  if (reason === null || reason === undefined || typeof reason === "number" || typeof reason === "boolean" || typeof reason === "bigint") {
-    return { message: `unhandled rejection: ${String(reason)}` };
-  }
   try {
-    // May invoke a user-defined toJSON — keep it inside the try.
+    if (typeof reason === "string") return { message: reason || UNSERIALIZABLE };
+    // Primitives coerce without invoking user code.
+    if (reason === null || reason === undefined || typeof reason === "number" || typeof reason === "boolean" || typeof reason === "bigint") {
+      return { message: `unhandled rejection: ${String(reason)}` };
+    }
+    if (isError(reason)) {
+      const stack = safeStringProp(reason, "stack");
+      return { message: safeStringProp(reason, "message") ?? UNSERIALIZABLE, ...(stack ? { stack } : {}) };
+    }
+    // May invoke a user-defined toJSON, or throw on a revoked Proxy.
     return { message: `unhandled rejection: ${JSON.stringify(reason) ?? UNSERIALIZABLE}` };
   } catch {
     return { message: `unhandled rejection: ${UNSERIALIZABLE}` };
@@ -153,12 +167,21 @@ export function installErrorBeacon(options: BeaconOptions): () => void {
   // would generate the next error event itself.
   const onError = (event: ErrorEvent) => {
     try {
-      const error = event.error as unknown;
-      const stack = error instanceof Error ? safeStringProp(error, "stack") : undefined;
-      const message =
-        (typeof event.message === "string" && event.message) ||
-        (error instanceof Error ? safeStringProp(error, "message") : undefined) ||
-        UNSERIALIZABLE;
+      // Same fallback boundary as rejections: even if inspecting event.error
+      // fails at any step (revoked Proxy, hostile getters), the event must
+      // still be reported with the fallback text, never dropped.
+      let stack: string | undefined;
+      let errorMessage: string | undefined;
+      try {
+        const error = event.error as unknown;
+        if (isError(error)) {
+          stack = safeStringProp(error, "stack");
+          errorMessage = safeStringProp(error, "message");
+        }
+      } catch {
+        /* fall through to the fallback message */
+      }
+      const message = (typeof event.message === "string" && event.message) || errorMessage || UNSERIALIZABLE;
       report(message, stack);
     } catch {
       /* never let the beacon itself throw */

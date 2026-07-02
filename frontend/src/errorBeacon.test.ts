@@ -214,7 +214,42 @@ describe("installErrorBeacon", () => {
       expect(() => dispatchRejection(hostile)).not.toThrow();
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
-      expect(body.message).toContain("unhandled rejection:");
+      // JSON.stringify ignores Symbol.toPrimitive/toString (no own enumerable
+      // props here), so the exact expected serialization is "{}" — the point
+      // is that no string-coercion path ever invokes the throwing methods.
+      expect(body.message).toBe("unhandled rejection: {}");
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("survives a revoked Proxy rejection reason (instanceof itself throws) and posts the fallback", () => {
+    const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc" });
+    try {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      expect(() => dispatchRejection(proxy)).not.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.message).toBe("unhandled rejection: [unserializable]");
+      expect(body.stack).toBeUndefined();
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("survives a revoked Proxy as an error event's error and posts the fallback", () => {
+    const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc" });
+    try {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      expect(() =>
+        window.dispatchEvent(new ErrorEvent("error", { error: proxy })),
+      ).not.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.message).toBe("[unserializable]");
+      expect(body.stack).toBeUndefined();
     } finally {
       uninstall();
     }
