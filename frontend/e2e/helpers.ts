@@ -325,7 +325,9 @@ export async function approachDoor(
   map: "space" | "campus",
   roomId: string,
 ): Promise<void> {
-  const path = MAPS[map].rooms[roomId].doorPath;
+  const room = MAPS[map].rooms[roomId];
+  if (!room) throw new Error(`approachDoor: unknown room "${roomId}" in map "${map}"`);
+  const path = room.doorPath;
   for (const [i, [x, y]] of path.entries()) {
     // On the final leg, stop steering as soon as the door zone triggers.
     await walkTo(page, x, y, i === path.length - 1 ? { stopAtDoor: roomId } : {});
@@ -350,7 +352,9 @@ export async function enterRoom(
   roomId: string,
 ): Promise<void> {
   await approachDoor(page, map, roomId);
-  await submitRoomKey(page, ROOM_KEYS[roomId]);
+  const key = ROOM_KEYS[roomId];
+  if (!key) throw new Error(`enterRoom: no key configured for room "${roomId}"`);
+  await submitRoomKey(page, key);
   await page.waitForFunction(
     (id) => window.__testHook?.state.currentRoomId === id,
     roomId,
@@ -377,7 +381,9 @@ export async function sitAtSeat(
   // final target puts the sample point at the seat rect's center; converging
   // within 4px guarantees the player RESTS inside the 16px rect (no event
   // early-stop: stopping on near-seat mid-motion can coast out the far side).
-  const path = MAPS[map].rooms[roomId].seatPath;
+  const room = MAPS[map].rooms[roomId];
+  if (!room) throw new Error(`sitAtSeat: unknown room "${roomId}" in map "${map}"`);
+  const path = room.seatPath;
   for (const [i, [x, y]] of path.entries()) {
     if (i < path.length - 1) {
       await walkTo(page, x, y);

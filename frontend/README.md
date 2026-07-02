@@ -48,6 +48,37 @@ sign-in.
 | `npm run build` | Typecheck + production build |
 | `npm run size` | Bundle-budget check (gzipped entry chunk) |
 
+## Type safety (strict baseline)
+
+Every frontend tsconfig project (`app`, `node`, `e2e`) compiles under the **same
+strict contract as the backend**: `strict`, `noUncheckedIndexedAccess`, and
+`exactOptionalPropertyTypes` are all on. `tsc -b` gates the build, so a missing
+tile/frame/record lookup or an unannotated parameter is a **compile error**, not a
+runtime surprise. Keep it that way — never relax a flag or add a laxer tsconfig
+(see the repo-wide standard in the root `CLAUDE.md`).
+
+**No new `!` without justification.** Non-null assertions (`x!`) are a review smell:
+prefer a narrowing guard, an early return, or a schema-derived type. The rare
+genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a
+comment explaining why it is safe. Frontend **production (non-test) source under
+`src/` currently has zero non-null assertions**; unit-test files (`*.test.ts(x)`,
+excluded from `tsconfig.app.json`) keep theirs until PRD 6 strict-cleans the test
+projects.
+
+**Required-loud vs optional-soft.** When a strict-mode `| undefined`/`| null`
+forces a decision, classify the value first:
+
+- **Required** (the app is invalid without it — a map's declared tilesets, the
+  `ground`/`walls` layers, the `#root` element): validate it and **throw a
+  descriptive error**. Refusing to build an invalid world beats limping along in a
+  silently broken one (e.g. tolerating a missing `walls` layer would let players
+  walk through every wall with no signal).
+- **Optional** (the app is fully functional without it — decor layers, a nearby
+  interactable, a keyboard in a headless config): use a soft guard (`if`, `?.`,
+  `??` fallback) and degrade gracefully.
+
+Never use a soft guard to swallow a required-asset failure.
+
 ## Controls
 
 - **WASD / arrows** — move

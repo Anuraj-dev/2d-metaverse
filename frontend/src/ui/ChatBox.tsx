@@ -215,22 +215,24 @@ export default function ChatBox() {
       }
       const w = t.match(WHISPER_RE);
       if (w) {
-        const target = resolvePlayer(w[1]);
-        if (target) net.whisper(target.id, w[2]);
-        else push({ kind: "sys", text: `No player named "${w[1]}" is online.` });
+        const name = w[1] ?? "";
+        const body = w[2] ?? "";
+        const target = resolvePlayer(name);
+        if (target) net.whisper(target.id, body);
+        else push({ kind: "sys", text: `No player named "${name}" is online.` });
         return;
       }
       const r = t.match(REPLY_RE);
       if (r) {
-        if (lastWhisper.current) net.whisper(lastWhisper.current.id, r[1]);
+        if (lastWhisper.current) net.whisper(lastWhisper.current.id, r[1] ?? "");
         else push({ kind: "sys", text: "No one to reply to yet." });
         return;
       }
       const a = t.match(ALL_RE);
-      if (a) return void net.chat(a[1], "world");
+      if (a) return void net.chat(a[1] ?? "", "world");
       const rm = t.match(ROOM_RE);
       if (rm) {
-        if (inPrivate) net.chat(rm[1], "room");
+        if (inPrivate) net.chat(rm[1] ?? "", "room");
         else push({ kind: "sys", text: "You're not in a private area." });
         return;
       }
@@ -252,16 +254,17 @@ export default function ChatBox() {
   const cycleComplete = () => {
     const m = text.match(WHISPER_NAME_RE);
     if (!m) return;
-    const prefix = m[1];
-    let st = completeRef.current;
-    if (!st) st = { base: m[2], idx: -1 };
+    const prefix = m[1] ?? "";
+    const prev = completeRef.current;
+    const base = prev?.base ?? m[2] ?? "";
     const matches = players.filter(
-      (p) => p.id !== selfId && p.name.toLowerCase().startsWith(st!.base.toLowerCase())
+      (p) => p.id !== selfId && p.name.toLowerCase().startsWith(base.toLowerCase())
     );
     if (matches.length === 0) return;
-    st.idx = (st.idx + 1) % matches.length;
-    completeRef.current = st;
-    setText(prefix + matches[st.idx].name);
+    const idx = ((prev?.idx ?? -1) + 1) % matches.length;
+    completeRef.current = { base, idx };
+    const chosen = matches[idx];
+    if (chosen) setText(prefix + chosen.name);
   };
 
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -278,7 +281,7 @@ export default function ChatBox() {
   const suggestions = useMemo(() => {
     const m = text.match(WHISPER_NAME_RE);
     if (!m) return [];
-    const token = m[2].toLowerCase();
+    const token = (m[2] ?? "").toLowerCase();
     return players
       .filter((p) => p.id !== selfId && p.name.toLowerCase().startsWith(token))
       .slice(0, 6);

@@ -115,7 +115,7 @@ export class RealNet implements Net {
 }
 
 /* ----------------------- Mock (standalone, dev only) ----------------------- */
-const NAMES = ["Aanya", "Rohan", "Mei", "Diego"];
+const NAMES = ["Aanya", "Rohan", "Mei", "Diego"] as const;
 const ROOM_KEYS: Record<string, string> = { "1": "1234", "2": "4321", "3": "3333" };
 
 export class MockNet implements Net {
@@ -146,7 +146,7 @@ export class MockNet implements Net {
   private wander() {
     for (const npc of this.npcs) {
       const dirs: Dir[] = ["down", "left", "right", "up"];
-      const dir = dirs[Math.floor(Math.random() * 4)];
+      const dir = dirs[Math.floor(Math.random() * 4)] ?? "down";
       const step = 16;
       if (dir === "left") npc.x -= step;
       else if (dir === "right") npc.x += step;

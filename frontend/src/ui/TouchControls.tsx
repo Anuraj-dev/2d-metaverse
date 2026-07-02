@@ -21,7 +21,9 @@ export default function TouchControls() {
   if (!isTouchDevice || !isMobileLandscape) return null;
 
   const apply = (clientX: number, clientY: number) => {
-    const rect = baseRef.current!.getBoundingClientRect();
+    const base = baseRef.current;
+    if (!base) return;
+    const rect = base.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
     let dx = clientX - cx;
