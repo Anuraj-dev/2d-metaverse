@@ -18,6 +18,13 @@ if (import.meta.env.VITE_E2E_HOOK === "1") {
   void import("./e2e/testHook").then(({ installTestHook }) => installTestHook());
 }
 
+// The #root element is hard-coded in index.html; if it's missing the page is
+// fundamentally broken, so fail loudly with a descriptive bootstrap error.
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  throw new Error('Bootstrap failed: #root element not found in index.html');
+}
+
 // StrictMode intentionally omitted: it double-mounts effects in dev, which would
 // boot/destroy the Phaser game twice. Re-enable once mount is idempotent.
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(rootEl).render(<App />);

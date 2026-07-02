@@ -63,6 +63,20 @@ genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a
 comment explaining why it is safe. Frontend `src/` currently has **zero** non-null
 assertions.
 
+**Required-loud vs optional-soft.** When a strict-mode `| undefined`/`| null`
+forces a decision, classify the value first:
+
+- **Required** (the app is invalid without it — a map's declared tilesets, the
+  `ground`/`walls` layers, the `#root` element): validate it and **throw a
+  descriptive error**. Refusing to build an invalid world beats limping along in a
+  silently broken one (e.g. tolerating a missing `walls` layer would let players
+  walk through every wall with no signal).
+- **Optional** (the app is fully functional without it — decor layers, a nearby
+  interactable, a keyboard in a headless config): use a soft guard (`if`, `?.`,
+  `??` fallback) and degrade gracefully.
+
+Never use a soft guard to swallow a required-asset failure.
+
 ## Controls
 
 - **WASD / arrows** — move

@@ -116,19 +116,37 @@ export default class WorldScene extends Phaser.Scene {
     const saved = localStorage.getItem("avatar");
     this.avatar = saved && isCharKey(saved) ? saved : "char1";
 
-    const map = this.make.tilemap({ key: activeMap().key });
+    const mapKey = activeMap().key;
+    const map = this.make.tilemap({ key: mapKey });
     // A map may reference multiple tilesets; add each by its Tiled name (which
-    // equals the loaded image key per the maps registry convention).
-    const tiles = map.tilesets
-      .map((ts) => map.addTilesetImage(ts.name, ts.name))
-      .filter((t): t is Phaser.Tilemaps.Tileset => t !== null);
-    map.createLayer("ground", tiles, 0, 0);
-    // Optional decorative layers below the player (no collision).
+    // equals the loaded image key per the maps registry convention). Every
+    // declared tileset is REQUIRED: dropping one would silently render broken
+    // tiles, so a missing texture is map corruption — refuse to build the world.
+    const tiles = map.tilesets.map((ts) => {
+      const tileset = map.addTilesetImage(ts.name, ts.name);
+      if (!tileset) {
+        throw new Error(
+          `Map "${mapKey}": tileset "${ts.name}" has no loaded texture — check the maps registry and /assets/tilesets/`
+        );
+      }
+      return tileset;
+    });
+    // ground and walls are REQUIRED layers — a world without them is invalid
+    // (no floor to stand on / no collision), so fail loudly instead of limping.
+    const ground = map.createLayer("ground", tiles, 0, 0);
+    if (!ground) {
+      throw new Error(`Map "${mapKey}": required tile layer "ground" is missing`);
+    }
+    // Optional decorative layers below the player (no collision) — soft guards.
     if (map.getLayer("ground_decor")) map.createLayer("ground_decor", tiles, 0, 0);
     if (map.getLayer("decor_below"))  map.createLayer("decor_below",  tiles, 0, 0);
     const walls = map.createLayer("walls", tiles, 0, 0);
-    walls?.setCollisionByExclusion([-1]);
-    // decor_above renders over the player so tree canopies/awnings overlap correctly.
+    if (!walls) {
+      throw new Error(`Map "${mapKey}": required tile layer "walls" is missing`);
+    }
+    walls.setCollisionByExclusion([-1]);
+    // decor_above renders over the player so tree canopies/awnings overlap
+    // correctly — optional, soft guard.
     if (map.getLayer("decor_above")) {
       map.createLayer("decor_above", tiles, 0, 0)?.setDepth(3000);
     }
@@ -149,7 +167,7 @@ export default class WorldScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(sx, sy, this.avatar, idleFrame("down"));
     this.player.setSize(18, 14).setOffset(7, 16);
     this.lastPublicPosition.set(sx, sy);
-    if (walls) this.physics.add.collider(this.player, walls);
+    this.physics.add.collider(this.player, walls);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     this.buildFurniture();
@@ -704,9 +722,9 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private trySit() {
-    const t = seatTransition(this.seated, "sit", this.currentSeat !== null);
-    if (t.effect !== "sit") return;
-    const s = this.currentSeat!;
+    const s = this.currentSeat;
+    const t = seatTransition(this.seated, "sit", s !== null);
+    if (t.effect !== "sit" || !s) return;
     this.seated = t.seated;
     this.player.setPosition(s.cx, s.cy);
     this.player.setVelocity(0, 0);
