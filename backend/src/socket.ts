@@ -3,6 +3,7 @@ import { Server, type Socket } from "socket.io";
 import { z } from "zod";
 import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
+import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
 import { isRateLimitExceeded, redis } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
@@ -38,10 +39,6 @@ const spaceChannel = (spaceId: string) => `space:${spaceId}`;
 const roomChannel = (roomId: string) => `room:${roomId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
-
-function safeHandler<T extends unknown[]>(handler: (...args: T) => Promise<void> | void) {
-  return (...args: T) => void Promise.resolve(handler(...args)).catch((error) => console.error("Socket event failed", error));
-}
 
 async function presenceFor(spaceId: string): Promise<PlayerState[]> {
   const values = await redis.hVals(`presence:${spaceId}`);
@@ -106,9 +103,16 @@ export function createGameServer(httpServer: HttpServer) {
   });
 
   io.on("connection", (socket) => {
+    // Correlation for every log line this connection produces. Re-bound with
+    // playerId/spaceId once the player joins a space.
+    let log = childLogger({ module: "socket", socketId: socket.id, userId: socket.data.userId, username: socket.data.username });
+    const safeHandler = <T extends unknown[]>(event: string, handler: (...args: T) => Promise<void> | void) =>
+      (...args: T) => void Promise.resolve(handler(...args)).catch((error) => log.error({ err: error, event }, "socket handler failed"));
+
     let joined = false;
     let joinTimeout: NodeJS.Timeout | undefined;
     if (socket.recovered && socket.data.playerId && socket.data.spaceId) {
+      log = log.child({ playerId: socket.data.playerId, spaceId: socket.data.spaceId });
       const timeout = pendingLeaves.get(socket.data.playerId);
       if (timeout) clearTimeout(timeout);
       pendingLeaves.delete(socket.data.playerId);
@@ -122,11 +126,14 @@ export function createGameServer(httpServer: HttpServer) {
         connectionId: socket.id
       }));
       joined = true;
+      log.info("socket connection recovered");
+    } else {
+      log.info("socket connected");
     }
 
     if (!joined) joinTimeout = setTimeout(() => socket.disconnect(true), JOIN_TIMEOUT_MS);
 
-    socket.on("join", safeHandler(async (payload) => {
+    socket.on("join", safeHandler("join", async (payload) => {
       if (joined) return;
       const parsed = joinSchema.safeParse(payload);
       const { userId, username } = socket.data;
@@ -147,6 +154,8 @@ export function createGameServer(httpServer: HttpServer) {
 
       socket.data.playerId = userId;
       socket.data.spaceId = parsed.data.spaceId;
+      log = log.child({ playerId: userId, spaceId: parsed.data.spaceId });
+      log.info("player joined space");
       await socket.join(spaceChannel(parsed.data.spaceId));
 
       const players = (await presenceFor(parsed.data.spaceId)).filter((player) => player.id !== userId);
@@ -159,7 +168,7 @@ export function createGameServer(httpServer: HttpServer) {
       for (const room of spaceRooms?.rooms ?? []) await emitOccupiedSeats(socket, room.id);
     }));
 
-    socket.on("move", safeHandler(async (payload) => {
+    socket.on("move", safeHandler("move", async (payload) => {
       const parsed = moveSchema.safeParse(payload);
       const { playerId, spaceId, username } = socket.data;
       if (!parsed.success || !playerId || !spaceId || !username) return;
@@ -171,7 +180,7 @@ export function createGameServer(httpServer: HttpServer) {
       socket.to(spaceChannel(spaceId)).emit("player-moved", { id: playerId, ...parsed.data });
     }));
 
-    socket.on("chat", safeHandler((payload) => {
+    socket.on("chat", safeHandler("chat", (payload) => {
       const parsed = chatSchema.safeParse(payload);
       const { playerId, username, spaceId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
@@ -188,7 +197,7 @@ export function createGameServer(httpServer: HttpServer) {
       io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId!)).emit("chat", message);
     }));
 
-    socket.on("whisper", safeHandler(async (payload) => {
+    socket.on("whisper", safeHandler("whisper", async (payload) => {
       const parsed = whisperSchema.safeParse(payload);
       const { playerId, username, spaceId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
@@ -211,7 +220,7 @@ export function createGameServer(httpServer: HttpServer) {
       socket.emit("whisper", message); // echo so the sender sees their own line
     }));
 
-    socket.on("room-enter", safeHandler(async (payload) => {
+    socket.on("room-enter", safeHandler("room-enter", async (payload) => {
       const parsed = roomEnterSchema.safeParse(payload);
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
@@ -244,11 +253,11 @@ export function createGameServer(httpServer: HttpServer) {
       socket.emit("room-enter-result", { ok: true, roomId: room.id });
     }));
 
-    socket.on("room-leave", safeHandler(async () => {
+    socket.on("room-leave", safeHandler("room-leave", async () => {
       await leaveCurrentRoom(socket);
     }));
 
-    socket.on("seat-sit", safeHandler(async (payload) => {
+    socket.on("seat-sit", safeHandler("seat-sit", async (payload) => {
       const parsed = seatSitSchema.safeParse(payload);
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
@@ -268,7 +277,7 @@ export function createGameServer(httpServer: HttpServer) {
       io.to(spaceChannel(spaceId)).emit("seat-update", { roomId: room.id, seatId: parsed.data.seatId, playerId });
     }));
 
-    socket.on("seat-stand", safeHandler(async () => {
+    socket.on("seat-stand", safeHandler("seat-stand", async () => {
       const { playerId, spaceId } = socket.data;
       if (!playerId || !spaceId) return;
       const previous = await standPlayer(playerId);
@@ -276,8 +285,9 @@ export function createGameServer(httpServer: HttpServer) {
       if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);
     }));
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason) => {
       if (joinTimeout) clearTimeout(joinTimeout);
+      log.info({ reason }, "socket disconnected");
       const { playerId, spaceId } = socket.data;
       if (!playerId || !spaceId) return;
       const oldTimeout = pendingLeaves.get(playerId);
@@ -295,7 +305,7 @@ export function createGameServer(httpServer: HttpServer) {
         if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);
         await removeMediaParticipant(`world:${spaceId}`, playerId);
         io.to(spaceChannel(spaceId)).emit("player-left", { id: playerId });
-      })().catch((error) => console.error("Socket cleanup failed", error)), LEAVE_GRACE_MS));
+      })().catch((error) => log.error({ err: error }, "socket cleanup failed")), LEAVE_GRACE_MS));
     });
   });
 

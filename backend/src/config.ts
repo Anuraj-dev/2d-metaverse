@@ -1,8 +1,11 @@
 import "dotenv/config";
 import { z } from "zod";
+import { logger } from "./logger.js";
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Use "debug" for chatty local development; production stays at "info".
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
@@ -27,7 +30,7 @@ const schema = z.object({
 
 const parsed = schema.safeParse(process.env);
 if (!parsed.success) {
-  console.error("Invalid environment configuration", z.treeifyError(parsed.error));
+  logger.fatal({ issues: z.treeifyError(parsed.error) }, "invalid environment configuration");
   process.exit(1);
 }
 
@@ -46,7 +49,7 @@ if (parsed.data.NODE_ENV === "production") {
     !parsed.data.STAGE_KEY || parsed.data.STAGE_KEY === "stage-presenter-123" ||
     parsed.data.DATABASE_URL.includes("metaverse:metaverse@");
   if (usesDevelopmentSecret) {
-    console.error("Refusing to start production with development credentials");
+    logger.fatal("refusing to start production with development credentials");
     process.exit(1);
   }
 }

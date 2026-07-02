@@ -1,8 +1,11 @@
 import { createClient } from "redis";
 import { config } from "./config.js";
+import { childLogger } from "./logger.js";
+
+const log = childLogger({ module: "redis" });
 
 export const redis = createClient({ url: config.REDIS_URL });
-redis.on("error", (error) => console.error("Redis error", error));
+redis.on("error", (error) => log.error({ err: error }, "redis error"));
 
 const FIXED_WINDOW_RATE_LIMIT_SCRIPT = `
 local count = redis.call('INCR', KEYS[1])

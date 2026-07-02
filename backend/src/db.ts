@@ -1,5 +1,8 @@
 import pg from "pg";
 import { config } from "./config.js";
+import { childLogger } from "./logger.js";
+
+const log = childLogger({ module: "db" });
 
 export const pool = new pg.Pool({
   connectionString: config.DATABASE_URL,
@@ -8,4 +11,4 @@ export const pool = new pg.Pool({
   connectionTimeoutMillis: 5_000
 });
 
-pool.on("error", (error) => console.error("Unexpected PostgreSQL pool error", error));
+pool.on("error", (error) => log.error({ err: error }, "unexpected PostgreSQL pool error"));

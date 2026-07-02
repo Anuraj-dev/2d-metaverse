@@ -2,7 +2,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { pool } from "./db.js";
+import { childLogger } from "./logger.js";
 import { hashSecret } from "./password.js";
+
+const log = childLogger({ module: "seed" });
 
 const rooms = [
   {
@@ -86,7 +89,7 @@ export async function seed(): Promise<void> {
       }
     }
     await client.query("COMMIT");
-    console.log(`Seeded space 1 with ${rooms.length} rooms (1 through 6)`);
+    log.info({ spaceId: "1", roomCount: rooms.length }, "seeded space");
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -96,5 +99,5 @@ export async function seed(): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  seed().then(() => pool.end()).catch((error) => { console.error(error); process.exit(1); });
+  seed().then(() => pool.end()).catch((error) => { log.fatal({ err: error }, "seed failed"); process.exit(1); });
 }
