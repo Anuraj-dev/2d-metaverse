@@ -44,6 +44,18 @@ jobs:
       - run: npm run build
       - run: npm audit --audit-level=moderate
 
+  scripts:
+    name: Shellcheck & alerter tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck deploy scripts
+        run: shellcheck deploy/*.sh deploy/aws/*.sh
+      - name: Alerter unit tests
+        working-directory: deploy/alerter
+        run: node --test
+
   integration:
     name: Docker integration
     runs-on: ubuntu-latest
@@ -82,6 +94,16 @@ jobs:
       - name: Run contract smoke test
         working-directory: backend
         run: npm run smoke
+      - name: Deploy gate detects a failing setup container
+        run: |
+          # Prove the deploy gate's premise: a non-zero setup container exit is
+          # observable as a non-zero exit code (not swallowed). The deploy
+          # script relies on exactly this to abort before switching the image.
+          if docker compose run --rm --entrypoint sh setup -c "exit 1"; then
+            echo "gate failed to detect failure: setup exited 0 when it should have failed"
+            exit 1
+          fi
+          echo "deploy gate correctly observed the non-zero setup exit"
       - name: Container logs on failure
         if: failure()
         run: docker compose logs --no-color
