@@ -30,8 +30,10 @@ const WHISPER_LIMIT = 20;
 const WHISPER_WINDOW_SECONDS = 60;
 const roomEnterSchema = z.object({ roomId: z.string().min(1).max(64), key: z.string().min(1).max(128) });
 const seatSitSchema = z.object({ roomId: z.string().min(1).max(64), seatId: z.number().int().nonnegative() });
-const LEAVE_GRACE_MS = 4_000;
-const JOIN_TIMEOUT_MS = 10_000;
+// Env-overridable so integration tests can shrink these and exercise the
+// timeout/grace paths in milliseconds. Defaults (used outside tests) unchanged.
+const LEAVE_GRACE_MS = Number(process.env.LEAVE_GRACE_MS ?? 4_000);
+const JOIN_TIMEOUT_MS = Number(process.env.JOIN_TIMEOUT_MS ?? 10_000);
 const ROOM_KEY_ATTEMPT_LIMIT = 5;
 const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = 5 * 60;
 

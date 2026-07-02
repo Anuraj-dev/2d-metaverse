@@ -1,62 +1,21 @@
 import "dotenv/config";
-import { z } from "zod";
 import { logger } from "./logger.js";
+import { ConfigError, parseConfig, type AppConfig } from "./parse-config.js";
 
-const schema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  // Use "debug" for chatty local development; production stays at "info".
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
-  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
-  DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
-  JWT_SECRET: z.string().min(32),
-  JWT_TTL: z.string().default("7d"),
-  CORS_ORIGINS: z.string().default("http://localhost:5173"),
-  LIVEKIT_URL: z.string().min(1),
-  LIVEKIT_API_URL: z.string().min(1).optional(),
-  LIVEKIT_API_KEY: z.string().min(1),
-  LIVEKIT_API_SECRET: z.string().min(1),
-  ROOM_1_KEY: z.string().min(1).optional(),
-  ROOM_2_KEY: z.string().min(1).optional(),
-  ROOM_3_KEY: z.string().min(1).optional(),
-  ROOM_4_KEY: z.string().min(1).optional(),
-  ROOM_5_KEY: z.string().min(1).optional(),
-  ROOM_6_KEY: z.string().min(1).optional(),
-  STAGE_KEY: z.string().min(1).optional(),
-  MAP_JSON_URL: z.string().default("/assets/maps/space.json"),
-  TRUST_PROXY: z.enum(["true", "false"]).default("false"),
-  GIT_SHA: z.string().default("dev")
-});
+export type { AppConfig } from "./parse-config.js";
 
-const parsed = schema.safeParse(process.env);
-if (!parsed.success) {
-  logger.fatal({ issues: z.treeifyError(parsed.error) }, "invalid environment configuration");
-  process.exit(1);
-}
-
-if (parsed.data.NODE_ENV === "production") {
-  const usesDevelopmentSecret =
-    parsed.data.JWT_SECRET === "local-development-jwt-secret-change-me-now" ||
-    parsed.data.JWT_SECRET.startsWith("replace-") ||
-    parsed.data.LIVEKIT_API_KEY === "devkey" ||
-    parsed.data.LIVEKIT_API_SECRET === "local-development-livekit-secret-change-me" ||
-    !parsed.data.ROOM_1_KEY || parsed.data.ROOM_1_KEY === "1234" ||
-    !parsed.data.ROOM_2_KEY || parsed.data.ROOM_2_KEY === "4321" ||
-    !parsed.data.ROOM_3_KEY || parsed.data.ROOM_3_KEY === "3333" ||
-    !parsed.data.ROOM_4_KEY || parsed.data.ROOM_4_KEY === "4444" ||
-    !parsed.data.ROOM_5_KEY || parsed.data.ROOM_5_KEY === "5555" ||
-    !parsed.data.ROOM_6_KEY || parsed.data.ROOM_6_KEY === "6666" ||
-    !parsed.data.STAGE_KEY || parsed.data.STAGE_KEY === "stage-presenter-123" ||
-    parsed.data.DATABASE_URL.includes("metaverse:metaverse@");
-  if (usesDevelopmentSecret) {
-    logger.fatal("refusing to start production with development credentials");
+function loadConfig(): AppConfig {
+  try {
+    return parseConfig(process.env);
+  } catch (error) {
+    if (error instanceof ConfigError) {
+      if (error.detail) logger.fatal({ issues: error.detail }, error.message);
+      else logger.fatal(error.message);
+    } else {
+      logger.fatal({ err: error }, "invalid environment configuration");
+    }
     process.exit(1);
   }
 }
 
-export const config = {
-  ...parsed.data,
-  liveKitApiUrl: parsed.data.LIVEKIT_API_URL ?? parsed.data.LIVEKIT_URL.replace(/^ws/, "http"),
-  corsOrigins: parsed.data.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
-  trustProxy: parsed.data.TRUST_PROXY === "true"
-};
+export const config = loadConfig();
