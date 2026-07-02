@@ -59,12 +59,58 @@ sign-in.
 
 ```
 src/
-├── game/          Phaser scenes, avatar anims, proximity math, event bus
+├── game/          Phaser scene (glue) + pure game-logic modules, avatar anims, event bus
 ├── net/           Socket.IO client + a standalone mock (VITE_USE_MOCK)
-├── media/         LiveKit world audio (proximity) + room video; local camera
+├── media/         LiveKit transport (livekit.ts) + pure media logic (mediaLogic.ts)
 ├── ui/            React HUD: chat, room-key modal, video bubbles, media controls
 └── contract.ts    Shared event/payload types the backend mirrors
 ```
+
+### Scene-as-glue + pure modules (the enforced pattern)
+
+`WorldScene.ts` is deliberately thin **glue**: it loads assets, builds the tilemap
+and sprites, wires Phaser/net events, and each frame samples input/positions and
+**delegates every decision to a pure module**. Nothing decision-shaped lives in the
+scene. The pure modules take plain values in and return plain values out — **no
+Phaser, net, or DOM imports** — so they run in millisecond-fast vitest with no game
+boot:
+
+| Module | Responsibility |
+| --- | --- |
+| `game/movement.ts` | input state → velocity / facing / moving flag |
+| `game/zones.ts` | position → containing door / seat / room-area / stage |
+| `game/seatDoor.ts` | sit/stand + door open/close state machines (with illegal transitions) |
+| `game/interpolation.ts` | remote target → smoothed step + moving flag |
+| `game/proximity.ts` | distance → spatial-audio volume |
+| `game/interactables.ts` | Tiled objects → interactable defs + hit test |
+| `media/mediaLogic.ts` | room-name builders, track routing, proximity-volume map |
+
+The media layer mirrors this split: `media/livekit.ts` is the **transport**
+(livekit-client connection plumbing — Room construction, connect/disconnect, event
+wiring), and `media/mediaLogic.ts` holds the **decisions** (which room name to
+request, what to attach vs surface, each remote's volume), tested against plain
+fixtures.
+
+The React↔Phaser boundary is the typed `game/eventBus.ts`; App-shell media
+sequencing (`App.tsx`) is covered with React Testing Library + jsdom.
+
+**Where new game logic goes:** any new gameplay rule (audio zones, portal triggers,
+mini-game rules, …) is written as a pure module with its tests, and the scene only
+gains a call site. "Logic in the scene" is a review smell — put it in a pure module.
+
+### Tests
+
+All tests run in a single vitest step (jsdom) — no extra pipeline stages.
+
+```bash
+npm test          # run once
+npm run test:watch
+```
+
+Pure modules use plain vitest (table-driven / transition-matrix style; see
+`movement.test.ts`, `seatDoor.test.ts`). Component/app-shell tests use React
+Testing Library, stub the Phaser canvas + heavy children, and assert media-manager
+calls and rendered HUD state — never Phaser internals or private fields.
 
 ### Backend contract (Socket.IO)
 
