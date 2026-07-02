@@ -124,6 +124,63 @@ Pure modules use plain vitest (table-driven / transition-matrix style; see
 Testing Library, stub the Phaser canvas + heavy children, and assert media-manager
 calls and rendered HUD state — never Phaser internals or private fields.
 
+### E2E tests (Playwright)
+
+The E2E suite (`e2e/*.spec.ts`) drives the **built** frontend in real Chromium
+against the docker-composed backend stack — real signup, real sockets, real
+map, real doors. It is the PR-blocking `e2e` job in `frontend-ci.yml` and the
+named regression net for the "doors broken in prod" incident class.
+
+**Run locally** (from the repo root, then `frontend/`):
+
+```bash
+# 1. Boot the backend stack (CORS must allow the preview origin)
+CORS_ORIGINS=http://localhost:5173,http://localhost:4173 \
+GIT_SHA=$(git rev-parse HEAD) docker compose up -d --build
+
+# 2. Build the frontend with the test hook + matching SHA
+cd frontend
+VITE_E2E_HOOK=1 VITE_USE_MOCK=0 VITE_SERVER_URL=http://localhost:3001 \
+VITE_GIT_SHA=$(git rev-parse HEAD) npm run build
+
+# 3. Run the suite (starts `vite preview` on :4173 itself)
+npm run e2e          # headless
+npm run e2e:headed   # watch the browser live
+```
+
+Notes for local runs: `GIT_SHA`/`VITE_GIT_SHA` must be the same commit or the
+version-compat scenario will (correctly) fail; the backend's per-IP auth
+limiter allows 40 signup/signin calls per 15 min, so after several full runs
+`docker compose restart backend` resets it. Tear down with
+`docker compose down -v` when done.
+
+**How the test hook works.** `src/e2e/testHook.ts` exposes the event bus and
+minimal game state (`nearDoor`, `nearSeat`, `currentRoomId`, `seated`, latest
+`positions`/`world-info` payloads, a bounded event log, and `waitForEvent`) on
+`window.__testHook`. It is only imported behind `import.meta.env.VITE_E2E_HOOK
+=== "1"` in `main.tsx`; that flag is statically replaced at build time, so
+production builds tree-shake the module out entirely. CI asserts the prod
+bundle contains no `__testHook` (see the "Assert prod bundle has no E2E hook"
+step), and the suite's global setup refuses to run against a hook-less build.
+
+**Assertion policy.** Game state is asserted through the bus hook and the DOM
+HUD (chat transcript, modals, Settings SHA) — never by reading pixels off the
+Phaser canvas. Movement is driven by keyboard events and by steering
+`move-axis` off `positions` ticks (`walkTo` in `e2e/helpers.ts`), with
+waypoints verified against the map's collision data.
+
+**Flake policy.** No arbitrary sleeps — every wait is a bus event or DOM
+condition (`waitForFunction` on hook state, `expect(locator)` on the HUD).
+Scenarios run serially (one shared live world). CI retries: 1, failures still
+reported; local retries: 0 so a flaky wait fails loudly and gets fixed, not
+retried away. If a scenario flakes, fix the wait condition — do not add
+sleeps or retries.
+
+**Artifacts.** On failure Playwright keeps traces + screenshots under
+`frontend/test-results/` (and an HTML report in `frontend/playwright-report/`
+in CI); the CI job uploads both as the `playwright-artifacts` artifact. View a
+trace with `npx playwright show-trace <path to trace.zip>`.
+
 ### Backend contract (Socket.IO)
 
 `join → init`, `move → player-moved`, `chat`, `room-enter → room-enter-result`,
@@ -133,4 +190,6 @@ seat-gated). See `src/contract.ts`.
 
 ## CI
 
-GitHub Actions runs typecheck, unit tests, and a production build on every push and PR.
+GitHub Actions runs lint, typecheck, unit tests, a production build (with a
+bundle budget and a no-test-hook assertion), and the Playwright E2E suite
+against the composed backend stack on every push and PR.

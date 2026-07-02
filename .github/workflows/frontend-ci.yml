@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+    paths: ["frontend/**", ".github/workflows/frontend-ci.yml", "docker-compose.yml"]
   pull_request:
-    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+    paths: ["frontend/**", ".github/workflows/frontend-ci.yml", "docker-compose.yml"]
 
 jobs:
   build:
@@ -33,8 +33,78 @@ jobs:
         run: npm run build
         env:
           VITE_GIT_SHA: ${{ github.sha }}
+          # Representative production configuration: without a non-empty
+          # VITE_SERVER_URL the app renders the misconfiguration screen and
+          # Vite tree-shakes most of the real bundle, so the size gate and
+          # hook-absence grep below would measure a hollow build.
+          VITE_USE_MOCK: "0"
+          VITE_SERVER_URL: https://backend.example.com
       - name: Bundle budget
         run: npm run size
+      - name: Assert prod bundle has no E2E hook
+        run: |
+          if grep -rl "__testHook" dist; then
+            echo "E2E test hook leaked into the production bundle" >&2
+            exit 1
+          fi
+
+  e2e:
+    name: E2E (Playwright vs composed stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Boot composed backend stack
+        run: docker compose up -d --build
+        env:
+          GIT_SHA: ${{ github.sha }}
+          CORS_ORIGINS: http://localhost:4173
+      - name: Wait for backend readiness
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3001/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "backend never became ready" >&2
+          docker compose logs --no-color
+          exit 1
+      - run: npm ci
+        working-directory: frontend
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Build frontend with E2E hook
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_E2E_HOOK: "1"
+          VITE_USE_MOCK: "0"
+          VITE_SERVER_URL: http://localhost:3001
+          VITE_GIT_SHA: ${{ github.sha }}
+      - name: Run Playwright suite
+        run: npm run e2e
+        working-directory: frontend
+      # always(): traces of failed attempts survive in test-results even when a
+      # retry turns the run green (flaky) — those must be retained for triage too.
+      - name: Upload traces and screenshots of failed attempts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v --remove-orphans
 
   deploy:
     name: Deploy to Vercel (production)

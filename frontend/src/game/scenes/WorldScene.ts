@@ -630,12 +630,17 @@ export default class WorldScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
   }
 
-  /** Detect a genuine walk-out of the private room the player is currently inside. */
+  /** Detect a genuine walk-out of the private room the player is currently inside.
+   *  The doorway counts as part of the current room: the key modal can only open
+   *  while standing in the door zone (outside the room bounds), so `room-entered`
+   *  lands while the player is still in the doorway — treating that as "outside"
+   *  would exit (and re-lock) the room on the very next frame. */
   private checkRoomMembership() {
-    if (
-      this.currentRoom &&
-      hasExitedRoom(this.roomAreas, this.currentRoom, this.player.x, this.player.y + 8)
-    ) {
+    if (!this.currentRoom) return;
+    const fx = this.player.x;
+    const fy = this.player.y + 8;
+    const inOwnDoorway = findDoor(this.doors, fx, fy)?.roomId === this.currentRoom;
+    if (!inOwnDoorway && hasExitedRoom(this.roomAreas, this.currentRoom, fx, fy)) {
       this.exitRoom(this.currentRoom);
     }
   }

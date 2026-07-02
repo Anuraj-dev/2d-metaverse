@@ -15,9 +15,12 @@ import { fileURLToPath } from "node:url";
 const DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const ASSETS = join(DIST, "assets");
 
-// Budget for the entry chunk, gzipped. Current ~80 KB; headroom catches regressions
-// like Phaser/LiveKit being pulled back into the initial download.
-const ENTRY_BUDGET_KB = 120;
+// Budget for the entry chunk, gzipped. The real (configured-production) entry
+// is ~120.5 KB — earlier CI measured ~105 KB only because the build lacked
+// VITE_SERVER_URL and Vite tree-shook the app behind the misconfiguration
+// screen. 125 KB pins today's true baseline with small headroom; the budget
+// still catches regressions like Phaser/LiveKit leaking into the entry.
+const ENTRY_BUDGET_KB = 125;
 
 const html = readFileSync(join(DIST, "index.html"), "utf8");
 const match = html.match(/src="([^"]*\/assets\/index-[^"]+\.js)"/);
