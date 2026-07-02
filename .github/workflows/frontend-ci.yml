@@ -33,6 +33,12 @@ jobs:
         run: npm run build
         env:
           VITE_GIT_SHA: ${{ github.sha }}
+          # Representative production configuration: without a non-empty
+          # VITE_SERVER_URL the app renders the misconfiguration screen and
+          # Vite tree-shakes most of the real bundle, so the size gate and
+          # hook-absence grep below would measure a hollow build.
+          VITE_USE_MOCK: "0"
+          VITE_SERVER_URL: https://backend.example.com
       - name: Bundle budget
         run: npm run size
       - name: Assert prod bundle has no E2E hook
@@ -84,8 +90,10 @@ jobs:
       - name: Run Playwright suite
         run: npm run e2e
         working-directory: frontend
-      - name: Upload traces and screenshots on failure
-        if: failure()
+      # always(): traces of failed attempts survive in test-results even when a
+      # retry turns the run green (flaky) — those must be retained for triage too.
+      - name: Upload traces and screenshots of failed attempts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts

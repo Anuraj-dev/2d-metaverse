@@ -55,6 +55,7 @@ export const MAPS: Record<
           [592, 190],
         ],
         seatPath: [
+          [592, 150],
           [564, 150],
           [568, 96],
         ],
@@ -91,6 +92,7 @@ export const MAPS: Record<
           [592, 174],
         ],
         seatPath: [
+          [592, 150],
           [564, 150],
           [568, 96],
         ],
@@ -355,13 +357,68 @@ export async function sitAtSeat(
   map: "space" | "campus",
   roomId: string,
 ): Promise<void> {
-  // The final target puts the door-sample point at the seat rect's center;
-  // converging within 4px guarantees the player RESTS inside the 16px rect
-  // (no early-stop here: stopping on the near-seat event mid-motion can let
-  // the avatar coast out the far side of the rect under slow CI frames).
+  // The seat path leaves the doorway STRAIGHT UP (x stays inside the door
+  // rect until well inside the room bounds): a diagonal first leg can, under
+  // slow CI frames, step into the corner outside both the bounds and the
+  // door rect — an instant room-left that re-locks the room and makes the
+  // seat invisible to zone detection (near-seat can then never fire). The
+  // final target puts the sample point at the seat rect's center; converging
+  // within 4px guarantees the player RESTS inside the 16px rect (no event
+  // early-stop: stopping on near-seat mid-motion can coast out the far side).
   const path = MAPS[map].rooms[roomId].seatPath;
   for (const [i, [x, y]] of path.entries()) {
-    await walkTo(page, x, y, i === path.length - 1 ? { tolerance: 4 } : {});
+    if (i < path.length - 1) {
+      await walkTo(page, x, y);
+      continue;
+    }
+    // Final leg — arrival is accepted on OBSERVED hook state, not position:
+    // after walkTo resolves, the avatar can still drift up to one throttled
+    // physics frame before the zero axis lands, which on a 16px seat rect is
+    // enough to come to rest just past the edge. So: converge, wait until at
+    // rest (two identical position ticks), and accept only when near-seat is
+    // the settled state — otherwise re-approach (bounded attempts).
+    const [sx, sy] = [x, y];
+    let arrived = false;
+    for (let attempt = 0; attempt < 4 && !arrived; attempt += 1) {
+      await walkTo(page, sx, sy, { tolerance: 3 });
+      arrived = await page.evaluate(
+        ({ id }) =>
+          new Promise<boolean>((resolve) => {
+            const hook = window.__testHook!;
+            let still = 0;
+            let last: { x: number; y: number } | null = null;
+            const off = hook.on("positions", (payload) => {
+              const self = (payload as { players: { self: boolean; x: number; y: number }[] })
+                .players.find((p) => p.self);
+              if (!self) return;
+              if (last && Math.abs(self.x - last.x) < 0.5 && Math.abs(self.y - last.y) < 0.5) {
+                still += 1;
+              } else {
+                still = 0;
+              }
+              last = { x: self.x, y: self.y };
+              if (still >= 2) {
+                off();
+                resolve(hook.state.nearSeat?.roomId === id);
+              }
+            });
+          }),
+        { id: roomId },
+      );
+    }
+    if (!arrived) {
+      throw new Error(
+        `sitAtSeat: could not come to rest inside room ${roomId} seat zone ` +
+          `after 4 approaches`,
+      );
+    }
+  }
+  const roomNow = await page.evaluate(() => window.__testHook!.state.currentRoomId);
+  if (roomNow !== roomId) {
+    throw new Error(
+      `sitAtSeat: room ${roomId} membership lost during the seat approach ` +
+        `(currentRoomId=${String(roomNow)}) — the walk exited the room bounds`,
+    );
   }
   await page.waitForFunction(
     (id) => window.__testHook?.state.nearSeat?.roomId === id,
