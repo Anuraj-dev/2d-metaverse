@@ -111,3 +111,31 @@ describe("production refusal of development defaults", () => {
     expect(() => parseConfig(devEnv)).not.toThrow();
   });
 });
+
+describe("socket timing knobs", () => {
+  it("defaults to the production values", () => {
+    const config = parseConfig(devEnv);
+    expect(config.JOIN_TIMEOUT_MS).toBe(10_000);
+    expect(config.LEAVE_GRACE_MS).toBe(4_000);
+  });
+
+  it("accepts valid positive-integer overrides", () => {
+    const config = parseConfig({ ...devEnv, JOIN_TIMEOUT_MS: "500", LEAVE_GRACE_MS: "400" });
+    expect(config.JOIN_TIMEOUT_MS).toBe(500);
+    expect(config.LEAVE_GRACE_MS).toBe(400);
+  });
+
+  const invalidDurations = ["abc", "0", "-5", "Infinity", "NaN", "1.5"];
+  it.each(invalidDurations.map((value) => [value]))(
+    "rejects JOIN_TIMEOUT_MS=%s with ConfigError",
+    (value) => {
+      expect(() => parseConfig({ ...devEnv, JOIN_TIMEOUT_MS: value })).toThrowError(ConfigError);
+    }
+  );
+  it.each(invalidDurations.map((value) => [value]))(
+    "rejects LEAVE_GRACE_MS=%s with ConfigError",
+    (value) => {
+      expect(() => parseConfig({ ...devEnv, LEAVE_GRACE_MS: value })).toThrowError(ConfigError);
+    }
+  );
+});

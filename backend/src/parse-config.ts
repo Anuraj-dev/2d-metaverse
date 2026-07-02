@@ -28,7 +28,12 @@ const schema = z.object({
   STAGE_KEY: z.string().min(1).optional(),
   MAP_JSON_URL: z.string().default("/assets/maps/space.json"),
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
-  GIT_SHA: z.string().default("dev")
+  GIT_SHA: z.string().default("dev"),
+  // Socket timing knobs. Overridden only by tests (to exercise the join-timeout
+  // and reconnect-grace paths quickly); validated here so a typo'd override can
+  // never boot a server whose grace window is 0, negative, NaN, or infinite.
+  JOIN_TIMEOUT_MS: z.coerce.number().int().positive().finite().default(10_000),
+  LEAVE_GRACE_MS: z.coerce.number().int().positive().finite().default(4_000)
 });
 
 type ParsedEnv = z.infer<typeof schema>;
