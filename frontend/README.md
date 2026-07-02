@@ -48,6 +48,9 @@ sign-in.
 | `npm run build` | Typecheck + production build |
 | `npm run size` | Bundle-budget check (gzipped entry chunk) |
 
+Root convenience: from the repo root, `npm run lint` / `npm run typecheck` /
+`npm test` run the frontend and backend commands back to back (root `package.json`).
+
 ## Type safety (strict baseline)
 
 Every frontend tsconfig project (`app`, `node`, `e2e`) compiles under the **same

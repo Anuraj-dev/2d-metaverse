@@ -1,0 +1,10 @@
+{
+  "name": "2d-metaverse",
+  "private": true,
+  "//": "Minimal root convenience scripts only (issue #25: one lint command per package + one root convenience). Deliberately no dependencies/workspaces — PRD 8 grows this into the npm-workspaces root.",
+  "scripts": {
+    "lint": "npm --prefix frontend run lint && npm --prefix backend run lint",
+    "typecheck": "npm --prefix frontend run typecheck && npm --prefix backend run typecheck",
+    "test": "npm --prefix frontend test && npm --prefix backend test"
+  }
+}

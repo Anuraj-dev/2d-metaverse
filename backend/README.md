@@ -92,6 +92,7 @@ In CI, the `test` job (no services) runs lint + typecheck + unit tests + build; 
   - The type-checked `no-unsafe-*`/`no-explicit-any` family is relaxed **for test files only** (they assert over inherently-`any` JSON and socket payloads) — production `src` keeps the full baseline.
 - `npm run typecheck` — `tsc -p tsconfig.json --noEmit` (production `src`). Lint's type info comes from `tsconfig.eslint.json`, which additionally covers `test/`.
 - **`.skip`-justification convention:** a skipped test must carry a comment on the line above saying *why* and *when it comes back* (e.g. `// SKIP: needs LiveKit stub — re-enable after #123`), so disabled tests stay visible debts.
+- Root convenience: from the repo root, `npm run lint` / `npm run typecheck` / `npm test` run the frontend and backend commands back to back (root `package.json`).
 
 ## Contract details
 
