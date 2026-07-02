@@ -49,11 +49,13 @@ What triggers an alert:
   last ~50 log lines.
 
 On startup the watchdog posts `🟢 alerter online <hostname>` so you can confirm
-the alerting layer itself is alive. If a token IS configured but that startup
-announcement cannot be delivered, the alerter exits non-zero — the compose
-restart policy retries it, and the deploy gate's running-container check turns
-a persistently broken alerting layer into a failed deploy instead of a silent
-one.
+the alerting layer itself is alive. Its container HEALTHCHECK passes only once
+a readiness file exists, which the process writes after the startup
+announcement was delivered and the Docker events subscription is established
+(idle entry in no-token mode). If a configured-token announcement cannot be
+delivered, the alerter exits non-zero — the compose restart policy retries it,
+the healthcheck never passes, and the deploy gate turns a persistently broken
+alerting layer into a failed deploy instead of a silent one.
 
 ## Bot setup (one-time)
 
@@ -72,36 +74,49 @@ missing token never crashes the stack, but you also get no alerts, so set them.
 
 # Deploy gates
 
-`deploy-remote.sh` runs the migrate+seed `setup` container as an explicit,
-exit-code-gated step **before** switching the backend to the new image:
+`deploy-remote.sh` is a sequence of hard gates, ordered so that any gate
+failure leaves the previous release both **serving and recorded** — release
+state (`.backend-image` and the retention history) is written only after
+every gate has passed:
 
-- The `setup` output is captured; if it exits non-zero the script prints the
-  logs, sends a Telegram alert (via `curl` using the same `TELEGRAM_*` vars,
-  skipped silently if unset), and aborts. The previously deployed backend keeps
-  running — a broken seed can no longer masquerade as a successful deploy.
-- Only after `setup` succeeds is the new backend image rolled in. If the new
-  backend fails its `/health/ready` check it is rolled back to the previous
-  image and a "deploy rolled back" Telegram alert is sent. If there is no
-  previous image, a hard-failure alert is sent instead.
-- After a healthy backend switch, the **watchdog alerter is itself a hard
-  gate**: the script pulls/starts the alerter and requires the container to be
-  running; if it fails to start (or crash-loops because its startup Telegram
-  announcement cannot be delivered), the deploy exits non-zero with an alert
-  attempt — a deploy can never report success while alerting is broken.
-- Telegram sends from the script use `curl --fail-with-body --retry 1`; a
-  non-2xx response hits an explicit warning path (the response body is logged,
-  never the token-bearing URL).
-- `set -Eeuo pipefail` is in force throughout.
+1. **Alerter gate (first, before anything about the release changes).** The
+   watchdog is independent of the backend image, so it is pulled, started,
+   and must report `healthy` before the deploy proceeds — if alerting cannot
+   come up, nothing is deployed at all. "Healthy" is the image's HEALTHCHECK:
+   a readiness file the alerter writes only after its startup Telegram
+   announcement was delivered AND its Docker events subscription is
+   established (in no-token idle mode: on idle entry). The script waits up to
+   ~60s (`ALERTER_HEALTH_TIMEOUT`); a container that starts and then
+   crash-loops never reports healthy and fails the gate, with its logs
+   printed and an alert attempted.
+2. **Setup gate.** The migrate+seed `setup` container runs as an explicit,
+   exit-code-gated step. Its output is captured; on a non-zero exit the
+   script prints the logs, sends a Telegram alert (via `curl` using the same
+   `TELEGRAM_*` vars, skipped silently if unset), and aborts with the setup
+   exit code — a broken seed can no longer masquerade as a successful deploy.
+3. **Backend switch + health check.** Only after `setup` succeeds is the new
+   backend image rolled in. If it fails its `/health/ready` check it is
+   rolled back to the previous image and a "deploy rolled back" Telegram
+   alert is sent (or a hard-failure alert if there is no previous image).
+4. **Record.** `.backend-image` and the retention history are updated last,
+   so they always describe the release that is actually serving.
+
+Telegram sends from the script use `curl --fail-with-body --retry 1`; a
+non-2xx response hits an explicit warning path (the response body is logged,
+never the token-bearing URL). `set -Eeuo pipefail` is in force throughout.
 
 The deploy job in `backend-deploy.yml` also fails the workflow if the remote
 SSM command's status is not `Success` (previously the status was printed but
 never checked).
 
 The gating behavior is regression-tested hermetically in CI:
-`deploy/test/deploy-gate.test.sh` runs the real script with PATH-shimmed
-`docker`/`curl`/`aws` stubs and asserts that a failing setup aborts with the
-setup exit code before the backend switch, that a non-running alerter fails
-the deploy, and that alerts are attempted in both cases.
+`deploy/test/deploy-gate.test.sh` runs the real script with PATH-shimmed,
+stateful `docker`/`curl`/`aws` stubs and asserts gate ordering (alerter →
+setup → backend switch), that an alerter which crashes after starting or
+never becomes healthy aborts the deploy before setup/backend changes, that a
+failing setup propagates its exit code with no backend switch, that release
+state is never recorded on a failed deploy, and that alerts are attempted in
+every failure case.
 
 # Frontend deploys (Vercel)
 

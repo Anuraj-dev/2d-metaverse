@@ -96,6 +96,45 @@ if [[ "$SKIP_PULL" != "1" ]]; then
 fi
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis livekit
 
+# --- Gate 1: watchdog alerter (FIRST — before touching the release) --------
+# The alerter is independent of the backend image. It must be pulled, started,
+# and report HEALTHY before anything about the release changes: if alerting
+# cannot come up, we do not deploy at all, and the previous release stays both
+# serving and recorded. "Healthy" is the container's HEALTHCHECK, which passes
+# only after index.mjs has delivered its startup Telegram announcement and
+# established the Docker events subscription (or entered no-token idle mode).
+deploy_alerter() {
+  if [[ "$SKIP_PULL" != "1" ]]; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull alerter || return 1
+  fi
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps alerter || return 1
+  local deadline=$((SECONDS + ${ALERTER_HEALTH_TIMEOUT:-60}))
+  local cid status
+  while (( SECONDS < deadline )); do
+    cid=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps --quiet alerter)
+    if [[ -n "$cid" ]]; then
+      status=$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo unknown)
+      if [[ "$status" == "healthy" ]]; then
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+if [[ "$SKIP_ALERTER" != "1" && -n "$ALERTER_IMAGE" ]]; then
+  export ALERTER_IMAGE
+  if ! deploy_alerter; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50 alerter || true
+    send_alert "$(printf '🔴 Deploy aborted on %s: watchdog alerter (%s) failed to become healthy; not deploying %s. Previous release untouched.' \
+      "$(hostname)" "$ALERTER_IMAGE" "$IMAGE")"
+    exit 1
+  fi
+  echo "Alerter watchdog healthy"
+fi
+
+# --- Gate 2: migrate + seed ------------------------------------------------
 SETUP_LOG=$(mktemp)
 # Capture the setup container's real exit code (not tee's) via PIPESTATUS.
 # The `|| setup_rc=...` keeps `set -e` from aborting before we can alert.
@@ -136,40 +175,10 @@ if [[ "$healthy" != true ]]; then
   exit 1
 fi
 
+# Only a fully healthy deploy is recorded: any earlier gate failure exits
+# before this point, leaving the previous release both serving AND recorded.
 printf '%s\n' "$IMAGE" > .backend-image
 update_image_history
 prune_local_release_images
 echo "Retained release images: $(paste -sd ', ' "$IMAGE_HISTORY_FILE")"
-
-# Watchdog deployment is a hard gate: a deploy that leaves the box without a
-# running alerter is a failed deploy (the exact silent-failure mode this
-# script exists to eliminate). Each step returns non-zero on failure.
-deploy_alerter() {
-  if [[ "$SKIP_PULL" != "1" ]]; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull alerter || return 1
-  fi
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps alerter || return 1
-  # The alerter exits non-zero if a configured-token startup announcement
-  # fails, so require the container to still be running after a grace period.
-  local attempt
-  for attempt in $(seq 1 "${ALERTER_START_ATTEMPTS:-5}"); do
-    [[ "$attempt" -gt 1 ]] && sleep 2
-    if [[ -n "$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps --status running --quiet alerter)" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-if [[ "$SKIP_ALERTER" != "1" && -n "$ALERTER_IMAGE" ]]; then
-  export ALERTER_IMAGE
-  if ! deploy_alerter; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50 alerter || true
-    send_alert "$(printf '🔴 Deploy failed on %s: watchdog alerter (%s) failed to pull/start or is not running; deploy for %s treated as failed.' \
-      "$(hostname)" "$ALERTER_IMAGE" "$IMAGE")"
-    exit 1
-  fi
-  echo "Alerter watchdog running"
-fi
-
 echo "Deployed $IMAGE"
