@@ -95,4 +95,25 @@ describe("computeVolumes", () => {
     const players: MediaPos[] = [me, { id: "a", x: 50, y: 0 }];
     expect(computeVolumes(players, "me", ["a"], 100)?.get("a")).toBeCloseTo(0.5);
   });
+
+  it("silences a point-blank remote in a different zone (no voice through walls)", () => {
+    const players: MediaPos[] = [
+      { id: "me", x: 0, y: 0, zone: "outdoor" },
+      { id: "inside", x: 1, y: 0, zone: "roomA" },
+    ];
+    expect(computeVolumes(players, "me", ["inside"])?.get("inside")).toBe(0);
+  });
+
+  it("keeps the distance falloff for a remote sharing the local zone", () => {
+    const players: MediaPos[] = [
+      { id: "me", x: 0, y: 0, zone: "roomA" },
+      { id: "mate", x: AUDIO_CUTOFF / 2, y: 0, zone: "roomA" },
+    ];
+    expect(computeVolumes(players, "me", ["mate"])?.get("mate")).toBeCloseTo(0.5);
+  });
+
+  it("treats a missing zone as outdoor (unchanged pre-PRD behaviour)", () => {
+    const players: MediaPos[] = [me, { id: "a", x: 0, y: 0 }];
+    expect(computeVolumes(players, "me", ["a"])?.get("a")).toBe(1);
+  });
 });

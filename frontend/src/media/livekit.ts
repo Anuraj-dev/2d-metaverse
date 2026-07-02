@@ -98,6 +98,14 @@ class WorldAudio {
 
   async start(spaceId: string, selfId: string) {
     this.selfId = selfId;
+    // Price volumes off every positions tick regardless of whether the LiveKit
+    // connection came up: the zone-aware volume decision is derived purely from
+    // broadcast positions, so it stays observable (see `updateVolumes`) even
+    // when media is unavailable. Subscribing here (not after connect) also means
+    // a slow/failed connect never drops a positions tick on the floor.
+    this.offPositions = bus.on("positions", (p: PositionsPayload) =>
+      this.updateVolumes(p)
+    );
     try {
       const { token, url } = await fetchToken(worldRoomName(spaceId));
       const { Room, RoomEvent, Track } = await import("livekit-client");
@@ -124,18 +132,27 @@ class WorldAudio {
       });
       await room.connect(url, token);
       await room.localParticipant.setMicrophoneEnabled(true);
-      this.offPositions = bus.on("positions", (p: PositionsPayload) =>
-        this.updateVolumes(p)
-      );
     } catch (e) {
       console.warn("World audio unavailable:", e);
     }
   }
 
   private updateVolumes(p: PositionsPayload) {
-    const vols = computeVolumes(p.players, this.selfId, this.audioEls.keys(), AUDIO_CUTOFF);
+    // Compute the zone-aware volume for every remote (not just the subscribed
+    // set) so the decision is fully observable; apply it only to remotes we
+    // actually have an audio element for.
+    const remoteIds = p.players
+      .filter((pl) => !pl.self && pl.id !== this.selfId)
+      .map((pl) => pl.id);
+    const vols = computeVolumes(p.players, this.selfId, remoteIds, AUDIO_CUTOFF);
     if (!vols) return;
     for (const [id, el] of this.audioEls) el.volume = vols.get(id) ?? 0;
+    // E2E-only: surface the computed world-audio volumes on the bus so the
+    // Playwright suite can assert zone isolation without a live RTC subscription
+    // (the flag is statically replaced at build time; prod tree-shakes it out).
+    if (import.meta.env.VITE_E2E_HOOK === "1") {
+      bus.emit("audio-volumes", { volumes: Object.fromEntries(vols) });
+    }
   }
 
   setMicEnabled(on: boolean) {
@@ -366,7 +383,10 @@ class StageVideo {
 }
 
 interface PositionsPayload {
-  players: { id: string; self: boolean; x: number; y: number }[];
+  // `zone` is the per-player audio zone the scene computes from the map's room
+  // rectangles (room id, or `OUTDOOR_ZONE`). Optional so payloads predating the
+  // zone-audio wiring degrade to outdoor (pure-distance) behaviour.
+  players: { id: string; self: boolean; x: number; y: number; zone?: string }[];
 }
 
 export const worldAudio = new WorldAudio();

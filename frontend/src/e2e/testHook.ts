@@ -30,10 +30,11 @@ const TRACKED_EVENTS = [
   "open-interactable",
   "near-stage",
   "leave-stage",
+  "audio-volumes",
 ] as const;
 
 /** High-frequency events kept out of the bounded event log (state-only). */
-const LOG_EXCLUDED = new Set<string>(["positions"]);
+const LOG_EXCLUDED = new Set<string>(["positions", "audio-volumes"]);
 const EVENT_LOG_CAP = 1000;
 
 interface LoggedEvent {

@@ -141,9 +141,10 @@ into the modules).
 | `game/interaction.ts` | interact-key priority: stand > interact > sit |
 | `game/interpolation.ts` | remote target → smoothed step + moving flag |
 | `game/throttle.ts` | move-send / positions-emit cadence |
-| `game/proximity.ts` | distance → spatial-audio volume |
+| `game/proximity.ts` | distance → spatial-audio volume (falloff curve) |
+| `game/audioZones.ts` | room rects → audio zones; (my zone, their zone, distance) → volume |
 | `game/interactables.ts` | Tiled objects → interactable defs + hit test |
-| `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, proximity-volume map |
+| `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
 locked-room position rollback (`keepLockedRoomsClosed`), portal payload validation
@@ -166,6 +167,41 @@ sequencing (`App.tsx`) is covered with React Testing Library + jsdom.
 **Where new game logic goes:** any new gameplay rule (audio zones, portal triggers,
 mini-game rules, …) is written as a pure module with its tests, and the scene only
 gains a call site. "Logic in the scene" is a review smell — put it in a pure module.
+
+### Audio model (proximity + zone isolation)
+
+World voice is **proximity audio gated by zone** — you hear a nearby player only if
+you share an *audio zone*.
+
+- **Falloff** (`game/proximity.ts`): within a zone, volume scales linearly from `1`
+  (touching) to `0` at the `AUDIO_CUTOFF` (200px) distance. Unchanged from before.
+- **Zones** (`game/audioZones.ts`): each room interior is a named zone whose identity
+  is the existing `roomId`; everything outside every room is the single `OUTDOOR_ZONE`.
+  Zones are **derived at load time from the map's `roomBounds` rectangles**
+  (`roomAreasFromObjects`) — the same rectangles the scene uses for room-entry
+  detection, so there is *no second source of truth*: adding a room to a map's
+  `roomBounds` layer auto-creates its audio zone.
+- **The rule** (`zoneVolume`): volume is `0` across different zones and the normal
+  falloff within a shared zone. It **composes with** the falloff — it gates, it does
+  not replace it. Doorways are a **binary, immediate cutover at the threshold**: no
+  muffling or attenuation-through-walls, so the world's audio feels physical.
+- **Wiring**: each client derives its own and every remote's zone locally from the
+  already-broadcast positions (the scene stamps a `zone` onto each player in the
+  `positions` payload). `mediaLogic.computeVolumes` then prices each subscribed remote
+  with `zoneVolume`, and `livekit.ts` applies it to the `<audio>` elements. There is
+  **no wire-format change and no new per-frame network traffic** — positions are
+  already shared, and the server is not involved.
+- Seated meetings are a separate, already-watertight path (a per-room LiveKit room with
+  seat-gated tokens); this model governs only the open-world proximity layer.
+
+**Trust model (v1).** Zone enforcement is **client-side**: each client mutes remotes
+outside its zone locally. A modified client could ignore the volume it's told to apply
+and still listen to a room it's standing outside of — the raw mic track is still
+subscribed. This is an accepted v1 tradeoff (it needs no server or LiveKit topology
+changes and adds zero latency). **Phase-2 privacy upgrade** (named, not built): move to
+**server-enforced isolation** — the backend swaps a player between LiveKit rooms at
+doorway crossings so the outside client never receives the track at all. Adopt it if the
+client-trust caveat becomes unacceptable.
 
 ### Tests
 

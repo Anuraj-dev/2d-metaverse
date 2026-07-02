@@ -8,7 +8,8 @@ import { CHARS, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
-import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone } from "../zones";
+import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, type RoomArea } from "../zones";
+import { zoneAt, roomAreasFromObjects } from "../audioZones";
 import { seatTransition, doorTransition } from "../seatDoor";
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
@@ -73,7 +74,7 @@ export default class WorldScene extends Phaser.Scene {
   private inStage = false;
   private inPresenterSlot = false;
   private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
-  private roomAreas: { roomId: string; rect: Phaser.Geom.Rectangle }[] = [];
+  private roomAreas: RoomArea[] = [];
   private enteredRooms = new Set<string>();
   private currentDoor: string | null = null;
   private currentSeat: Seat | null = null;
@@ -254,15 +255,10 @@ export default class WorldScene extends Phaser.Scene {
         solid: prop(o, "solid") === "true",
       });
     }
+    // Audio zones derive from the same `roomBounds` objects via the shared pure
+    // derivation, so the runtime zones can't drift from the on-disk map data.
     const roomObjs = map.getObjectLayer("roomBounds")?.objects ?? [];
-    for (const o of roomObjs) {
-      const roomId = prop(o, "roomId");
-      if (!roomId) continue;
-      this.roomAreas.push({
-        roomId,
-        rect: rectOf(o),
-      });
-    }
+    this.roomAreas = roomAreasFromObjects(roomObjs);
 
     const iaObjs = map.getObjectLayer("interactables")?.objects ?? [];
     this.interactables = parseInteractables(
@@ -752,12 +748,17 @@ export default class WorldScene extends Phaser.Scene {
       sx: (wx - cam.worldView.x) * cam.zoom,
       sy: (wy - cam.worldView.y) * cam.zoom,
     });
+    // Zone is sampled at the feet point (y + 8) so audio-zone membership matches
+    // the room-entry detection above (findRoomArea uses the same offset). Each
+    // client derives every player's zone locally from broadcast positions — no
+    // wire-format change, no per-frame network traffic.
     const players = [
       {
         id: this.net.selfId,
         self: true,
         x: this.player.x,
         y: this.player.y,
+        zone: zoneAt(this.roomAreas, this.player.x, this.player.y + 8),
         ...toScreen(this.player.x, this.player.y),
       },
       ...[...this.remotes].map(([id, r]) => ({
@@ -765,6 +766,7 @@ export default class WorldScene extends Phaser.Scene {
         self: false,
         x: r.sprite.x,
         y: r.sprite.y,
+        zone: zoneAt(this.roomAreas, r.sprite.x, r.sprite.y + 8),
         ...toScreen(r.sprite.x, r.sprite.y),
       })),
     ];
