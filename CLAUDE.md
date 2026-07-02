@@ -33,3 +33,12 @@ Raja is using Fable 5 as the primary model in this project until 2026-07-06. Whi
 - The LiveKit split is transport (`livekit.ts`, thin, untested beyond types) vs logic (`mediaLogic.ts`, pure, tested); the transport's track handlers must route through `subscribeAction`/`unsubscribeAction` (`wireTrackRouting`) — no inline attach-vs-surface branches.
 - Test style: table-driven / transition-matrix (incl. illegal transitions) for pure modules; React Testing Library + jsdom for React and the `App.tsx` media-transition chain — stub the Phaser canvas + heavy HUD children and assert media-manager calls + rendered HUD state, never Phaser internals or private fields. Everything runs in the single `npm test` (vitest/jsdom) step — no new pipeline stages.
 - The `game/eventBus.ts` typed bus is the Phaser↔React contract seam (and the future E2E hook); assert scene→React interactions through it.
+
+# E2E conventions (Playwright)
+
+- The E2E suite lives in `frontend/e2e/` and runs chromium-only against the BUILT frontend (`vite preview`, port 4173) + the docker-composed backend stack. It is PR-blocking (`e2e` job in `frontend-ci.yml`). Full local-run recipe: `frontend/README.md` → *E2E tests (Playwright)*.
+- **Assert through the bus hook + DOM HUD only.** `window.__testHook` (`frontend/src/e2e/testHook.ts`) exposes the event bus and minimal game state; it exists only in builds made with `VITE_E2E_HOOK=1` and must stay tree-shaken out of production bundles (CI greps the prod dist for `__testHook`). Never read pixels off the Phaser canvas, and never assert network internals already covered by the backend/smoke suites.
+- **No arbitrary sleeps.** Every wait is a bus event or DOM condition (`waitForFunction` on hook state, `expect(locator)`). Movement waits ride the `positions` tick. If a scenario flakes, fix the wait condition — do not add sleeps or bump retries (CI retries stay at 1, local at 0).
+- Scenarios run serially (`workers: 1`): all tests share live space "1", so parallel workers physically interfere. Each test signs up a fresh user (the room-key rate limit is per player+room, keeping tests isolated; the auth limiter is per-IP — restart the backend container if local iterating hits it).
+- LiveKit assertions stop at "token fetched, connection attempted" with fake media devices (chromium flags in `playwright.config.ts`); media quality is out of scope.
+- Map waypoints in `frontend/e2e/helpers.ts` are verified straight-line segments against the walls layer + solid furniture; re-verify against the map JSON when the maps change.
