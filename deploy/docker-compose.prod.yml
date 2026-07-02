@@ -13,6 +13,10 @@ x-backend-environment: &backend-environment
   ROOM_1_KEY: ${ROOM_1_KEY}
   ROOM_2_KEY: ${ROOM_2_KEY}
   ROOM_3_KEY: ${ROOM_3_KEY}
+  ROOM_4_KEY: ${ROOM_4_KEY}
+  ROOM_5_KEY: ${ROOM_5_KEY}
+  ROOM_6_KEY: ${ROOM_6_KEY}
+  STAGE_KEY: ${STAGE_KEY}
   MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/space.json}
   TRUST_PROXY: "true"
 
@@ -107,6 +111,16 @@ services:
       interval: 10s
       timeout: 4s
       retries: 12
+
+  alerter:
+    image: ${ALERTER_IMAGE:-metaverse-alerter:local}
+    build: ./alerter
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   postgres-data:
