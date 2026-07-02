@@ -101,6 +101,15 @@ async function emit(fn: () => void) {
   });
 }
 
+/** A promise whose resolution the test controls — used to hold a transition open. */
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   netMock.net.selfId = "";
   for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
@@ -183,27 +192,66 @@ describe("App shell", () => {
     await waitFor(() => expect(media.stageVideo.leave).toHaveBeenCalled());
   });
 
-  it("serializes overlapping transitions in order", async () => {
+  it("holds a queued transition until the pending one fully settles, then runs in order", async () => {
     render(<App />);
     await enterAndInit();
+    const gate = deferred();
     const order: string[] = [];
-    media.worldAudio.stop.mockImplementation(async () => void order.push("stop-world"));
-    media.roomVideo.join.mockImplementation(async () => void order.push("join-room"));
+    // op1 (seat-update): stop world audio → join room video. Its first step
+    // blocks on the gate so a second transition can pile up behind it.
+    media.worldAudio.stop.mockImplementationOnce(() => {
+      order.push("world-stop");
+      return gate.promise;
+    });
+    media.roomVideo.join.mockImplementationOnce(async () => void order.push("room-join"));
+    media.stageVideo.joinAsAudience.mockImplementationOnce(
+      async () => void order.push("stage-join")
+    );
+
     await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
-    await waitFor(() => expect(order).toEqual(["stop-world", "join-room"]));
+    // op2 (near-stage) enqueued while op1 is still pending on the gate.
+    await emit(() => bus.emit("near-stage"));
+
+    await waitFor(() => expect(order).toEqual(["world-stop"]));
+    // Neither the rest of op1 nor any of op2 may start while op1 is pending —
+    // this fails if the serialized mediaTransition queue is removed.
+    expect(media.roomVideo.join).not.toHaveBeenCalled();
+    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+
+    gate.resolve();
+    await waitFor(() =>
+      expect(order).toEqual(["world-stop", "room-join", "stage-join"])
+    );
   });
 
-  it("tears down all media on unmount and drops listeners", async () => {
+  it("unmount mid-transition: queued ops are dropped, teardown waits for the pending op", async () => {
     const { unmount } = render(<App />);
     await enterAndInit();
+    const gate = deferred();
+    media.worldAudio.stop.mockImplementationOnce(() => gate.promise);
+
+    // op1 starts and blocks on the gate…
+    await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
+    await waitFor(() => expect(media.worldAudio.stop).toHaveBeenCalledTimes(1));
+    // …op2 is queued behind it, not yet started.
+    await emit(() => bus.emit("near-stage"));
+    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+
     unmount();
+    // Teardown must not run while op1 is still pending.
+    expect(media.stageVideo.leave).not.toHaveBeenCalled();
+
+    gate.resolve();
     await waitFor(() => {
       expect(media.roomVideo.leave).toHaveBeenCalled();
       expect(media.stageVideo.leave).toHaveBeenCalled();
-      expect(media.worldAudio.stop).toHaveBeenCalled();
     });
+    // op1 had already started, so it ran to completion after the gate opened…
+    expect(media.roomVideo.join).toHaveBeenCalledWith("D", SELF);
+    // …but the queued op2 was dropped by the disposed guard.
+    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+
     // Listeners are gone: a post-unmount bus event triggers no new joins.
-    media.stageVideo.joinAsAudience.mockClear();
     bus.emit("near-stage");
     await Promise.resolve();
     expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
