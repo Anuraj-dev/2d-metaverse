@@ -24,7 +24,7 @@ Raja is using Fable 5 as the primary model in this project until 2026-07-06. Whi
 
 - **Both packages compile strict.** Every tsconfig project in the repo — backend (`backend/tsconfig.json`) and all frontend projects (`frontend/tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.e2e.json`) — has `strict`, `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes` on. Never turn a flag off, and never add a new tsconfig (or override) that compiles code under a weaker standard. `tsc -b` gates the build in CI, so a violation fails the pipeline.
 - **TypeScript stays in lockstep across packages** (same major — currently `~6.0.x` in both `frontend` and `backend`). Bump them together and re-verify `typescript-eslint` compatibility; don't let the two halves diverge.
-- **No new `!` (non-null assertion) without a justifying comment.** Prefer a narrowing guard, an early return, or a type derived from the net/contract layer. A genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a one-line comment saying why it's safe. Frontend `src/` is currently assertion-free — keep it that way.
+- **No new `!` (non-null assertion) without a justifying comment.** Prefer a narrowing guard, an early return, or a type derived from the net/contract layer. A genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a one-line comment saying why it's safe. Frontend **production (non-test) source under `src/`** is currently assertion-free — keep it that way. Test files (`frontend/src/**/*.test.ts(x)`, excluded from `tsconfig.app.json`, and `frontend/e2e/` specs) still contain assertions; PRD 6 strict-cleans them — don't clean them piecemeal before it lands.
 
 # Backend test conventions
 

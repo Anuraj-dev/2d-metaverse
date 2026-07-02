@@ -60,8 +60,10 @@ runtime surprise. Keep it that way — never relax a flag or add a laxer tsconfi
 **No new `!` without justification.** Non-null assertions (`x!`) are a review smell:
 prefer a narrowing guard, an early return, or a schema-derived type. The rare
 genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a
-comment explaining why it is safe. Frontend `src/` currently has **zero** non-null
-assertions.
+comment explaining why it is safe. Frontend **production (non-test) source under
+`src/` currently has zero non-null assertions**; unit-test files (`*.test.ts(x)`,
+excluded from `tsconfig.app.json`) keep theirs until PRD 6 strict-cleans the test
+projects.
 
 **Required-loud vs optional-soft.** When a strict-mode `| undefined`/`| null`
 forces a decision, classify the value first:
