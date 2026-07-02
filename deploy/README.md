@@ -49,7 +49,11 @@ What triggers an alert:
   last ~50 log lines.
 
 On startup the watchdog posts `🟢 alerter online <hostname>` so you can confirm
-the alerting layer itself is alive.
+the alerting layer itself is alive. If a token IS configured but that startup
+announcement cannot be delivered, the alerter exits non-zero — the compose
+restart policy retries it, and the deploy gate's running-container check turns
+a persistently broken alerting layer into a failed deploy instead of a silent
+one.
 
 ## Bot setup (one-time)
 
@@ -79,11 +83,34 @@ exit-code-gated step **before** switching the backend to the new image:
   backend fails its `/health/ready` check it is rolled back to the previous
   image and a "deploy rolled back" Telegram alert is sent. If there is no
   previous image, a hard-failure alert is sent instead.
+- After a healthy backend switch, the **watchdog alerter is itself a hard
+  gate**: the script pulls/starts the alerter and requires the container to be
+  running; if it fails to start (or crash-loops because its startup Telegram
+  announcement cannot be delivered), the deploy exits non-zero with an alert
+  attempt — a deploy can never report success while alerting is broken.
+- Telegram sends from the script use `curl --fail-with-body --retry 1`; a
+  non-2xx response hits an explicit warning path (the response body is logged,
+  never the token-bearing URL).
 - `set -Eeuo pipefail` is in force throughout.
 
 The deploy job in `backend-deploy.yml` also fails the workflow if the remote
 SSM command's status is not `Success` (previously the status was printed but
 never checked).
+
+The gating behavior is regression-tested hermetically in CI:
+`deploy/test/deploy-gate.test.sh` runs the real script with PATH-shimmed
+`docker`/`curl`/`aws` stubs and asserts that a failing setup aborts with the
+setup exit code before the backend switch, that a non-running alerter fails
+the deploy, and that alerts are attempted in both cases.
+
+# Frontend deploys (Vercel)
+
+Production frontend deploys go through CI only: the `deploy` job in
+`frontend-ci.yml` runs `vercel deploy --prod` on pushes to `main` after
+lint/typecheck/test/build/budget pass. `frontend/vercel.json` sets
+`git.deploymentEnabled.main: false` so the Vercel Git integration does NOT
+also production-deploy `main` (avoiding double deploys with last-writer-wins);
+PR preview deployments from the Git integration remain enabled.
 
 # Incident playbook (prod hotfix runbook)
 
@@ -94,10 +121,20 @@ rebuilt after the campus map work). Steps:
 1. **Complete the prod env.** Add the missing keys to the production SSM env
    parameter: `ROOM_4_KEY`, `ROOM_5_KEY`, `ROOM_6_KEY`, and `STAGE_KEY` (plus
    `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if not already set).
-2. **Re-run the seed and check it.** On the EC2 host:
+2. **Re-run the seed and check it.** On the EC2 host. Two things every manual
+   compose command here needs: `--env-file .env` (compose does not read it
+   implicitly for variable substitution in this file's `${VAR}` references),
+   and `BACKEND_IMAGE` — a deploy-time variable that is **not** in `.env`; the
+   currently deployed tag is recorded in `/opt/metaverse/.backend-image`.
    ```bash
    cd /opt/metaverse
-   docker compose -f docker-compose.prod.yml run --rm setup
+   # Refresh .env from the SSM parameter updated in step 1:
+   aws ssm get-parameter --region <region> --name /metaverse/prod/env \
+     --with-decryption --query Parameter.Value --output text > .env.next \
+     && chmod 600 .env.next && mv .env.next .env
+   # Run the migrate+seed container against the deployed image:
+   BACKEND_IMAGE="$(<.backend-image)" \
+     docker compose --env-file .env -f docker-compose.prod.yml run --rm setup
    echo "setup exit: $?"          # must be 0
    ```
    If non-zero, read the printed logs — the most common cause is a still-missing
