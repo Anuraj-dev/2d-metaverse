@@ -1,5 +1,13 @@
+# Log rotation on every service so a chatty container can never fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-backend-environment: &backend-environment
   NODE_ENV: ${NODE_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-debug}
   PORT: 3001
   DATABASE_URL: ${DATABASE_URL:-postgres://metaverse:metaverse@postgres:5432/metaverse}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
@@ -24,6 +32,7 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-metaverse}
       POSTGRES_USER: ${POSTGRES_USER:-metaverse}
@@ -39,6 +48,7 @@ services:
   redis:
     image: redis:8-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -51,6 +61,7 @@ services:
   livekit:
     image: livekit/livekit-server:v1.9.1
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       redis:
         condition: service_healthy
@@ -74,6 +85,7 @@ services:
   setup:
     build: ./backend
     restart: "no"
+    logging: *default-logging
     environment: *backend-environment
     depends_on:
       postgres:
@@ -83,6 +95,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    logging: *default-logging
     environment: *backend-environment
     depends_on:
       setup:

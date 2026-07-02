@@ -2,6 +2,9 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool } from "./db.js";
+import { childLogger } from "./logger.js";
+
+const log = childLogger({ module: "migrate" });
 
 export async function migrate(): Promise<void> {
   const migrationsDir = fileURLToPath(new URL("../migrations/", import.meta.url));
@@ -21,7 +24,7 @@ export async function migrate(): Promise<void> {
         await client.query(sql);
         await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [name]);
         await client.query("COMMIT");
-        console.log(`Applied migration ${name}`);
+        log.info({ migration: name }, "applied migration");
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -33,5 +36,5 @@ export async function migrate(): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  migrate().then(() => pool.end()).catch((error) => { console.error(error); process.exit(1); });
+  migrate().then(() => pool.end()).catch((error) => { log.fatal({ err: error }, "migration failed"); process.exit(1); });
 }
