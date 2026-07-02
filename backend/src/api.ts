@@ -78,7 +78,7 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
   const roomName = parsed.data.roomName;
   let canPublish = true;
   let canPublishVideo = false;
-  let lkRoom = roomName;  // LiveKit room name (may differ from request roomName)
+  const lkRoom = roomName;  // LiveKit room name (may differ from request roomName)
 
   if (roomName.startsWith("world:")) {
     const spaceId = roomName.slice("world:".length);

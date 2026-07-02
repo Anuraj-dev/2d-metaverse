@@ -29,7 +29,9 @@ describe("auth", () => {
 
     expect(token).toBe("JWT");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const url = String(fetchMock.mock.calls[0][0]);
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("fetch was not called");
+    const url = String(call[0]);
     expect(url).toContain("/api/v1/signin");
     expect(url).not.toContain("/signup");
   });
@@ -38,7 +40,9 @@ describe("auth", () => {
     fetchMock.mockReturnValue(ok({}));
     await signUp("bob", "pw");
 
-    const [url, init] = fetchMock.mock.calls[0];
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("fetch was not called");
+    const [url, init] = call;
     expect(String(url)).toContain("/api/v1/signup");
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       username: "bob",

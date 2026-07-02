@@ -39,7 +39,10 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
       - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=moderate

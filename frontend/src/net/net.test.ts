@@ -12,8 +12,10 @@ describe("MockNet", () => {
     net.connect("tok", "1");
     vi.advanceTimersByTime(200);
     expect(seen).toHaveLength(1);
-    expect(seen[0].selfId).toBe(net.selfId);
-    expect(seen[0].players.length).toBeGreaterThanOrEqual(2);
+    const [init] = seen;
+    if (!init) throw new Error("expected one init event");
+    expect(init.selfId).toBe(net.selfId);
+    expect(init.players.length).toBeGreaterThanOrEqual(2);
     net.disconnect();
   });
 
@@ -24,7 +26,9 @@ describe("MockNet", () => {
     net.connect("tok", "1");
     vi.advanceTimersByTime(200);
     net.chat("hello");
-    expect(msgs[0].text).toBe("hello");
+    const [firstMsg] = msgs;
+    if (!firstMsg) throw new Error("expected the echoed chat message");
+    expect(firstMsg.text).toBe("hello");
     vi.advanceTimersByTime(1000);
     expect(msgs.length).toBeGreaterThanOrEqual(2); // friendly NPC reply
     net.disconnect();

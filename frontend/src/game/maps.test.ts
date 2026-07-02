@@ -33,7 +33,9 @@ describe("maps registry", () => {
   });
 
   it("campus references multiple tilesets including the existing one", () => {
-    const keys = MAPS.campus.tilesets.map((t) => t.key);
+    const campus = MAPS.campus;
+    if (!campus) throw new Error("campus map is missing from MAPS");
+    const keys = campus.tilesets.map((t) => t.key);
     expect(keys.length).toBeGreaterThanOrEqual(2);
     expect(keys).toContain("floors_walls");
     expect(keys).toContain("exterior");

@@ -16,7 +16,9 @@ describe("settings store", () => {
     const s = getSettings();
     expect(s.masterVolume).toBe(0.25);
     expect(s.muteSfx).toBe(true);
-    const raw = JSON.parse(localStorage.getItem("mv:settings")!);
+    const stored = localStorage.getItem("mv:settings");
+    if (stored === null) throw new Error("settings were not persisted to localStorage");
+    const raw = JSON.parse(stored) as { masterVolume: number };
     expect(raw.masterVolume).toBe(0.25);
   });
 

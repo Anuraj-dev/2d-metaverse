@@ -208,7 +208,9 @@ export async function signInAndJoin(
 /** Current self position from the last positions tick. */
 export async function selfPosition(page: Page): Promise<{ x: number; y: number }> {
   return page.evaluate(() => {
-    const positions = window.__testHook!.state.last["positions"] as {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    const positions = hook.state.last["positions"] as {
       players: { self: boolean; x: number; y: number }[];
     };
     const self = positions.players.find((p) => p.self)!;
@@ -219,7 +221,9 @@ export async function selfPosition(page: Page): Promise<{ x: number; y: number }
 /** Self player id (from the positions payload). */
 export async function selfId(page: Page): Promise<string> {
   const id = await page.evaluate(() => {
-    const positions = window.__testHook!.state.last["positions"] as {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    const positions = hook.state.last["positions"] as {
       players: { id?: string; self: boolean }[];
     };
     return positions.players.find((p) => p.self)?.id ?? null;
@@ -248,7 +252,8 @@ export async function walkTo(
   await page.evaluate(
     ({ x, y, timeoutMs, tolerance, stopAtDoor }) =>
       new Promise<void>((resolve, reject) => {
-        const hook = window.__testHook!;
+        const hook = window.__testHook;
+        if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
         let lastPos: { x: number; y: number } | null = null;
         let stuckSince = 0;
         const finish = () => {
@@ -402,7 +407,8 @@ export async function sitAtSeat(
       arrived = await page.evaluate(
         ({ id }) =>
           new Promise<boolean>((resolve) => {
-            const hook = window.__testHook!;
+            const hook = window.__testHook;
+            if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
             let still = 0;
             let last: { x: number; y: number } | null = null;
             const off = hook.on("positions", (payload) => {
@@ -431,7 +437,11 @@ export async function sitAtSeat(
       );
     }
   }
-  const roomNow = await page.evaluate(() => window.__testHook!.state.currentRoomId);
+  const roomNow = await page.evaluate(() => {
+    const hook = window.__testHook;
+    if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+    return hook.state.currentRoomId;
+  });
   if (roomNow !== roomId) {
     throw new Error(
       `sitAtSeat: room ${roomId} membership lost during the seat approach ` +

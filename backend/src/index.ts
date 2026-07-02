@@ -16,7 +16,7 @@ async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   log.info({ signal }, "shutting down");
-  io.close();
+  void io.close();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await Promise.allSettled([redis.quit(), pool.end()]);
   process.exit(0);

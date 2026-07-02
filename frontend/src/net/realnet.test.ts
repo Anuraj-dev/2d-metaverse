@@ -78,6 +78,8 @@ describe("RealNet adapter", () => {
 
     h.handlers["init"]?.({ selfId: "me-42", players: [] });
     expect(net.selfId).toBe("me-42");
-    expect(seen[0].selfId).toBe("me-42");
+    const [init] = seen;
+    if (!init) throw new Error("expected the forwarded init payload");
+    expect(init.selfId).toBe("me-42");
   });
 });

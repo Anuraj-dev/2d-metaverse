@@ -44,7 +44,9 @@ try {
   await pgClient.connect();
   await pgClient.query("SELECT 1");
 } catch (error) {
-  throw new Error(`${failure("PostgreSQL", databaseUrl, "DATABASE_URL")} (${String(error)})`);
+  throw new Error(`${failure("PostgreSQL", databaseUrl, "DATABASE_URL")} (${String(error)})`, {
+    cause: error,
+  });
 } finally {
   await pgClient.end().catch(() => undefined);
 }
@@ -55,7 +57,9 @@ try {
   await redisProbe.connect();
   await redisProbe.ping();
 } catch (error) {
-  throw new Error(`${failure("Redis", redisUrl, "REDIS_URL")} (${String(error)})`);
+  throw new Error(`${failure("Redis", redisUrl, "REDIS_URL")} (${String(error)})`, {
+    cause: error,
+  });
 } finally {
   if (redisProbe.isOpen) await redisProbe.quit().catch(() => undefined);
 }
