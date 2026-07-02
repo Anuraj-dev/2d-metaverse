@@ -14,6 +14,7 @@
     "db:seed": "tsx src/seed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "smoke": "node test/smoke.mjs"
   },
   "dependencies": {

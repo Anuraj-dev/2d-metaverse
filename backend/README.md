@@ -67,6 +67,23 @@ docker logs metaverse-backend-1 | jq 'select(.module == "client-error")'
 docker logs metaverse-backend-1 | jq 'select(.playerId == "PLAYER-UUID")'
 ```
 
+## Running the tests
+
+There are two vitest suites plus the CI smoke test:
+
+- **Unit** — `npm test`. Service-free (no Postgres/Redis needed); covers pure modules (`parse-config`, `password`, `seat-key`, `request-logger`, `client-errors`). This is what CI's `test` job runs.
+- **Integration** — `npm run test:integration`. Boots the real app in-process on an ephemeral port (via `createApp()`/`createServer()` in `src/app.ts`) and exercises REST over HTTP, sockets via `socket.io-client`, the Redis Lua scripts under parallel contention, the repository against the real schema, and the migration runner against a fixture directory. **Requires Postgres and Redis**:
+
+  ```bash
+  docker compose up -d postgres redis   # from the repo root
+  cd backend && npm run test:integration
+  ```
+
+  Connection env (defaults target the dev compose): `DATABASE_URL` (`postgres://metaverse:metaverse@localhost:5432/metaverse`) and `REDIS_URL` (`redis://localhost:6379/1` — logical DB 1, so test state never touches a dev server on DB 0). The suite fails fast with instructions if either service is unreachable. Isolation: each run migrates+seeds idempotently, flushes the dedicated Redis DB, uses per-run usernames it deletes afterwards, and runs the migration tests in a throwaway Postgres schema — so back-to-back runs are safe and no manual cleanup is needed.
+- **Smoke** — `npm run smoke` against a fully composed stack (`http://localhost:3001` or `SMOKE_URL`).
+
+In CI, the `test` job (no services) runs typecheck + unit tests + build; the Docker `integration` job composes the full stack, runs `npm run test:integration` against the published `5432`/`6379` host ports, then the smoke test. The dev compose host-port mappings are overridable via `POSTGRES_HOST_PORT`/`REDIS_HOST_PORT` if they clash locally.
+
 ## Contract details
 
 - REST routes exactly follow `/api/v1/signup`, `/signin`, `/space/:id`, and `/livekit/token`.

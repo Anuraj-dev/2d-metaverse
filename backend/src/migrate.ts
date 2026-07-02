@@ -6,8 +6,14 @@ import { childLogger } from "./logger.js";
 
 const log = childLogger({ module: "migrate" });
 
-export async function migrate(): Promise<void> {
-  const migrationsDir = fileURLToPath(new URL("../migrations/", import.meta.url));
+/**
+ * Apply pending .sql migrations in name order. `migrationsDir` is overridable
+ * so tests can point the runner at a fixture directory; production callers use
+ * the default (the repo's migrations/ directory).
+ */
+export async function migrate(
+  migrationsDir: string = fileURLToPath(new URL("../migrations/", import.meta.url))
+): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (

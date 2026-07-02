@@ -39,6 +39,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-metaverse}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    # Host mapping is a dev/CI convenience for backend integration tests
+    # (npm run test:integration); production compose exposes nothing.
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -52,6 +56,10 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
+    # Host mapping is a dev/CI convenience for backend integration tests
+    # (npm run test:integration); production compose exposes nothing.
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

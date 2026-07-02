@@ -93,6 +93,13 @@ jobs:
           done
           docker compose logs --no-color
           exit 1
+      - name: Run integration test suite
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://metaverse:metaverse@localhost:5432/metaverse
+          # Logical DB 1 keeps test game state away from the composed backend on DB 0.
+          REDIS_URL: redis://localhost:6379/1
+        run: npm run test:integration
       - name: Run contract smoke test
         working-directory: backend
         run: npm run smoke

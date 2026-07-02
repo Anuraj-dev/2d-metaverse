@@ -19,3 +19,9 @@ Raja is using Fable 5 as the primary model in this project until 2026-07-06. Whi
 - **Backend**: never use `console.*` in `backend/src` — log through pino (`backend/src/logger.ts`). Create per-module child loggers with `childLogger({ module: "..." })`; inside request handlers use the request-bound logger (`res.locals.log`, or `requestLog(res, fallback)` from `request-logger.ts`) so lines carry the `requestId`; socket code logs through the per-connection child logger (bound with `socketId`, and `playerId`/`spaceId` after join). Pass errors as `{ err }` so pino serializes the stack. `LOG_LEVEL` env controls verbosity (`debug` in dev, `info` in prod).
 - **Frontend error beacon**: `frontend/src/errorBeacon.ts` ships uncaught errors/unhandled rejections to backend `POST /client-errors` (installed in `main.tsx`, real-backend mode only). Reports appear in backend logs as `module: "client-error"` with the client's build `sha`. Rate-limited server-side (10/min/IP) and client-side (session cap + dedupe) — telemetry must never break the game.
 - **Rotation**: all compose services use the `json-file` driver, `max-size: 10m` × `max-file: 3`, via the shared `x-logging` anchor. Add it to any new compose service.
+
+# Backend test conventions
+
+- Unit vs integration split: `npm test` (backend) must stay service-free; `npm run test:integration` requires Postgres + Redis (`docker compose up -d postgres redis`), uses Redis logical DB 1, and runs files sequentially.
+- Testability seams: boot the real app via `createApp()`/`createServer()` (src/app.ts) on an ephemeral port — never call route/socket handlers directly; config assertions go through the pure `parseConfig(env)` (src/parse-config.ts); the migration runner takes an overridable migrations dir.
+- Isolation: integration tests must never assume clean state — per-run usernames (deleted afterwards), `flushDb` on the dedicated Redis DB, and throwaway Postgres schemas for migration tests.
