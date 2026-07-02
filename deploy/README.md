@@ -72,6 +72,22 @@ alerting layer into a failed deploy instead of a silent one.
 If either variable is unset, the alerter logs `alerts disabled` and idles — a
 missing token never crashes the stack, but you also get no alerts, so set them.
 
+## Troubleshooting: alerter stuck `unhealthy` (EACCES on docker.sock)
+
+If a deploy aborts at the alerter gate and the container logs show
+`connect EACCES /var/run/docker.sock`, the alerter's `/events` subscription is
+being denied: the image runs as `node` (uid 1000) but the mounted
+`/var/run/docker.sock` is `root:docker` mode 0660, so the container must belong
+to the socket's group to read it. The compose service adds it via
+`group_add: ["${DOCKER_GID:-109}"]`, and `deploy-remote.sh` derives `DOCKER_GID`
+from the socket on the box at deploy time (`stat -c %g /var/run/docker.sock`),
+falling back to `109` (the common Debian/Ubuntu `docker` gid) if it can't be
+read. If the box's docker group differs and auto-derivation is somehow bypassed,
+set `DOCKER_GID` in the environment to the value of
+`stat -c %g /var/run/docker.sock`. Abort alerts for the alerter and backend
+gates now embed the last few log lines, so the EACCES reason is visible in
+Telegram without SSHing to the box.
+
 # Log rotation and the log stream
 
 Every service in both compose files (`docker-compose.yml` and

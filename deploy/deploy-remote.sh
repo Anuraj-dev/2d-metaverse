@@ -37,6 +37,19 @@ send_alert() {
   fi
 }
 
+# Trim a log excerpt for embedding in a Telegram alert: keep the last $1 lines,
+# then hard-cap the character count so the surrounding message stays under
+# Telegram's 4096-char limit (mirrors the alerter's own MAX_LEN headroom).
+TELEGRAM_LOG_MAXLEN=${TELEGRAM_LOG_MAXLEN:-3000}
+clip_logs() {
+  local lines=$1 out
+  out=$(tail -n "$lines")
+  if (( ${#out} > TELEGRAM_LOG_MAXLEN )); then
+    out="…${out: -TELEGRAM_LOG_MAXLEN}"
+  fi
+  printf '%s' "$out"
+}
+
 if [[ "$SKIP_SSM_ENV" != "1" ]]; then
   aws ssm get-parameter \
     --region "$AWS_REGION" \
@@ -90,6 +103,20 @@ prune_local_release_images() {
   docker image prune -f
 }
 
+# The alerter container mounts /var/run/docker.sock; grant its container the
+# socket's group (via group_add in the compose file) so its /events
+# subscription isn't denied with EACCES. Derive the gid from the socket on THIS
+# box — the most robust source — and export it for compose interpolation, with
+# a 109 fallback (the common Debian/Ubuntu `docker` group) if it can't be read.
+DOCKER_SOCK=${DOCKER_SOCK:-/var/run/docker.sock}
+if [[ -e "$DOCKER_SOCK" ]]; then
+  DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || echo 109)
+else
+  DOCKER_GID=109
+fi
+export DOCKER_GID
+echo "Alerter docker socket group: ${DOCKER_GID} (from ${DOCKER_SOCK})"
+
 export BACKEND_IMAGE=$IMAGE
 if [[ "$SKIP_PULL" != "1" ]]; then
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull backend setup
@@ -126,9 +153,10 @@ deploy_alerter() {
 if [[ "$SKIP_ALERTER" != "1" && -n "$ALERTER_IMAGE" ]]; then
   export ALERTER_IMAGE
   if ! deploy_alerter; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50 alerter || true
-    send_alert "$(printf '🔴 Deploy aborted on %s: watchdog alerter (%s) failed to become healthy; not deploying %s. Previous release untouched.' \
-      "$(hostname)" "$ALERTER_IMAGE" "$IMAGE")"
+    ALERTER_LOG=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50 alerter 2>&1 || true)
+    echo "$ALERTER_LOG"
+    send_alert "$(printf '🔴 Deploy aborted on %s: watchdog alerter (%s) failed to become healthy; not deploying %s. Previous release untouched.\nLast alerter logs:\n%s' \
+      "$(hostname)" "$ALERTER_IMAGE" "$IMAGE" "$(clip_logs 10 <<<"$ALERTER_LOG")")"
     exit 1
   fi
   echo "Alerter watchdog healthy"
@@ -167,10 +195,10 @@ if [[ "$healthy" != true ]]; then
     export BACKEND_IMAGE=$PREVIOUS_IMAGE
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps backend
     send_alert "$(printf '🟠 Deploy rolled back on %s: %s failed its health check and was reverted to %s.\nLast backend logs:\n%s' \
-      "$(hostname)" "$IMAGE" "$PREVIOUS_IMAGE" "$(tail -n 50 <<<"$BACKEND_LOG")")"
+      "$(hostname)" "$IMAGE" "$PREVIOUS_IMAGE" "$(clip_logs 50 <<<"$BACKEND_LOG")")"
   else
     send_alert "$(printf '🔴 Deploy failed on %s: %s did not become healthy and there is no previous image to roll back to.\nLast backend logs:\n%s' \
-      "$(hostname)" "$IMAGE" "$(tail -n 50 <<<"$BACKEND_LOG")")"
+      "$(hostname)" "$IMAGE" "$(clip_logs 50 <<<"$BACKEND_LOG")")"
   fi
   exit 1
 fi
