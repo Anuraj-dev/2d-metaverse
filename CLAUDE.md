@@ -1,0 +1,15 @@
+# Model delegation (temporary, until 2026-07-06)
+
+Raja is using Fable 5 as the primary model in this project until 2026-07-06. While that's active:
+
+- Token-heavy, unproductive tasks should be delegated to Sonnet 5 via a subagent instead of being done directly by Fable. This includes: reading/exploring the codebase and Claude-in-Chrome browser use/testing.
+- Use the Agent tool to hand these off rather than burning Fable's context on them.
+- **Code review is the exception — do not delegate it to a Sonnet 5 subagent.** Review is delegated to Codex GPT 5.5, acting as the Reviewer Agent in the two-agent PR loop. Reviewer Agent conduct (see project memory `reviewer-agent-conduct`): report findings to the Coder via PR comments only — never edit code, patch configs, or apply fixes directly. Gate every `✅ READY FOR MERGE` approval on a green `npm run build` (`tsc -b && vite build`), not just `npm test` — tests can pass on code the build rejects.
+- After 2026-07-06 (or once Raja switches back off Fable), this delegation rule no longer applies — revert to normal behavior.
+
+# Production topology
+
+- **Frontend**: hosted on Vercel, auto-deployed to production by the `deploy` job in `.github/workflows/frontend-ci.yml` on every push to `main` (after lint/typecheck/test/build/budget pass). Requires `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` repo secrets.
+- **Backend**: a single EC2 box running Docker Compose (`deploy/docker-compose.prod.yml`). `Backend deploy` builds/pushes an immutable ECR image and runs `deploy/deploy-remote.sh` via SSM. The deploy script gates on the migrate+seed `setup` container's exit code before switching the backend image, and alerts + rolls back on health-check failure.
+- **Alerting**: a `alerter` container on the box watches the Docker events stream and posts container crashes/restart-loops/unhealthy states to Telegram (`TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from SSM). See `deploy/README.md`.
+- **Version stamps**: the running git SHA is visible in the app's Settings panel (`build <sha>`, injected via `VITE_GIT_SHA`) and in the backend `/health/live` + `/health/ready` responses (`sha`, baked into the image via the `GIT_SHA` build arg).
