@@ -20,6 +20,12 @@ Raja is using Fable 5 as the primary model in this project until 2026-07-06. Whi
 - **Frontend error beacon**: `frontend/src/errorBeacon.ts` ships uncaught errors/unhandled rejections to backend `POST /client-errors` (installed in `main.tsx`, real-backend mode only). Reports appear in backend logs as `module: "client-error"` with the client's build `sha`. Rate-limited server-side (10/min/IP) and client-side (session cap + dedupe) — telemetry must never break the game.
 - **Rotation**: all compose services use the `json-file` driver, `max-size: 10m` × `max-file: 3`, via the shared `x-logging` anchor. Add it to any new compose service.
 
+# Compiler standard (repo-wide, non-negotiable)
+
+- **Both packages compile strict.** Every tsconfig project in the repo — backend (`backend/tsconfig.json`) and all frontend projects (`frontend/tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.e2e.json`) — has `strict`, `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes` on. Never turn a flag off, and never add a new tsconfig (or override) that compiles code under a weaker standard. `tsc -b` gates the build in CI, so a violation fails the pipeline.
+- **TypeScript stays in lockstep across packages** (same major — currently `~6.0.x` in both `frontend` and `backend`). Bump them together and re-verify `typescript-eslint` compatibility; don't let the two halves diverge.
+- **No new `!` (non-null assertion) without a justifying comment.** Prefer a narrowing guard, an early return, or a type derived from the net/contract layer. A genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a one-line comment saying why it's safe. Frontend `src/` is currently assertion-free — keep it that way.
+
 # Backend test conventions
 
 - Unit vs integration split: `npm test` (backend) must stay service-free; `npm run test:integration` requires Postgres + Redis (`docker compose up -d postgres redis`), uses Redis logical DB 1, and runs files sequentially.

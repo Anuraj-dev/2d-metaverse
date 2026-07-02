@@ -48,6 +48,21 @@ sign-in.
 | `npm run build` | Typecheck + production build |
 | `npm run size` | Bundle-budget check (gzipped entry chunk) |
 
+## Type safety (strict baseline)
+
+Every frontend tsconfig project (`app`, `node`, `e2e`) compiles under the **same
+strict contract as the backend**: `strict`, `noUncheckedIndexedAccess`, and
+`exactOptionalPropertyTypes` are all on. `tsc -b` gates the build, so a missing
+tile/frame/record lookup or an unannotated parameter is a **compile error**, not a
+runtime surprise. Keep it that way — never relax a flag or add a laxer tsconfig
+(see the repo-wide standard in the root `CLAUDE.md`).
+
+**No new `!` without justification.** Non-null assertions (`x!`) are a review smell:
+prefer a narrowing guard, an early return, or a schema-derived type. The rare
+genuinely-unavoidable assertion (e.g. a Phaser lifecycle guarantee) must carry a
+comment explaining why it is safe. Frontend `src/` currently has **zero** non-null
+assertions.
+
 ## Controls
 
 - **WASD / arrows** — move

@@ -46,7 +46,7 @@ export default class WorldScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private playerLabel!: Phaser.GameObjects.Text;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
+  private wasd!: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyShift!: Phaser.Input.Keyboard.Key;
   private touchAxis = { x: 0, y: 0 };
@@ -119,16 +119,18 @@ export default class WorldScene extends Phaser.Scene {
     const map = this.make.tilemap({ key: activeMap().key });
     // A map may reference multiple tilesets; add each by its Tiled name (which
     // equals the loaded image key per the maps registry convention).
-    const tiles = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
+    const tiles = map.tilesets
+      .map((ts) => map.addTilesetImage(ts.name, ts.name))
+      .filter((t): t is Phaser.Tilemaps.Tileset => t !== null);
     map.createLayer("ground", tiles, 0, 0);
     // Optional decorative layers below the player (no collision).
     if (map.getLayer("ground_decor")) map.createLayer("ground_decor", tiles, 0, 0);
     if (map.getLayer("decor_below"))  map.createLayer("decor_below",  tiles, 0, 0);
-    const walls = map.createLayer("walls", tiles, 0, 0)!;
-    walls.setCollisionByExclusion([-1]);
+    const walls = map.createLayer("walls", tiles, 0, 0);
+    walls?.setCollisionByExclusion([-1]);
     // decor_above renders over the player so tree canopies/awnings overlap correctly.
     if (map.getLayer("decor_above")) {
-      map.createLayer("decor_above", tiles, 0, 0)!.setDepth(3000);
+      map.createLayer("decor_above", tiles, 0, 0)?.setDepth(3000);
     }
 
     this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
@@ -147,7 +149,7 @@ export default class WorldScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(sx, sy, this.avatar, idleFrame("down"));
     this.player.setSize(18, 14).setOffset(7, 16);
     this.lastPublicPosition.set(sx, sy);
-    this.physics.add.collider(this.player, walls);
+    if (walls) this.physics.add.collider(this.player, walls);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     this.buildFurniture();
@@ -155,17 +157,23 @@ export default class WorldScene extends Phaser.Scene {
 
     this.playerLabel = this.makeLabel("You");
 
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.wasd = this.input.keyboard!.addKeys("W,A,S,D") as Record<
-      string,
-      Phaser.Input.Keyboard.Key
-    >;
-    this.keyE = this.input.keyboard!.addKey("E");
-    this.keyShift = this.input.keyboard!.addKey("SHIFT");
-    // Phaser captures WASD/E/arrows on window and preventDefaults them, which
-    // stops those characters reaching DOM inputs (chat). Drop the capture so
-    // typing works; movement still reads key state. isTyping() gates the game.
-    this.input.keyboard!.clearCaptures();
+    // Phaser enables the keyboard plugin by default (game config `input.keyboard`),
+    // so it is present once the scene boots in a browser; guard rather than assert
+    // so a headless/keyboard-disabled config degrades instead of throwing.
+    const keyboard = this.input.keyboard;
+    if (keyboard) {
+      this.cursors = keyboard.createCursorKeys();
+      this.wasd = keyboard.addKeys("W,A,S,D") as Record<
+        "W" | "A" | "S" | "D",
+        Phaser.Input.Keyboard.Key
+      >;
+      this.keyE = keyboard.addKey("E");
+      this.keyShift = keyboard.addKey("SHIFT");
+      // Phaser captures WASD/E/arrows on window and preventDefaults them, which
+      // stops those characters reaching DOM inputs (chat). Drop the capture so
+      // typing works; movement still reads key state. isTyping() gates the game.
+      keyboard.clearCaptures();
+    }
 
     this.wireNet();
     this.wireUi();
@@ -193,7 +201,7 @@ export default class WorldScene extends Phaser.Scene {
     const doorObjs = map.getObjectLayer("doorZones")?.objects ?? [];
     for (const o of doorObjs) {
       const roomId = prop(o, "roomId") ?? "";
-      const rect = new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!);
+      const rect = rectOf(o);
       this.doors.push({ roomId, name: o.name || `Room ${roomId}`, rect });
 
       // Animated door sprite — scales to match the door gap width
@@ -206,13 +214,13 @@ export default class WorldScene extends Phaser.Scene {
     }
     const seatObjs = map.getObjectLayer("seats")?.objects ?? [];
     for (const o of seatObjs) {
-      const cx = o.x! + (o.width! || 16) / 2;
-      const cy = o.y! + (o.height! || 16) / 2;
+      const cx = (o.x ?? 0) + (o.width || 16) / 2;
+      const cy = (o.y ?? 0) + (o.height || 16) / 2;
       this.seats.push({
         roomId: prop(o, "roomId") ?? "",
         seatId: Number(prop(o, "seatId") ?? 0),
         facing: (prop(o, "facing") as Dir) ?? "down",
-        rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width! || 16, o.height! || 16),
+        rect: rectOf(o, 16, 16),
         cx,
         cy,
       });
@@ -223,8 +231,8 @@ export default class WorldScene extends Phaser.Scene {
       if (!key) continue;
       this.furniture.push({
         key,
-        x: o.x!,
-        y: o.y!,
+        x: o.x ?? 0,
+        y: o.y ?? 0,
         solid: prop(o, "solid") === "true",
       });
     }
@@ -234,7 +242,7 @@ export default class WorldScene extends Phaser.Scene {
       if (!roomId) continue;
       this.roomAreas.push({
         roomId,
-        rect: new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!),
+        rect: rectOf(o),
       });
     }
 
@@ -246,10 +254,8 @@ export default class WorldScene extends Phaser.Scene {
     const stageObjs = map.getObjectLayer("stage")?.objects ?? [];
     for (const o of stageObjs) {
       const zoneType = prop(o, "zoneType");
-      if (zoneType === "stage")
-        this.stageZone = new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!);
-      else if (zoneType === "presenter")
-        this.presenterZone = new Phaser.Geom.Rectangle(o.x!, o.y!, o.width!, o.height!);
+      if (zoneType === "stage") this.stageZone = rectOf(o);
+      else if (zoneType === "presenter") this.presenterZone = rectOf(o);
     }
   }
 
@@ -260,8 +266,9 @@ export default class WorldScene extends Phaser.Scene {
     // group seats by room → table at the centroid, a chair on each seat
     const byRoom = new Map<string, Seat[]>();
     for (const s of this.seats) {
-      if (!byRoom.has(s.roomId)) byRoom.set(s.roomId, []);
-      byRoom.get(s.roomId)!.push(s);
+      const group = byRoom.get(s.roomId) ?? [];
+      if (group.length === 0) byRoom.set(s.roomId, group);
+      group.push(s);
     }
     for (const seats of byRoom.values()) {
       const cx = seats.reduce((a, s) => a + s.cx, 0) / seats.length;
@@ -290,8 +297,10 @@ export default class WorldScene extends Phaser.Scene {
     // tighten body to the sprite footprint so movement feels fair
     const bw = img.width * 0.8;
     const bh = img.height * 0.55;
-    img.body!.setSize(bw, bh);
-    img.body!.setOffset((img.width - bw) / 2, img.height - bh);
+    if (img.body) {
+      img.body.setSize(bw, bh);
+      img.body.setOffset((img.width - bw) / 2, img.height - bh);
+    }
     img.refreshBody();
   }
 
@@ -359,8 +368,9 @@ export default class WorldScene extends Phaser.Scene {
   private emitWorldInfo(map: Phaser.Tilemaps.Tilemap) {
     const byRoom = new Map<string, Seat[]>();
     for (const s of this.seats) {
-      if (!byRoom.has(s.roomId)) byRoom.set(s.roomId, []);
-      byRoom.get(s.roomId)!.push(s);
+      const group = byRoom.get(s.roomId) ?? [];
+      if (group.length === 0) byRoom.set(s.roomId, group);
+      group.push(s);
     }
     const pad = 24;
     const rooms = [...byRoom.entries()].map(([id, seats]) => {
@@ -452,7 +462,9 @@ export default class WorldScene extends Phaser.Scene {
 
   private addRemote(p: PlayerState) {
     if (this.remotes.has(p.id) || p.id === this.net.selfId) return;
-    const char = CHARS[hash(p.id) % CHARS.length];
+    // `% CHARS.length` is always in range, but the index signature widens the
+    // lookup to `| undefined`; CHARS[0] is a guaranteed default.
+    const char = CHARS[hash(p.id) % CHARS.length] ?? CHARS[0];
     const sprite = this.add
       .sprite(p.x, p.y, char, idleFrame(p.dir))
       .setDepth(5);
@@ -675,8 +687,9 @@ export default class WorldScene extends Phaser.Scene {
     if (pressed) {
       const action = interactAction(this.seated, this.currentInteractable !== null);
       if (action === "stand") this.stand();
-      else if (action === "interact") this.triggerInteractable(this.currentInteractable!);
-      else this.trySit();
+      else if (action === "interact" && this.currentInteractable)
+        this.triggerInteractable(this.currentInteractable);
+      else if (action === "sit") this.trySit();
     }
   }
 
@@ -739,6 +752,19 @@ export default class WorldScene extends Phaser.Scene {
     ];
     bus.emit("positions", { players, seated: this.seated });
   }
+}
+
+/**
+ * Rectangle from a Tiled object. Tiled types x/y/width/height as optional, but
+ * rectangle objects always carry them; default to 0 (or the caller's fallback
+ * dimensions) so a malformed object degrades gracefully instead of asserting.
+ */
+function rectOf(
+  o: Phaser.Types.Tilemaps.TiledObject,
+  dw = 0,
+  dh = 0
+): Phaser.Geom.Rectangle {
+  return new Phaser.Geom.Rectangle(o.x ?? 0, o.y ?? 0, o.width || dw, o.height || dh);
 }
 
 function prop(o: Phaser.Types.Tilemaps.TiledObject, name: string): string | undefined {

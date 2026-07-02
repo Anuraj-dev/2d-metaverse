@@ -27,7 +27,9 @@ test("all six rooms exist with functioning doors", async ({ page }) => {
   for (const roomId of ["1", "2", "3"] as const) {
     await enterRoom(page, "space", roomId);
     // Step back out so the next door can trigger (fires room-left).
-    const [exitX, exitY] = MAPS.space.rooms[roomId].exit;
+    const route = MAPS.space.rooms[roomId];
+    if (!route) throw new Error(`no route for space room "${roomId}"`);
+    const [exitX, exitY] = route.exit;
     await walkTo(page, exitX, exitY);
     await page.waitForFunction(() => window.__testHook?.state.currentRoomId === null);
   }
@@ -38,7 +40,9 @@ test("all six rooms exist with functioning doors", async ({ page }) => {
 
   for (const roomId of ["4", "5", "6"] as const) {
     await enterRoom(page, "campus", roomId);
-    const [exitX, exitY] = MAPS.campus.rooms[roomId].exit;
+    const route = MAPS.campus.rooms[roomId];
+    if (!route) throw new Error(`no route for campus room "${roomId}"`);
+    const [exitX, exitY] = route.exit;
     await walkTo(page, exitX, exitY);
     await page.waitForFunction(() => window.__testHook?.state.currentRoomId === null);
   }

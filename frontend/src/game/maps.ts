@@ -19,11 +19,13 @@ export interface MapDef {
   tilesets: TilesetRef[];
 }
 
+const SPACE_MAP: MapDef = {
+  key: "space",
+  tilesets: [{ key: "floors_walls", file: "floors_walls.png" }],
+};
+
 export const MAPS: Record<string, MapDef> = {
-  space: {
-    key: "space",
-    tilesets: [{ key: "floors_walls", file: "floors_walls.png" }],
-  },
+  space: SPACE_MAP,
   campus: {
     key: "campus",
     tilesets: [
@@ -45,5 +47,8 @@ export function activeMapKey(): string {
 }
 
 export function activeMap(): MapDef {
-  return MAPS[activeMapKey()];
+  // activeMapKey() only ever returns a key registered in MAPS, but the Record
+  // index signature widens the lookup to `| undefined`; SPACE_MAP is the
+  // guaranteed default, so fall back to it instead of asserting non-null.
+  return MAPS[activeMapKey()] ?? SPACE_MAP;
 }
