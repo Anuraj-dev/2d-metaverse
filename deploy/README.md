@@ -72,6 +72,31 @@ alerting layer into a failed deploy instead of a silent one.
 If either variable is unset, the alerter logs `alerts disabled` and idles — a
 missing token never crashes the stack, but you also get no alerts, so set them.
 
+# Log rotation and the log stream
+
+Every service in both compose files (`docker-compose.yml` and
+`deploy/docker-compose.prod.yml`) uses the Docker `json-file` logging driver
+with `max-size: 10m`, `max-file: 3` (a shared `x-logging` YAML anchor). That
+caps on-disk logs at ~30 MB per container, so a chatty or crash-looping
+container can never fill the EC2 disk and take the box down. There are no log
+files inside containers — the backend writes structured JSON (pino) to stdout
+and Docker owns collection and rotation.
+
+This rotated stream is the single source of failure observability on the box:
+
+- Operators read it with `docker compose logs backend` / `docker logs` + `jq`
+  (field reference and example queries in `backend/README.md`, "Logging").
+- The **alerter** consumes the same containers' lifecycle events and attaches
+  the last ~50 log lines of a failed container to its Telegram alert — those
+  lines come from this rotated `json-file` stream, so rotation limits also
+  bound what an alert can include. Error spikes (including frontend crashes
+  surfaced via the backend's `/client-errors` endpoint, logged at error level
+  with `module: "client-error"`) are visible in this stream for the watchdog
+  layer to observe.
+
+`LOG_LEVEL` (default `info` in production) is part of the backend environment;
+set it in the SSM env parameter like any other variable.
+
 # Deploy gates
 
 `deploy-remote.sh` is a sequence of hard gates, ordered so that any gate

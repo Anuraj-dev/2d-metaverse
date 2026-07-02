@@ -20,6 +20,7 @@ Default development room keys are `1234`, `4321`, `3333`, `4444`, `5555`, and `6
 | Variable | Purpose |
 | --- | --- |
 | `NODE_ENV`, `PORT` | Runtime mode and listen port. |
+| `LOG_LEVEL` | Pino log level (`fatal`\|`error`\|`warn`\|`info`\|`debug`\|`trace`). Default `info`; use `debug` for chatty local development. |
 | `DATABASE_URL`, `REDIS_URL` | Postgres and Redis connection strings. |
 | `JWT_SECRET`, `JWT_TTL` | Auth token signing secret and lifetime. |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins. |
@@ -30,6 +31,41 @@ Default development room keys are `1234`, `4321`, `3333`, `4444`, `5555`, and `6
 | `TRUST_PROXY` | `true` behind the production Nginx proxy. |
 | `GIT_SHA` | Build stamp surfaced in `/health/live` and `/health/ready` (baked into the image at build time). |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Consumed by the deploy watchdog/alerter, not the backend itself (see `deploy/README.md`). |
+
+## Logging
+
+All backend logs are structured JSON (pino) on stdout — Docker's `json-file` driver collects and rotates them (see `deploy/README.md`). There are no log files inside the container.
+
+Every line carries:
+
+- `level` (pino numeric: 30 info, 40 warn, 50 error, 60 fatal), `time`, `msg`
+- `service: "backend"` and `sha` (the running image's git SHA)
+- `module` where relevant (`http`, `socket`, `db`, `redis`, `media`, `migrate`, `seed`, `client-error`)
+
+Correlation ids:
+
+- **REST**: every request gets a `requestId` (also echoed in the `X-Request-Id` response header — ask a user for it when they report an error). One completion line per request with `method`, `path`, `status`, `durationMs`. 5xx log at error level; `/health/*` is demoted to debug so it never spams. New route code should log through the request-bound child logger (`res.locals.log` via `requestLog(res, fallback)`), never the root.
+- **Socket.IO**: each connection gets a child logger with `socketId` (plus `userId`/`username` from the handshake). After a successful `join` it is re-bound with `playerId` and `spaceId`, so a player's whole session greps as one thread. Connections, joins, disconnects (with reason), and handler failures (with the event name) are logged.
+- **Client errors**: browser crashes POSTed to `/client-errors` are logged at error level with `module: "client-error"`, the client's `sha`, `url`, `userAgent`, and optional scene `context` — nothing is persisted beyond the log stream.
+
+Reading production logs (`docker compose logs backend` emits the raw JSON):
+
+```bash
+# follow, pretty-ish
+docker logs -f metaverse-backend-1 | jq -r '[.time, .level, .msg] | @tsv'
+
+# only errors and worse
+docker logs metaverse-backend-1 | jq 'select(.level >= 50)'
+
+# trace one request across the stack
+docker logs metaverse-backend-1 | jq 'select(.requestId == "PASTE-X-REQUEST-ID")'
+
+# all frontend crash reports (check .sha for stale-bundle bugs)
+docker logs metaverse-backend-1 | jq 'select(.module == "client-error")'
+
+# one player's socket session
+docker logs metaverse-backend-1 | jq 'select(.playerId == "PLAYER-UUID")'
+```
 
 ## Contract details
 
