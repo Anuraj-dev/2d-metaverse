@@ -8,9 +8,15 @@ import { CHARS, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
-import { findDoor, findSeat, findRoomArea, inZone } from "../zones";
+import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone } from "../zones";
 import { seatTransition, doorTransition } from "../seatDoor";
 import { interpolateStep } from "../interpolation";
+import { interactAction } from "../interaction";
+import {
+  throttleReady,
+  POSITIONS_INTERVAL_MS,
+  MOVE_SEND_INTERVAL_MS,
+} from "../throttle";
 
 const ZOOM = 2.2;
 
@@ -534,7 +540,7 @@ export default class WorldScene extends Phaser.Scene {
       this.player.setFrame(idleFrame(this.dir));
     }
 
-    if (time - this.lastSent > 80) {
+    if (throttleReady(time, this.lastSent, MOVE_SEND_INTERVAL_MS)) {
       this.lastSent = time;
       this.net.move(Math.round(body.x), Math.round(body.y), this.dir);
     }
@@ -630,10 +636,10 @@ export default class WorldScene extends Phaser.Scene {
 
   /** Detect a genuine walk-out of the private room the player is currently inside. */
   private checkRoomMembership() {
-    if (!this.currentRoom) return;
-    const area = this.roomAreas.find((a) => a.roomId === this.currentRoom);
-    if (!area) return;
-    if (!Phaser.Geom.Rectangle.Contains(area.rect, this.player.x, this.player.y + 8)) {
+    if (
+      this.currentRoom &&
+      hasExitedRoom(this.roomAreas, this.currentRoom, this.player.x, this.player.y + 8)
+    ) {
       this.exitRoom(this.currentRoom);
     }
   }
@@ -666,8 +672,9 @@ export default class WorldScene extends Phaser.Scene {
       Phaser.Input.Keyboard.JustDown(this.keyE) || this.interactQueued;
     this.interactQueued = false;
     if (pressed) {
-      if (this.seated) this.stand();
-      else if (this.currentInteractable) this.triggerInteractable(this.currentInteractable);
+      const action = interactAction(this.seated, this.currentInteractable !== null);
+      if (action === "stand") this.stand();
+      else if (action === "interact") this.triggerInteractable(this.currentInteractable!);
       else this.trySit();
     }
   }
@@ -706,7 +713,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private emitPositions(time: number) {
-    if (time - this.lastTick < 66) return;
+    if (!throttleReady(time, this.lastTick, POSITIONS_INTERVAL_MS)) return;
     this.lastTick = time;
     const cam = this.cameras.main;
     const toScreen = (wx: number, wy: number) => ({

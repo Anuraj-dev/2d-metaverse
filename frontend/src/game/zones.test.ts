@@ -5,6 +5,7 @@ import {
   findDoor,
   findSeat,
   findRoomArea,
+  hasExitedRoom,
   type DoorZone,
   type SeatZone,
   type RoomArea,
@@ -66,4 +67,24 @@ describe("findRoomArea", () => {
   it("returns null in public space", () => expect(findRoomArea(areas, 500, 500)).toBeNull());
   it("returns the first containing area on overlap", () => expect(findRoomArea(areas, 60, 60)?.roomId).toBe("A"));
   it("returns the only containing area", () => expect(findRoomArea(areas, 120, 120)?.roomId).toBe("B"));
+});
+
+describe("hasExitedRoom", () => {
+  const areas: RoomArea[] = [{ roomId: "A", rect: rect(0, 0, 100, 100) }];
+
+  it("is false when no room is current", () => {
+    expect(hasExitedRoom(areas, null, 500, 500)).toBe(false);
+  });
+  it("is false while still inside the current room", () => {
+    expect(hasExitedRoom(areas, "A", 50, 50)).toBe(false);
+  });
+  it("is false on the room boundary (inclusive rects)", () => {
+    expect(hasExitedRoom(areas, "A", 100, 100)).toBe(false);
+  });
+  it("is true once outside the current room", () => {
+    expect(hasExitedRoom(areas, "A", 101, 50)).toBe(true);
+  });
+  it("is false when the current room has no registered area", () => {
+    expect(hasExitedRoom(areas, "ghost", 500, 500)).toBe(false);
+  });
 });

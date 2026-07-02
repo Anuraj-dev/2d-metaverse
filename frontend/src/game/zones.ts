@@ -89,3 +89,20 @@ export function findRoomArea<T extends RoomArea>(
   for (const a of areas) if (rectContains(a.rect, px, py)) return a;
   return null;
 }
+
+/**
+ * Room-exit detection: true when the player — previously inside `roomId` — is now
+ * outside that room's area. False when no room is current or the room has no
+ * registered area (nothing to walk out of).
+ */
+export function hasExitedRoom(
+  areas: RoomArea[],
+  roomId: string | null,
+  px: number,
+  py: number
+): boolean {
+  if (!roomId) return false;
+  const area = areas.find((a) => a.roomId === roomId);
+  if (!area) return false;
+  return !rectContains(area.rect, px, py);
+}
