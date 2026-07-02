@@ -8,7 +8,7 @@
  * livekit.ts; it imports these to make its decisions, so the decisions are unit
  * tested here against plain fixtures.
  */
-import { proximityVolume } from "../game/proximity";
+import { OUTDOOR_ZONE, zoneVolume } from "../game/audioZones";
 
 /** Distance (px) beyond which a world-audio participant is fully silent. */
 export const AUDIO_CUTOFF = 200;
@@ -63,10 +63,20 @@ export interface MediaPos {
   self?: boolean;
   x: number;
   y: number;
+  /**
+   * Audio zone the player is in (room id, or `OUTDOOR_ZONE`). Computed by the
+   * scene from the map's room rectangles and threaded through the positions
+   * payload — no wire-format change, no extra network traffic. Absent zones
+   * default to outdoor, so callers without zone data (older tests / non-zoned
+   * maps) keep the pre-PRD pure-distance behaviour.
+   */
+  zone?: string;
 }
 
 /**
- * Compute each subscribed remote's volume from the latest positions.
+ * Compute each subscribed remote's volume from the latest positions, gated by
+ * zone: a remote in a different audio zone than the local player is silent (no
+ * voice through walls); same-zone remotes keep the existing distance falloff.
  *  - a remote with no known position is silenced (0)
  *  - when the local player's own position is unknown, returns null so the caller
  *    leaves existing volumes untouched (matches the scene's original guard)
@@ -79,6 +89,7 @@ export function computeVolumes(
 ): Map<string, number> | null {
   const me = players.find((pl) => pl.id === selfId || pl.self);
   if (!me) return null;
+  const myZone = me.zone ?? OUTDOOR_ZONE;
   const out = new Map<string, number>();
   for (const id of subscribedIds) {
     const other = players.find((pl) => pl.id === id);
@@ -87,7 +98,7 @@ export function computeVolumes(
       continue;
     }
     const d = Math.hypot(other.x - me.x, other.y - me.y);
-    out.set(id, proximityVolume(d, cutoff));
+    out.set(id, zoneVolume(myZone, other.zone ?? OUTDOOR_ZONE, d, cutoff));
   }
   return out;
 }
