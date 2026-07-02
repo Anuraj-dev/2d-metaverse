@@ -21,10 +21,12 @@ function request(path) {
 
 /**
  * Subscribe to container lifecycle events. Calls `onEvent(parsedEvent)` for
- * every JSON event line. Reconnects are the caller's responsibility (the
- * returned promise rejects/resolves when the stream ends).
+ * every JSON event line, and `onSubscribed()` once the Docker API has
+ * accepted the subscription (2xx response). Reconnects are the caller's
+ * responsibility (the returned promise rejects/resolves when the stream
+ * ends).
  */
-export function streamEvents(onEvent) {
+export function streamEvents(onEvent, onSubscribed) {
   const filters = encodeURIComponent(
     JSON.stringify({
       type: ["container"],
@@ -35,6 +37,12 @@ export function streamEvents(onEvent) {
     const req = http.request(
       { socketPath: SOCKET_PATH, path: `/events?filters=${filters}`, method: "GET" },
       (res) => {
+        if (res.statusCode === undefined || res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          reject(new Error(`Docker API /events returned status ${res.statusCode}`));
+          return;
+        }
+        onSubscribed?.();
         let buffer = "";
         res.setEncoding("utf8");
         res.on("data", (chunk) => {
@@ -64,11 +72,11 @@ export function streamEvents(onEvent) {
 // frame: [stream(1), 0, 0, 0, size(4, big-endian)]. Strip those frames.
 //
 // A valid header has stream byte 0 (stdin), 1 (stdout), or 2 (stderr) and
-// three zero reserved bytes. Raw TTY logs have no such headers, so a buffer
-// whose start does not look like a valid frame is returned as-is. Only
-// complete, well-formed frames are consumed; a malformed header mid-stream
-// falls back to the raw buffer (no corruption of the diagnostic excerpt), and
-// a trailing partial frame is simply not consumed.
+// three zero reserved bytes. A buffer is decoded as multiplexed ONLY when it
+// parses as a complete sequence of well-formed frames end to end. Anything
+// else — raw TTY logs, a malformed or incomplete header, a truncated
+// payload — returns the whole original buffer as raw UTF-8: never partially
+// decoded output, so diagnostic bytes are never dropped.
 function looksLikeFrameHeader(buffer, offset) {
   return (
     offset + 8 <= buffer.length &&
@@ -81,19 +89,19 @@ function looksLikeFrameHeader(buffer, offset) {
 
 export function demultiplex(buffer) {
   if (buffer.length === 0) return "";
-  if (!looksLikeFrameHeader(buffer, 0)) return buffer.toString("utf8");
 
   let offset = 0;
   const chunks = [];
   while (offset < buffer.length) {
-    if (offset + 8 > buffer.length) break; // trailing partial header
     if (!looksLikeFrameHeader(buffer, offset)) {
-      // Malformed mid-stream — safer to present the whole buffer raw than to
-      // guess at frame boundaries and corrupt the excerpt.
+      // Raw TTY output, malformed header, or incomplete trailing header.
       return buffer.toString("utf8");
     }
     const size = buffer.readUInt32BE(offset + 4);
-    if (offset + 8 + size > buffer.length) break; // incomplete payload
+    if (offset + 8 + size > buffer.length) {
+      // Declared payload extends past the buffer — not a clean multiplex.
+      return buffer.toString("utf8");
+    }
     if (size > 0) chunks.push(buffer.subarray(offset + 8, offset + 8 + size));
     offset += 8 + size;
   }

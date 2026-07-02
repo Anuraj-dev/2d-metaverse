@@ -27,15 +27,23 @@ test("demultiplex: multiple frames across stdout and stderr", () => {
   assert.equal(demultiplex(buf), "out line\nerr line\nmore\n");
 });
 
-test("demultiplex: trailing partial frame is not consumed", () => {
+test("demultiplex: incomplete trailing payload falls back to the whole raw buffer", () => {
   const complete = frame(1, "complete\n");
   const partial = frame(2, "this payload is cut off").subarray(0, 12); // header + 4 bytes of 23
-  assert.equal(demultiplex(Buffer.concat([complete, partial])), "complete\n");
+  const buf = Buffer.concat([complete, partial]);
+  assert.equal(demultiplex(buf), buf.toString("utf8"));
 });
 
-test("demultiplex: trailing partial header is not consumed", () => {
+test("demultiplex: incomplete trailing header falls back to the whole raw buffer", () => {
   const buf = Buffer.concat([frame(1, "done\n"), Buffer.from([1, 0, 0])]);
-  assert.equal(demultiplex(buf), "done\n");
+  assert.equal(demultiplex(buf), buf.toString("utf8"));
+});
+
+test("demultiplex: a partial first frame falls back to raw, never empty string", () => {
+  const buf = frame(1, "payload that is cut").subarray(0, 10);
+  const out = demultiplex(buf);
+  assert.equal(out, buf.toString("utf8"));
+  assert.notEqual(out, "");
 });
 
 test("demultiplex: raw TTY logs are returned unchanged", () => {
