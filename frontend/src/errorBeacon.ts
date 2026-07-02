@@ -83,14 +83,41 @@ export function buildPayload(
   };
 }
 
+const UNSERIALIZABLE = "[unserializable]";
+
+/**
+ * Read a string property that may be a hostile/throwing getter (custom Error
+ * subclasses can throw from `message`/`stack`). Undefined on any failure.
+ */
+function safeStringProp(source: unknown, key: "message" | "stack"): string | undefined {
+  try {
+    const value = (source as Record<string, unknown>)[key];
+    return typeof value === "string" && value ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fully non-throwing normalization. Never blindly coerce an arbitrary reason:
+ * a throwing `toJSON`, `toString`, or `Symbol.toPrimitive` would otherwise
+ * escape the listener and make the beacon emit its own error event (self-loop).
+ */
 function describeRejectionReason(reason: unknown): { message: string; stack?: string } {
+  if (typeof reason === "string") return { message: reason || UNSERIALIZABLE };
   if (reason instanceof Error) {
-    return { message: reason.message || String(reason), ...(reason.stack ? { stack: reason.stack } : {}) };
+    const stack = safeStringProp(reason, "stack");
+    return { message: safeStringProp(reason, "message") ?? UNSERIALIZABLE, ...(stack ? { stack } : {}) };
+  }
+  // Primitives coerce without invoking user code.
+  if (reason === null || reason === undefined || typeof reason === "number" || typeof reason === "boolean" || typeof reason === "bigint") {
+    return { message: `unhandled rejection: ${String(reason)}` };
   }
   try {
-    return { message: `unhandled rejection: ${JSON.stringify(reason)}` };
+    // May invoke a user-defined toJSON — keep it inside the try.
+    return { message: `unhandled rejection: ${JSON.stringify(reason) ?? UNSERIALIZABLE}` };
   } catch {
-    return { message: `unhandled rejection: ${String(reason)}` };
+    return { message: `unhandled rejection: ${UNSERIALIZABLE}` };
   }
 }
 
@@ -121,14 +148,29 @@ export function installErrorBeacon(options: BeaconOptions): () => void {
     }
   };
 
+  // The ENTIRE listener body is wrapped: normalizing hostile values (throwing
+  // getters/coercions) must never escape a global error handler, or the beacon
+  // would generate the next error event itself.
   const onError = (event: ErrorEvent) => {
-    const error = event.error as unknown;
-    const stack = error instanceof Error ? error.stack : undefined;
-    report(event.message || (error instanceof Error ? error.message : "unknown error"), stack);
+    try {
+      const error = event.error as unknown;
+      const stack = error instanceof Error ? safeStringProp(error, "stack") : undefined;
+      const message =
+        (typeof event.message === "string" && event.message) ||
+        (error instanceof Error ? safeStringProp(error, "message") : undefined) ||
+        UNSERIALIZABLE;
+      report(message, stack);
+    } catch {
+      /* never let the beacon itself throw */
+    }
   };
   const onRejection = (event: PromiseRejectionEvent) => {
-    const { message, stack } = describeRejectionReason(event.reason);
-    report(message, stack);
+    try {
+      const { message, stack } = describeRejectionReason(event.reason);
+      report(message, stack);
+    } catch {
+      /* never let the beacon itself throw */
+    }
   };
 
   window.addEventListener("error", onError);

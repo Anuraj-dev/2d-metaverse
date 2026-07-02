@@ -172,6 +172,85 @@ describe("installErrorBeacon", () => {
     }
   });
 
+  const dispatchRejection = (reason: unknown) => {
+    const event = new Event("unhandledrejection") as Event & {
+      reason?: unknown;
+      promise?: Promise<unknown>;
+    };
+    event.reason = reason;
+    event.promise = Promise.resolve();
+    window.dispatchEvent(event);
+  };
+
+  it("survives a rejection reason with a throwing toJSON and still sends a fallback payload", () => {
+    const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc" });
+    try {
+      expect(() =>
+        dispatchRejection({
+          toJSON() {
+            throw new Error("toJSON bomb");
+          },
+        }),
+      ).not.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.message).toBe("unhandled rejection: [unserializable]");
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("survives a rejection reason with throwing Symbol.toPrimitive and toString", () => {
+    const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc" });
+    try {
+      const hostile = {
+        [Symbol.toPrimitive]() {
+          throw new Error("toPrimitive bomb");
+        },
+        toString() {
+          throw new Error("toString bomb");
+        },
+      };
+      expect(() => dispatchRejection(hostile)).not.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.message).toContain("unhandled rejection:");
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("survives an Error subclass with throwing message/stack getters (rejection and error event)", () => {
+    class EvilError extends Error {
+      override get message(): string {
+        throw new Error("message bomb");
+      }
+      override get stack(): string {
+        throw new Error("stack bomb");
+      }
+    }
+    const uninstall = installErrorBeacon({
+      endpoint: "http://api.test/client-errors",
+      sha: "abc",
+      dedupeWindowMs: 0, // both dispatches produce the same fallback message
+    });
+    try {
+      expect(() => dispatchRejection(new EvilError())).not.toThrow();
+      expect(() =>
+        window.dispatchEvent(new ErrorEvent("error", { error: new EvilError() })),
+      ).not.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const first = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      const second = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
+      expect(first.message).toBe("[unserializable]");
+      expect(first.stack).toBeUndefined();
+      expect(second.message).toBe("[unserializable]");
+      expect(second.stack).toBeUndefined();
+    } finally {
+      uninstall();
+    }
+  });
+
   it("stops reporting after uninstall", () => {
     const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc" });
     uninstall();
