@@ -3,9 +3,13 @@ import {
   worldRoomName,
   roomRoomName,
   stageRoomName,
-  trackDisposition,
+  subscribeAction,
+  unsubscribeAction,
   computeVolumes,
   AUDIO_CUTOFF,
+  type RoomMode,
+  type SubscribeAction,
+  type UnsubscribeAction,
   type MediaPos,
 } from "./mediaLogic";
 
@@ -17,10 +21,30 @@ describe("room name builders", () => {
   });
 });
 
-describe("trackDisposition", () => {
-  it("surfaces video and attaches audio", () => {
-    expect(trackDisposition("video")).toBe("video");
-    expect(trackDisposition("audio")).toBe("audio");
+describe("track routing — subscribe matrix", () => {
+  const matrix: Array<["audio" | "video", RoomMode, SubscribeAction]> = [
+    // world (proximity) room: mic-only — audio starts silent, video is ignored
+    ["audio", "world-audio", "attach-audio-silent"],
+    ["video", "world-audio", "ignore"],
+    // private room / stage: video surfaces to the UI, audio attaches at full volume
+    ["video", "room-av", "surface-video"],
+    ["audio", "room-av", "attach-audio"],
+  ];
+  it.each(matrix)("%s track in %s room → %s", (kind, mode, action) => {
+    expect(subscribeAction(kind, mode)).toBe(action);
+  });
+});
+
+describe("track routing — unsubscribe matrix", () => {
+  const matrix: Array<["audio" | "video", RoomMode, UnsubscribeAction]> = [
+    ["video", "room-av", "drop-video"],
+    ["audio", "room-av", "detach-audio"],
+    // world room never surfaced video, so everything just detaches
+    ["audio", "world-audio", "detach-audio"],
+    ["video", "world-audio", "detach-audio"],
+  ];
+  it.each(matrix)("%s track in %s room → %s", (kind, mode, action) => {
+    expect(unsubscribeAction(kind, mode)).toBe(action);
   });
 });
 

@@ -12,9 +12,12 @@ import { bus } from "../game/eventBus";
 import {
   AUDIO_CUTOFF,
   computeVolumes,
+  subscribeAction,
+  unsubscribeAction,
   worldRoomName,
   roomRoomName,
   stageRoomName,
+  type RoomMode,
 } from "./mediaLogic";
 
 async function fetchToken(
@@ -33,6 +36,57 @@ async function fetchToken(
   // Backend returns { livekitToken, url }.
   const data = (await res.json()) as { livekitToken: string; url: string };
   return { token: data.livekitToken, url: data.url };
+}
+
+/* --------------------------- Track routing glue -------------------------- */
+type LKModule = Pick<typeof import("livekit-client"), "RoomEvent" | "Track">;
+
+/** Where routed tracks land — each room class supplies its own containers. */
+interface TrackSinks {
+  surfaceVideo(identity: string, track: MediaStreamTrack): void;
+  dropVideo(identity: string): void;
+  attachAudio(identity: string, el: HTMLAudioElement): void;
+  detachAudio(identity: string): void;
+}
+
+/**
+ * Wire a room's TrackSubscribed/TrackUnsubscribed events through the pure
+ * mediaLogic routing decisions. The single place attach-vs-surface is decided —
+ * the classes below only say which mode they are and where tracks land.
+ */
+function wireTrackRouting(
+  room: LKRoom,
+  lk: LKModule,
+  mode: RoomMode,
+  sinks: TrackSinks
+) {
+  const { RoomEvent, Track } = lk;
+  room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+    // Unknown-kind tracks were never routed; keep skipping them.
+    if (track.kind !== Track.Kind.Audio && track.kind !== Track.Kind.Video) return;
+    const kind = track.kind === Track.Kind.Video ? "video" : "audio";
+    const action = subscribeAction(kind, mode);
+    if (action === "surface-video") {
+      sinks.surfaceVideo(participant.identity, track.mediaStreamTrack);
+    } else if (action === "attach-audio" || action === "attach-audio-silent") {
+      const el = track.attach() as HTMLAudioElement;
+      el.dataset.identity = participant.identity;
+      if (action === "attach-audio-silent") el.volume = 0;
+      document.body.appendChild(el);
+      sinks.attachAudio(participant.identity, el);
+    }
+    // "ignore": world audio has no use for video tracks.
+  });
+  room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+    const kind = track.kind === Track.Kind.Video ? "video" : "audio";
+    const action = unsubscribeAction(kind, mode);
+    if (action === "drop-video") {
+      sinks.dropVideo(participant.identity);
+      return;
+    }
+    track.detach().forEach((el) => el.remove());
+    sinks.detachAudio(participant.identity);
+  });
 }
 
 /* ----------------------------- World audio ----------------------------- */
@@ -55,18 +109,14 @@ class WorldAudio {
         },
       });
       this.room = room;
-      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
-        if (track.kind !== Track.Kind.Audio) return;
-        const el = track.attach() as HTMLAudioElement;
-        el.dataset.identity = participant.identity;
-        el.volume = 0;
-        document.body.appendChild(el);
-        this.audioEls.set(participant.identity, el);
-      });
-      room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
-        track.detach().forEach((el) => el.remove());
-        this.audioEls.get(participant.identity)?.remove();
-        this.audioEls.delete(participant.identity);
+      wireTrackRouting(room, { RoomEvent, Track }, "world-audio", {
+        surfaceVideo: () => {},
+        dropVideo: () => {},
+        attachAudio: (id, el) => this.audioEls.set(id, el),
+        detachAudio: (id) => {
+          this.audioEls.get(id)?.remove();
+          this.audioEls.delete(id);
+        },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.audioEls.get(p.identity)?.remove();
@@ -146,25 +196,20 @@ class RoomVideo {
         },
       });
       this.room = room;
-      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
-        if (track.kind === Track.Kind.Video) {
-          this.tracks.set(participant.identity, track.mediaStreamTrack);
+      wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
+        surfaceVideo: (id, t) => {
+          this.tracks.set(id, t);
           this.emit();
-        } else if (track.kind === Track.Kind.Audio) {
-          const el = track.attach() as HTMLAudioElement;
-          document.body.appendChild(el);
-          this.audioEls.set(participant.identity, el);
-        }
-      });
-      room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
-        if (track.kind === Track.Kind.Video) {
-          this.tracks.delete(participant.identity);
+        },
+        dropVideo: (id) => {
+          this.tracks.delete(id);
           this.emit();
-          return;
-        }
-        track.detach().forEach((el) => el.remove());
-        this.audioEls.get(participant.identity)?.remove();
-        this.audioEls.delete(participant.identity);
+        },
+        attachAudio: (id, el) => this.audioEls.set(id, el),
+        detachAudio: (id) => {
+          this.audioEls.get(id)?.remove();
+          this.audioEls.delete(id);
+        },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.tracks.delete(p.identity);
@@ -237,25 +282,20 @@ class StageVideo {
       const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room();
       this.room = room;
-      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
-        if (track.kind === Track.Kind.Video) {
-          this.tracks.set(participant.identity, track.mediaStreamTrack);
+      wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
+        surfaceVideo: (id, t) => {
+          this.tracks.set(id, t);
           this.emit();
-        } else if (track.kind === Track.Kind.Audio) {
-          const el = track.attach() as HTMLAudioElement;
-          document.body.appendChild(el);
-          this.audioEls.set(participant.identity, el);
-        }
-      });
-      room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
-        if (track.kind === Track.Kind.Video) {
-          this.tracks.delete(participant.identity);
+        },
+        dropVideo: (id) => {
+          this.tracks.delete(id);
           this.emit();
-          return;
-        }
-        track.detach().forEach((el) => el.remove());
-        this.audioEls.get(participant.identity)?.remove();
-        this.audioEls.delete(participant.identity);
+        },
+        attachAudio: (id, el) => this.audioEls.set(id, el),
+        detachAudio: (id) => {
+          this.audioEls.get(id)?.remove();
+          this.audioEls.delete(id);
+        },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.tracks.delete(p.identity);
@@ -279,25 +319,20 @@ class StageVideo {
         audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       this.room = room;
-      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
-        if (track.kind === Track.Kind.Video) {
-          this.tracks.set(participant.identity, track.mediaStreamTrack);
+      wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
+        surfaceVideo: (id, t) => {
+          this.tracks.set(id, t);
           this.emit();
-        } else if (track.kind === Track.Kind.Audio) {
-          const el = track.attach() as HTMLAudioElement;
-          document.body.appendChild(el);
-          this.audioEls.set(participant.identity, el);
-        }
-      });
-      room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
-        if (track.kind === Track.Kind.Video) {
-          this.tracks.delete(participant.identity);
+        },
+        dropVideo: (id) => {
+          this.tracks.delete(id);
           this.emit();
-          return;
-        }
-        track.detach().forEach((el) => el.remove());
-        this.audioEls.get(participant.identity)?.remove();
-        this.audioEls.delete(participant.identity);
+        },
+        attachAudio: (id, el) => this.audioEls.set(id, el),
+        detachAudio: (id) => {
+          this.audioEls.get(id)?.remove();
+          this.audioEls.delete(id);
+        },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.tracks.delete(p.identity);

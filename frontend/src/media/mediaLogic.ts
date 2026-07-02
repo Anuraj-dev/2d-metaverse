@@ -29,12 +29,32 @@ export function stageRoomName(spaceId: string): string {
 
 /* ------------------------------ Track routing ----------------------------- */
 /**
- * A subscribed track is either surfaced to the UI as a video track, or attached
- * as a hidden audio element. Keeps the branch out of every RoomEvent handler.
+ * What a room does with a subscribed/unsubscribed track. Two room modes exist:
+ *  - "world-audio" (proximity room): mic-only. Audio attaches *silent* — volume 0
+ *    until the first positions tick prices it by distance. Video is ignored.
+ *  - "room-av" (private room / stage): video is surfaced to the UI for avatar
+ *    bubbles; audio attaches as a hidden element at full volume.
+ * The livekit.ts transport handlers consume these decisions verbatim.
  */
-export type TrackDisposition = "video" | "audio";
-export function trackDisposition(kind: "audio" | "video"): TrackDisposition {
-  return kind === "video" ? "video" : "audio";
+export type RoomMode = "world-audio" | "room-av";
+export type SubscribeAction =
+  | "surface-video"
+  | "attach-audio"
+  | "attach-audio-silent"
+  | "ignore";
+export type UnsubscribeAction = "drop-video" | "detach-audio";
+
+export function subscribeAction(kind: "audio" | "video", mode: RoomMode): SubscribeAction {
+  if (kind === "video") return mode === "room-av" ? "surface-video" : "ignore";
+  return mode === "world-audio" ? "attach-audio-silent" : "attach-audio";
+}
+
+export function unsubscribeAction(
+  kind: "audio" | "video",
+  mode: RoomMode
+): UnsubscribeAction {
+  if (mode === "room-av" && kind === "video") return "drop-video";
+  return "detach-audio";
 }
 
 /* ---------------------------- Proximity volumes --------------------------- */
