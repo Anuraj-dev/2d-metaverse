@@ -4,7 +4,7 @@
  * sit, chat. Mirrors backend/test/smoke.mjs through the real UI.
  */
 import { test, expect } from "@playwright/test";
-import { enterRoom, MAPS, selfPosition, sendChat, signUpAndJoin, walkPath } from "./helpers";
+import { enterRoom, selfPosition, sendChat, signUpAndJoin, sitAtSeat } from "./helpers";
 
 test("happy path: signup → join → move → door → key → sit → chat", async ({ page }) => {
   const user = await signUpAndJoin(page, { map: "space" });
@@ -25,13 +25,8 @@ test("happy path: signup → join → move → door → key → sit → chat", a
   await enterRoom(page, "space", "1");
   await expect(page.locator(".key-modal")).toBeHidden();
 
-  // Walk to seat 0 and sit with E.
-  await walkPath(page, MAPS.space.rooms["1"].seatPath);
-  await page.waitForFunction(
-    () => window.__testHook?.state.nearSeat?.roomId === "1",
-  );
-  await page.keyboard.press("e");
-  await page.waitForFunction(() => window.__testHook?.state.seated?.roomId === "1");
+  // Walk to seat 0 and sit with E (held across the wait — see sitAtSeat).
+  await sitAtSeat(page, "space", "1");
 
   // Chat while seated; own message renders in the transcript as "<name> text".
   const message = `hello from ${user.username}`;

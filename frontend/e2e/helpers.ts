@@ -56,7 +56,7 @@ export const MAPS: Record<
         ],
         seatPath: [
           [564, 150],
-          [564, 100],
+          [568, 96],
         ],
         exit: [592, 260],
       },
@@ -92,7 +92,7 @@ export const MAPS: Record<
         ],
         seatPath: [
           [564, 150],
-          [564, 100],
+          [568, 96],
         ],
         exit: [592, 250],
       },
@@ -148,15 +148,39 @@ export async function signUpAndJoin(
   await page.locator('input[type="password"]').fill(user.password);
   await page.locator("button.console-submit").click();
 
-  // World booted + hook installed + socket delivering positions.
-  await page.waitForFunction(
-    () =>
-      !!window.__testHook?.state.last["world-info"] &&
-      !!window.__testHook?.state.last["positions"],
+  await waitForWorld(page);
+  return user;
+}
+
+/**
+ * Wait for the world to boot (world-info + a positions tick on the bus).
+ * Fails fast with the Landing console's own error text when auth is rejected
+ * (e.g. the backend's per-IP auth limiter after many local runs) instead of
+ * timing out opaquely.
+ */
+async function waitForWorld(page: Page): Promise<void> {
+  const handle = await page.waitForFunction(
+    () => {
+      if (
+        window.__testHook?.state.last["world-info"] &&
+        window.__testHook?.state.last["positions"]
+      ) {
+        return "ok";
+      }
+      const error = document.querySelector(".console-error")?.textContent;
+      return error ? `auth-error: ${error}` : false;
+    },
     undefined,
     { timeout: 30_000 },
   );
-  return user;
+  const result = (await handle.jsonValue()) as string;
+  if (result !== "ok") {
+    throw new Error(
+      `signup/signin did not reach the world — ${result} ` +
+        `(hint: the backend allows 40 auth calls per 15 min per IP; ` +
+        `docker compose restart backend resets it)`,
+    );
+  }
 }
 
 /** Sign in an existing user (Landing defaults to the Sign in tab). */
@@ -170,13 +194,7 @@ export async function signInAndJoin(
   await page.getByPlaceholder("callsign").fill(user.username);
   await page.locator('input[type="password"]').fill(user.password);
   await page.locator("button.console-submit").click();
-  await page.waitForFunction(
-    () =>
-      !!window.__testHook?.state.last["world-info"] &&
-      !!window.__testHook?.state.last["positions"],
-    undefined,
-    { timeout: 30_000 },
-  );
+  await waitForWorld(page);
 }
 
 /** Current self position from the last positions tick. */
@@ -262,8 +280,9 @@ export async function walkTo(
           }
           lastPos = { x: self.x, y: self.y };
           // Damp the axis close to the target: at 120px/s a full-speed tick
-          // moves ~8px per positions interval, enough to orbit the target.
-          const damp = Math.min(1, dist / 24);
+          // moves ~8px per positions interval (more under CI CPU throttle),
+          // enough to orbit a tight target without proportional braking.
+          const damp = Math.min(1, dist / 48);
           hook.emit("move-axis", { x: (dx / dist) * damp, y: (dy / dist) * damp });
         });
         const timer = setTimeout(() => {
@@ -322,6 +341,41 @@ export async function enterRoom(
     (id) => window.__testHook?.state.currentRoomId === id,
     roomId,
   );
+}
+
+/**
+ * Walk to a room's seat 0 and sit with the E key. The key is HELD across the
+ * `sat` wait: Phaser's Key.onUp clears the JustDown flag, so an instantaneous
+ * down+up (Playwright `press`) can land entirely between two game frames and
+ * be erased — a race a human press (~100ms >> frame time) never hits, but a
+ * slow CI runner hits often.
+ */
+export async function sitAtSeat(
+  page: Page,
+  map: "space" | "campus",
+  roomId: string,
+): Promise<void> {
+  // The final target puts the door-sample point at the seat rect's center;
+  // converging within 4px guarantees the player RESTS inside the 16px rect
+  // (no early-stop here: stopping on the near-seat event mid-motion can let
+  // the avatar coast out the far side of the rect under slow CI frames).
+  const path = MAPS[map].rooms[roomId].seatPath;
+  for (const [i, [x, y]] of path.entries()) {
+    await walkTo(page, x, y, i === path.length - 1 ? { tolerance: 4 } : {});
+  }
+  await page.waitForFunction(
+    (id) => window.__testHook?.state.nearSeat?.roomId === id,
+    roomId,
+  );
+  await page.keyboard.down("e");
+  try {
+    await page.waitForFunction(
+      (id) => window.__testHook?.state.seated?.roomId === id,
+      roomId,
+    );
+  } finally {
+    await page.keyboard.up("e");
+  }
 }
 
 /** Open chat with Enter, type, send (chat closes itself after submit). */
