@@ -108,14 +108,20 @@ prune_local_release_images() {
 # subscription isn't denied with EACCES. Derive the gid from the socket on THIS
 # box — the most robust source — and export it for compose interpolation, with
 # a 109 fallback (the common Debian/Ubuntu `docker` group) if it can't be read.
+# A non-empty DOCKER_GID already in the environment (e.g. set in the env file)
+# is an explicit operator override and is preserved untouched.
 DOCKER_SOCK=${DOCKER_SOCK:-/var/run/docker.sock}
-if [[ -e "$DOCKER_SOCK" ]]; then
-  DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || echo 109)
+if [[ -z "${DOCKER_GID:-}" ]]; then
+  if [[ -e "$DOCKER_SOCK" ]]; then
+    DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || echo 109)
+  else
+    DOCKER_GID=109
+  fi
+  echo "Alerter docker socket group: ${DOCKER_GID} (derived from ${DOCKER_SOCK})"
 else
-  DOCKER_GID=109
+  echo "Alerter docker socket group: ${DOCKER_GID} (preset override)"
 fi
 export DOCKER_GID
-echo "Alerter docker socket group: ${DOCKER_GID} (from ${DOCKER_SOCK})"
 
 export BACKEND_IMAGE=$IMAGE
 if [[ "$SKIP_PULL" != "1" ]]; then

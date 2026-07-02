@@ -79,14 +79,16 @@ If a deploy aborts at the alerter gate and the container logs show
 being denied: the image runs as `node` (uid 1000) but the mounted
 `/var/run/docker.sock` is `root:docker` mode 0660, so the container must belong
 to the socket's group to read it. The compose service adds it via
-`group_add: ["${DOCKER_GID:-109}"]`, and `deploy-remote.sh` derives `DOCKER_GID`
-from the socket on the box at deploy time (`stat -c %g /var/run/docker.sock`),
-falling back to `109` (the common Debian/Ubuntu `docker` gid) if it can't be
-read. If the box's docker group differs and auto-derivation is somehow bypassed,
-set `DOCKER_GID` in the environment to the value of
-`stat -c %g /var/run/docker.sock`. Abort alerts for the alerter and backend
-gates now embed the last few log lines, so the EACCES reason is visible in
-Telegram without SSHing to the box.
+`group_add: ["${DOCKER_GID:-109}"]`. When `DOCKER_GID` is unset or empty,
+`deploy-remote.sh` derives it from the socket on the box at deploy time
+(`stat -c %g /var/run/docker.sock`), falling back to `109` (the common
+Debian/Ubuntu `docker` gid) if the socket can't be read. A non-empty
+`DOCKER_GID` already present in the environment (e.g. set in the SSM env
+parameter that becomes `.env`) is an explicit operator override and is used
+as-is — set it to the value of `stat -c %g /var/run/docker.sock` only if the
+auto-derived gid is ever wrong for the box. Abort alerts for the alerter and
+backend gates now embed the last few log lines, so the EACCES reason is
+visible in Telegram without SSHing to the box.
 
 # Log rotation and the log stream
 
