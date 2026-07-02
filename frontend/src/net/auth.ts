@@ -1,4 +1,5 @@
 /** REST auth against the backend. Returns a JWT used for socket handshake + LiveKit tokens. */
+import type { AuthTokenResponse } from "@metaverse/shared";
 import { SERVER_URL } from "./config";
 
 export { USE_MOCK } from "./config";
@@ -37,6 +38,6 @@ export async function signUp(username: string, password: string): Promise<void> 
 export async function signIn(username: string, password: string): Promise<string> {
   const res = await postJson("/api/v1/signin", { username, password });
   if (!res.ok) throw new Error("Sign in failed — check your username and password.");
-  const { token } = (await res.json()) as { token: string };
+  const { token } = (await res.json()) as AuthTokenResponse;
   return token;
 }

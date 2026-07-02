@@ -5,7 +5,7 @@ import {
   RUN_MULTIPLIER,
   type MovementInput,
 } from "./movement";
-import type { Dir } from "../contract";
+import type { Dir } from "@metaverse/shared";
 
 const NONE = { x: 0, y: 0 };
 function keys(part: Partial<MovementInput>): MovementInput {

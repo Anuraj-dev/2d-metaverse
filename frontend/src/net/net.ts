@@ -7,7 +7,16 @@
  * only `{ spaceId }`. Mock mode is development-only (see ./config).
  */
 import { io, type Socket } from "socket.io-client";
-import type { Dir, PlayerState } from "../contract";
+import {
+  CLIENT_EVENTS,
+  SERVER_EVENTS,
+  SERVER_EVENT_NAMES,
+  type ClientToServerEvents,
+  type Dir,
+  type InitPayload,
+  type PlayerState,
+  type ServerToClientEvents,
+} from "@metaverse/shared";
 import { USE_MOCK, assertServerUrl } from "./config";
 
 type Listener<T> = (payload: T) => void;
@@ -42,20 +51,10 @@ class Emitter {
 }
 
 /* ----------------------- Real (Socket.IO) ----------------------- */
-const FORWARDED = [
-  "init",
-  "player-joined",
-  "player-moved",
-  "player-left",
-  "chat",
-  "whisper",
-  "whisper-fail",
-  "room-enter-result",
-  "seat-update",
-] as const;
-
 export class RealNet implements Net {
-  private socket: Socket;
+  // Typed against the shared contract: emits are checked against the payload
+  // schemas' inferred types, so a client/server drift is a compile error.
+  private socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   private bus = new Emitter();
   private spaceId = "";
   selfId = "";
@@ -63,16 +62,19 @@ export class RealNet implements Net {
   constructor(url: string) {
     this.socket = io(url, { autoConnect: false, transports: ["websocket"] });
 
-    for (const ev of FORWARDED) {
-      this.socket.on(ev, (p: unknown) => {
-        if (ev === "init") this.selfId = (p as { selfId: string }).selfId;
+    for (const ev of SERVER_EVENT_NAMES) {
+      // Forward every server → client event onto the internal bus untouched;
+      // subscribers cast to the payload type they expect. The listener is cast
+      // because `ev` is a union of event names here.
+      this.socket.on(ev, ((p: unknown) => {
+        if (ev === SERVER_EVENTS.init) this.selfId = (p as InitPayload).selfId;
         this.bus.emit(ev, p);
-      });
+      }) as never);
     }
 
     // JWT validated in the handshake; (re)send join on every (re)connect.
     this.socket.on("connect", () => {
-      if (this.spaceId) this.socket.emit("join", { spaceId: this.spaceId });
+      if (this.spaceId) this.socket.emit(CLIENT_EVENTS.join, { spaceId: this.spaceId });
     });
     // Handshake rejection / network failure → surface so the UI can sign out.
     this.socket.on("connect_error", (err: Error) =>
@@ -89,25 +91,25 @@ export class RealNet implements Net {
     return this.bus.on(event, cb);
   }
   move(x: number, y: number, dir: Dir) {
-    this.socket.emit("move", { x, y, dir });
+    this.socket.emit(CLIENT_EVENTS.move, { x, y, dir });
   }
   chat(text: string, scope?: "world" | "room") {
-    this.socket.emit("chat", { text, scope });
+    this.socket.emit(CLIENT_EVENTS.chat, { text, ...(scope ? { scope } : {}) });
   }
   whisper(to: string, text: string) {
-    this.socket.emit("whisper", { to, text });
+    this.socket.emit(CLIENT_EVENTS.whisper, { to, text });
   }
   enterRoom(roomId: string, key: string) {
-    this.socket.emit("room-enter", { roomId, key });
+    this.socket.emit(CLIENT_EVENTS.roomEnter, { roomId, key });
   }
   leaveRoom() {
-    this.socket.emit("room-leave");
+    this.socket.emit(CLIENT_EVENTS.roomLeave);
   }
   sit(roomId: string, seatId: number) {
-    this.socket.emit("seat-sit", { roomId, seatId });
+    this.socket.emit(CLIENT_EVENTS.seatSit, { roomId, seatId });
   }
   stand() {
-    this.socket.emit("seat-stand");
+    this.socket.emit(CLIENT_EVENTS.seatStand);
   }
   disconnect() {
     this.socket.disconnect();
@@ -133,7 +135,7 @@ export class MockNet implements Net {
       { id: "npc3", name: NAMES[2], x: 300, y: 540, dir: "down" },
     ];
     setTimeout(() => {
-      this.bus.emit("init", {
+      this.bus.emit(SERVER_EVENTS.init, {
         selfId: this.selfId,
         players: [
           { id: this.selfId, name: this.name, x: 384, y: 480, dir: "down" },
@@ -156,7 +158,7 @@ export class MockNet implements Net {
       npc.x = Math.max(48, Math.min(1000, npc.x));
       npc.y = Math.max(280, Math.min(820, npc.y));
       npc.dir = dir;
-      this.bus.emit("player-moved", { id: npc.id, x: npc.x, y: npc.y, dir });
+      this.bus.emit(SERVER_EVENTS.playerMoved, { id: npc.id, x: npc.x, y: npc.y, dir });
     }
   }
   on<T = unknown>(event: string, cb: (payload: T) => void) {
@@ -167,11 +169,11 @@ export class MockNet implements Net {
   }
   chat(text: string, scope?: "world" | "room") {
     const s = scope === "room" ? "room" : "world";
-    this.bus.emit("chat", { id: this.selfId, name: this.name, text, scope: s });
+    this.bus.emit(SERVER_EVENTS.chat, { id: this.selfId, name: this.name, text, scope: s });
     // a friendly NPC reply on the same channel
     setTimeout(
       () =>
-        this.bus.emit("chat", {
+        this.bus.emit(SERVER_EVENTS.chat, {
           id: "npc1",
           name: NAMES[0],
           text: "hey! 👋",
@@ -184,7 +186,7 @@ export class MockNet implements Net {
     const target = this.npcs.find((n) => n.id === to);
     const toName = target?.name ?? "someone";
     // Mirror the server: echo the outgoing line back to the sender…
-    this.bus.emit("whisper", {
+    this.bus.emit(SERVER_EVENTS.whisper, {
       from: this.selfId,
       fromName: this.name,
       to,
@@ -195,7 +197,7 @@ export class MockNet implements Net {
     if (target)
       setTimeout(
         () =>
-          this.bus.emit("whisper", {
+          this.bus.emit(SERVER_EVENTS.whisper, {
             from: target.id,
             fromName: target.name,
             to: this.selfId,
@@ -207,7 +209,7 @@ export class MockNet implements Net {
   }
   enterRoom(roomId: string, key: string) {
     const ok = ROOM_KEYS[roomId] === key;
-    this.bus.emit("room-enter-result", {
+    this.bus.emit(SERVER_EVENTS.roomEnterResult, {
       ok,
       roomId,
       reason: ok ? undefined : "bad-key",
@@ -217,7 +219,7 @@ export class MockNet implements Net {
     /* no server in mock; the scene owns local room state */
   }
   sit(roomId: string, seatId: number) {
-    this.bus.emit("seat-update", { roomId, seatId, playerId: this.selfId });
+    this.bus.emit(SERVER_EVENTS.seatUpdate, { roomId, seatId, playerId: this.selfId });
   }
   stand() {
     /* seat freed handled by scene */

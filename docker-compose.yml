@@ -92,7 +92,9 @@ services:
 
   setup:
     build:
-      context: ./backend
+      # Root context so the backend image can build the @metaverse/shared workspace.
+      context: .
+      dockerfile: backend/Dockerfile
       args:
         # Stamped into /health/live + /health/ready responses; the E2E suite's
         # version-compat test compares it against the frontend's VITE_GIT_SHA.
@@ -107,7 +109,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       args:
         GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped

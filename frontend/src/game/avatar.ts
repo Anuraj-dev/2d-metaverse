@@ -5,7 +5,7 @@
  * Middle frame of each row is the idle pose.
  */
 import type Phaser from "phaser";
-import type { Dir } from "../contract";
+import type { Dir } from "@metaverse/shared";
 
 export const FRAME_W = 32;
 export const FRAME_H = 32;

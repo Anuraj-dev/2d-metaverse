@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { Dir, PlayerState } from "../../contract";
+import type { Dir, PlayerState } from "@metaverse/shared";
 import type { Net } from "../../net/net";
 import { authToken } from "../../net/auth";
 import { bus } from "../eventBus";

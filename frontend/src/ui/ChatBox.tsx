@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChatMessage, PlayerState } from "../contract";
+import { LIMITS, type ChatMessage, type PlayerState } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
 
@@ -395,7 +395,7 @@ export default function ChatBox() {
                 completeRef.current = null;
               }}
               onKeyDown={onInputKey}
-              maxLength={256}
+              maxLength={LIMITS.chatTextMax}
               placeholder={
                 tab === "private" ? "Message this area…" : "Message everyone…"
               }

@@ -1,6 +1,15 @@
 import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
-import { z } from "zod";
+import {
+  RATE_LIMITS,
+  chatSchema,
+  joinSchema,
+  moveSchema,
+  roomEnterSchema,
+  seatSitSchema,
+  socketAuthSchema,
+  whisperSchema,
+} from "@metaverse/shared";
 import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
 import { childLogger } from "./logger.js";
@@ -14,28 +23,15 @@ import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketDat
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
-const socketAuthSchema = z.object({ token: z.string().min(1) });
-const joinSchema = z.object({ spaceId: z.string().min(1).max(64) });
-const moveSchema = z.object({
-  x: z.number().finite().min(0).max(100_000),
-  y: z.number().finite().min(0).max(100_000),
-  dir: z.enum(["down", "left", "right", "up"])
-});
-const chatSchema = z.object({
-  text: z.string().trim().min(1).max(500),
-  scope: z.enum(["world", "room"]).optional()
-});
-const whisperSchema = z.object({ to: z.string().min(1).max(64), text: z.string().trim().min(1).max(500) });
-const WHISPER_LIMIT = 20;
-const WHISPER_WINDOW_SECONDS = 60;
-const roomEnterSchema = z.object({ roomId: z.string().min(1).max(64), key: z.string().min(1).max(128) });
-const seatSitSchema = z.object({ roomId: z.string().min(1).max(64), seatId: z.number().int().nonnegative() });
+// Payload schemas + abuse-protection windows live in @metaverse/shared.
+const WHISPER_LIMIT = RATE_LIMITS.whisperLimit;
+const WHISPER_WINDOW_SECONDS = RATE_LIMITS.whisperWindowSeconds;
 // Validated in parse-config.ts (positive finite integers; defaults 4s / 10s).
 // Integration tests shrink them via env to exercise the timing paths quickly.
 const LEAVE_GRACE_MS = config.LEAVE_GRACE_MS;
 const JOIN_TIMEOUT_MS = config.JOIN_TIMEOUT_MS;
-const ROOM_KEY_ATTEMPT_LIMIT = 5;
-const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = 5 * 60;
+const ROOM_KEY_ATTEMPT_LIMIT = RATE_LIMITS.roomKeyAttemptLimit;
+const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = RATE_LIMITS.roomKeyAttemptWindowSeconds;
 
 const spaceChannel = (spaceId: string) => `space:${spaceId}`;
 const roomChannel = (roomId: string) => `room:${roomId}`;
@@ -175,7 +171,7 @@ export function createGameServer(httpServer: HttpServer) {
       const { playerId, spaceId, username } = socket.data;
       if (!parsed.success || !playerId || !spaceId || !username) return;
       const now = Date.now();
-      if (socket.data.lastMoveAt && now - socket.data.lastMoveAt < 40) return;
+      if (socket.data.lastMoveAt && now - socket.data.lastMoveAt < RATE_LIMITS.moveThrottleMs) return;
       socket.data.lastMoveAt = now;
       const state = { id: playerId, name: username, ...parsed.data, connectionId: socket.id };
       await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify(state));
