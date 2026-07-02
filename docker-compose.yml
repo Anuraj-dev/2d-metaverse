@@ -91,7 +91,12 @@ services:
       - "50000-50100:50000-50100/udp"
 
   setup:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        # Stamped into /health/live + /health/ready responses; the E2E suite's
+        # version-compat test compares it against the frontend's VITE_GIT_SHA.
+        GIT_SHA: ${GIT_SHA:-dev}
     restart: "no"
     logging: *default-logging
     environment: *backend-environment
@@ -101,7 +106,10 @@ services:
     command: ["sh", "-c", "node dist/migrate.js && node dist/seed.js"]
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
     restart: unless-stopped
     logging: *default-logging
     environment: *backend-environment
