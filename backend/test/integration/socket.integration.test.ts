@@ -222,6 +222,56 @@ describe("seats", () => {
   });
 });
 
+describe("room-leave", () => {
+  it("detaches room chat, reverts scope to world, and revokes seat access", async () => {
+    const a = await joinAs((await createPlayer("rla")).token);
+    const b = await joinAs((await createPlayer("rlb")).token);
+
+    for (const player of [a, b]) {
+      const entered = once(player.socket, "room-enter-result");
+      player.socket.emit("room-enter", { roomId: "5", key: process.env.ROOM_5_KEY });
+      expect(await entered).toMatchObject({ ok: true, roomId: "5" });
+    }
+
+    const sat = onceMatching<{ seatId: number }>(b.socket, "seat-update", (payload) => payload.seatId === 1);
+    a.socket.emit("seat-sit", { roomId: "5", seatId: 1 });
+    expect(await sat).toEqual({ roomId: "5", seatId: 1, playerId: a.init.selfId });
+
+    a.socket.emit("room-leave");
+    await sleep(150); // async handler: channel leave + room-access revocation
+
+    // B's room chat no longer reaches the leaver…
+    const bEcho = once(b.socket, "chat");
+    b.socket.emit("chat", { text: "still inside" });
+    expect(await bEcho).toMatchObject({ text: "still inside", scope: "5" });
+    await expectSilence(a.socket, "chat", 300, (payload) => payload.scope === "5");
+
+    // …and the leaver's own chat reverts to world scope (B hears it as world).
+    const worldChat = onceMatching<{ scope: string }>(b.socket, "chat", (payload) => payload.scope === "world");
+    a.socket.emit("chat", { text: "back outside" });
+    expect(await worldChat).toMatchObject({ id: a.init.selfId, text: "back outside", scope: "world" });
+
+    // room-access is revoked: without re-entering, seat-sit is ignored.
+    a.socket.emit("seat-sit", { roomId: "5", seatId: 2 });
+    await expectSilence(b.socket, "seat-update", 300, (payload) => payload.seatId === 2);
+
+    // room-leave alone does NOT free the seat — that is seat-stand's contract:
+    // B contesting the seat is still told A occupies it…
+    const conflict = onceMatching<{ seatId: number }>(b.socket, "seat-update", (payload) => payload.seatId === 1);
+    b.socket.emit("seat-sit", { roomId: "5", seatId: 1 });
+    expect(await conflict).toEqual({ roomId: "5", seatId: 1, playerId: a.init.selfId });
+
+    // …and seat-stand still works after leaving (it needs no room access).
+    const freed = onceMatching<{ playerId: string | null }>(
+      b.socket,
+      "seat-update",
+      (payload) => payload.seatId === 1 && payload.playerId === null
+    );
+    a.socket.emit("seat-stand");
+    expect(await freed).toEqual({ roomId: "5", seatId: 1, playerId: null });
+  });
+});
+
 describe("disconnect grace", () => {
   it("suppresses player-left when the player returns within the grace window", async () => {
     const userA = await createPlayer("ga");
