@@ -80,6 +80,7 @@ export default function Settings() {
               <button onClick={enableNotifs}>🔔 Desktop alerts</button>
             )}
           </div>
+          <div className="set-version">build {__APP_SHA__.slice(0, 7)}</div>
         </div>
       )}
     </div>

@@ -21,7 +21,8 @@ const schema = z.object({
   ROOM_6_KEY: z.string().min(1).optional(),
   STAGE_KEY: z.string().min(1).optional(),
   MAP_JSON_URL: z.string().default("/assets/maps/space.json"),
-  TRUST_PROXY: z.enum(["true", "false"]).default("false")
+  TRUST_PROXY: z.enum(["true", "false"]).default("false"),
+  GIT_SHA: z.string().default("dev")
 });
 
 const parsed = schema.safeParse(process.env);

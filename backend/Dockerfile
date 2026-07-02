@@ -8,7 +8,9 @@ COPY migrations ./migrations
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
+ARG GIT_SHA=dev
 ENV NODE_ENV=production
+ENV GIT_SHA=$GIT_SHA
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force

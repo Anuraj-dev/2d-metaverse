@@ -15,13 +15,13 @@ app.use(helmet());
 app.use(cors({ origin: config.corsOrigins, credentials: false }));
 app.use(express.json({ limit: "32kb" }));
 
-app.get("/health/live", (_request, response) => response.json({ ok: true }));
+app.get("/health/live", (_request, response) => response.json({ ok: true, sha: config.GIT_SHA }));
 app.get("/health/ready", async (_request, response) => {
   try {
     await Promise.all([pool.query("SELECT 1"), redis.ping()]);
-    response.json({ ok: true });
+    response.json({ ok: true, sha: config.GIT_SHA });
   } catch {
-    response.status(503).json({ ok: false });
+    response.status(503).json({ ok: false, sha: config.GIT_SHA });
   }
 });
 app.use("/api/v1", api);
