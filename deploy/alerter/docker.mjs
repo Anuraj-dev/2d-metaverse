@@ -6,7 +6,14 @@ const SOCKET_PATH = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 
 function request(path) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ socketPath: SOCKET_PATH, path, method: "GET" }, resolve);
+    const req = http.request({ socketPath: SOCKET_PATH, path, method: "GET" }, (res) => {
+      if (res.statusCode === undefined || res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume(); // drain so the socket is released
+        reject(new Error(`Docker API ${path} returned status ${res.statusCode}`));
+        return;
+      }
+      resolve(res);
+    });
     req.on("error", reject);
     req.end();
   });
@@ -55,19 +62,42 @@ export function streamEvents(onEvent) {
 
 // Docker multiplexes stdout/stderr in log streams with an 8-byte header per
 // frame: [stream(1), 0, 0, 0, size(4, big-endian)]. Strip those frames.
-function demultiplex(buffer) {
+//
+// A valid header has stream byte 0 (stdin), 1 (stdout), or 2 (stderr) and
+// three zero reserved bytes. Raw TTY logs have no such headers, so a buffer
+// whose start does not look like a valid frame is returned as-is. Only
+// complete, well-formed frames are consumed; a malformed header mid-stream
+// falls back to the raw buffer (no corruption of the diagnostic excerpt), and
+// a trailing partial frame is simply not consumed.
+function looksLikeFrameHeader(buffer, offset) {
+  return (
+    offset + 8 <= buffer.length &&
+    buffer[offset] <= 2 &&
+    buffer[offset + 1] === 0 &&
+    buffer[offset + 2] === 0 &&
+    buffer[offset + 3] === 0
+  );
+}
+
+export function demultiplex(buffer) {
+  if (buffer.length === 0) return "";
+  if (!looksLikeFrameHeader(buffer, 0)) return buffer.toString("utf8");
+
   let offset = 0;
   const chunks = [];
-  while (offset + 8 <= buffer.length) {
+  while (offset < buffer.length) {
+    if (offset + 8 > buffer.length) break; // trailing partial header
+    if (!looksLikeFrameHeader(buffer, offset)) {
+      // Malformed mid-stream — safer to present the whole buffer raw than to
+      // guess at frame boundaries and corrupt the excerpt.
+      return buffer.toString("utf8");
+    }
     const size = buffer.readUInt32BE(offset + 4);
-    offset += 8;
-    if (size === 0) continue;
-    chunks.push(buffer.subarray(offset, offset + size));
-    offset += size;
+    if (offset + 8 + size > buffer.length) break; // incomplete payload
+    if (size > 0) chunks.push(buffer.subarray(offset + 8, offset + 8 + size));
+    offset += 8 + size;
   }
-  const out = Buffer.concat(chunks).toString("utf8");
-  // If the stream was not multiplexed (no TTY-less header), fall back to raw.
-  return out.length > 0 ? out : buffer.toString("utf8");
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /** Fetch the last `tail` log lines of a container as a plain string. */
