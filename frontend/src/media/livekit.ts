@@ -7,11 +7,15 @@
 // `livekit-client` is loaded dynamically (only when audio/video is actually used)
 // so it stays out of the initial bundle. Types are erased type-only imports.
 import type { Room as LKRoom } from "livekit-client";
-import { serverBase } from "../net/auth";
+import { serverBase, authToken } from "../net/auth";
 import { bus } from "../game/eventBus";
-import { proximityVolume } from "../game/proximity";
-
-const AUDIO_CUTOFF = 200; // px; beyond this a remote participant is silent
+import {
+  AUDIO_CUTOFF,
+  computeVolumes,
+  worldRoomName,
+  roomRoomName,
+  stageRoomName,
+} from "./mediaLogic";
 
 async function fetchToken(
   roomName: string,
@@ -21,7 +25,7 @@ async function fetchToken(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${localStorage.getItem("token") ?? ""}`,
+      Authorization: `Bearer ${authToken()}`,
     },
     body: JSON.stringify({ roomName, ...(presenterKey !== undefined ? { presenterKey } : {}) }),
   });
@@ -41,7 +45,7 @@ class WorldAudio {
   async start(spaceId: string, selfId: string) {
     this.selfId = selfId;
     try {
-      const { token, url } = await fetchToken(`world:${spaceId}`);
+      const { token, url } = await fetchToken(worldRoomName(spaceId));
       const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room({
         audioCaptureDefaults: {
@@ -79,17 +83,9 @@ class WorldAudio {
   }
 
   private updateVolumes(p: PositionsPayload) {
-    const me = p.players.find((pl) => pl.id === this.selfId || pl.self);
-    if (!me) return;
-    for (const [id, el] of this.audioEls) {
-      const other = p.players.find((pl) => pl.id === id);
-      if (!other) {
-        el.volume = 0;
-        continue;
-      }
-      const d = Math.hypot(other.x - me.x, other.y - me.y);
-      el.volume = proximityVolume(d, AUDIO_CUTOFF);
-    }
+    const vols = computeVolumes(p.players, this.selfId, this.audioEls.keys(), AUDIO_CUTOFF);
+    if (!vols) return;
+    for (const [id, el] of this.audioEls) el.volume = vols.get(id) ?? 0;
   }
 
   setMicEnabled(on: boolean) {
@@ -140,7 +136,7 @@ class RoomVideo {
     if (this.room) return;
     this.selfId = selfId;
     try {
-      const { token, url } = await fetchToken(`room:${roomId}`);
+      const { token, url } = await fetchToken(roomRoomName(roomId));
       const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room({
         audioCaptureDefaults: {
@@ -237,7 +233,7 @@ class StageVideo {
     if (this.room) return;
     this.selfId = selfId;
     try {
-      const { token, url } = await fetchToken(`stage:${spaceId}`);
+      const { token, url } = await fetchToken(stageRoomName(spaceId));
       const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room();
       this.room = room;
@@ -277,7 +273,7 @@ class StageVideo {
     if (this.room) return;
     this.selfId = selfId;
     try {
-      const { token, url } = await fetchToken(`stage:${spaceId}`, presenterKey);
+      const { token, url } = await fetchToken(stageRoomName(spaceId), presenterKey);
       const { Room, RoomEvent, Track } = await import("livekit-client");
       const room = new Room({
         audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
