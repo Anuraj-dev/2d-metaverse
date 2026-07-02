@@ -1,13 +1,19 @@
 import Phaser from "phaser";
 import type { Dir, PlayerState } from "../../contract";
 import type { Net } from "../../net/net";
+import { authToken } from "../../net/auth";
 import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
 import { CHARS, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, type InteractableDef } from "../interactables";
+import { movementIntent, BASE_SPEED } from "../movement";
+import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone } from "../zones";
+import { seatTransition, doorTransition } from "../seatDoor";
+import { interpolateStep } from "../interpolation";
+import { interactAction } from "../interaction";
+import { positionsEmitDue, moveSendDue } from "../throttle";
 
-const SPEED = 120;
 const ZOOM = 2.2;
 
 interface Remote {
@@ -17,6 +23,8 @@ interface Remote {
   ty: number;
   dir: Dir;
   name: string;
+  /** Avatar spritesheet key, resolved once at join (was an O(n) per-frame lookup). */
+  char: string;
 }
 
 interface DoorZone {
@@ -56,6 +64,7 @@ export default class WorldScene extends Phaser.Scene {
 
   private doors: DoorZone[] = [];
   private doorSprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private openDoors = new Set<string>();
   private seats: Seat[] = [];
   private interactables: InteractableDef[] = [];
   private currentInteractable: InteractableDef | null = null;
@@ -161,7 +170,7 @@ export default class WorldScene extends Phaser.Scene {
     this.wireNet();
     this.wireUi();
     this.wireChat();
-    this.net.connect(localStorage.getItem("token") ?? "dev", "1");
+    this.net.connect(authToken(), "1");
 
     if (import.meta.env.DEV) {
       (window as unknown as { __mv: unknown }).__mv = {
@@ -330,9 +339,13 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("room-entered", (p: { roomId: string }) => {
       this.enteredRooms.add(p.roomId);
       this.currentRoom = p.roomId;
-      const door = this.doorSprites.get(p.roomId);
-      if (door) {
-        door.play("door-open").once("animationcomplete", () => door.setVisible(false));
+      const t = doorTransition(this.openDoors.has(p.roomId) ? "open" : "closed", "enter");
+      if (t.effect === "open") {
+        this.openDoors.add(p.roomId);
+        const door = this.doorSprites.get(p.roomId);
+        if (door) {
+          door.play("door-open").once("animationcomplete", () => door.setVisible(false));
+        }
       }
     });
     bus.on("do-sit", () => this.trySit());
@@ -451,6 +464,7 @@ export default class WorldScene extends Phaser.Scene {
       ty: p.y,
       dir: p.dir,
       name: p.name,
+      char,
     });
   }
 
@@ -500,38 +514,29 @@ export default class WorldScene extends Phaser.Scene {
       }
       return;
     }
-    const speed = this.keyShift.isDown ? SPEED * 1.6 : SPEED;
-    let ax = 0,
-      ay = 0;
-    if (this.cursors.left.isDown || this.wasd.A.isDown) ax -= 1;
-    if (this.cursors.right.isDown || this.wasd.D.isDown) ax += 1;
-    if (this.cursors.up.isDown || this.wasd.W.isDown) ay -= 1;
-    if (this.cursors.down.isDown || this.wasd.S.isDown) ay += 1;
-    // on-screen joystick (mobile) overrides keyboard when engaged
-    if (this.touchAxis.x !== 0 || this.touchAxis.y !== 0) {
-      ax = this.touchAxis.x;
-      ay = this.touchAxis.y;
-    }
-    let vx = ax * speed,
-      vy = ay * speed;
-    const mag = Math.hypot(vx, vy);
-    if (mag > speed) {
-      vx = (vx / mag) * speed;
-      vy = (vy / mag) * speed;
-    }
+    const { vx, vy, dir, moving } = movementIntent(
+      {
+        left: this.cursors.left.isDown || this.wasd.A.isDown,
+        right: this.cursors.right.isDown || this.wasd.D.isDown,
+        up: this.cursors.up.isDown || this.wasd.W.isDown,
+        down: this.cursors.down.isDown || this.wasd.S.isDown,
+        run: this.keyShift.isDown,
+        touchAxis: this.touchAxis,
+      },
+      this.dir,
+      BASE_SPEED
+    );
     body.setVelocity(vx, vy);
+    this.dir = dir;
 
-    const moving = mag > 0.01;
     if (moving) {
-      if (Math.abs(vx) > Math.abs(vy)) this.dir = vx < 0 ? "left" : "right";
-      else this.dir = vy < 0 ? "up" : "down";
       this.player.anims.play(walkAnim(this.avatar, this.dir), true);
     } else {
       this.player.anims.stop();
       this.player.setFrame(idleFrame(this.dir));
     }
 
-    if (time - this.lastSent > 80) {
+    if (moveSendDue(time, this.lastSent)) {
       this.lastSent = time;
       this.net.move(Math.round(body.x), Math.round(body.y), this.dir);
     }
@@ -539,15 +544,14 @@ export default class WorldScene extends Phaser.Scene {
 
   private updateRemotes() {
     this.remotes.forEach((r) => {
-      const dx = r.tx - r.sprite.x;
-      const dy = r.ty - r.sprite.y;
-      const moving = Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
-      r.sprite.x += dx * 0.2;
-      r.sprite.y += dy * 0.2;
+      const step = interpolateStep(
+        { x: r.sprite.x, y: r.sprite.y },
+        { x: r.tx, y: r.ty }
+      );
+      r.sprite.x = step.x;
+      r.sprite.y = step.y;
       r.sprite.setDepth(r.sprite.y);
-      const char = CHARS[hash([...this.remotes].find(([, v]) => v === r)![0]) %
-        CHARS.length];
-      if (moving) r.sprite.anims.play(walkAnim(char, r.dir), true);
+      if (step.moving) r.sprite.anims.play(walkAnim(r.char, r.dir), true);
       else {
         r.sprite.anims.stop();
         r.sprite.setFrame(idleFrame(r.dir));
@@ -567,9 +571,7 @@ export default class WorldScene extends Phaser.Scene {
     const fy = this.player.y + 8;
 
     // doors
-    let inDoor: DoorZone | null = null;
-    for (const d of this.doors)
-      if (Phaser.Geom.Rectangle.Contains(d.rect, fx, fy)) inDoor = d;
+    const inDoor = findDoor(this.doors, fx, fy);
     const doorId = inDoor ? inDoor.roomId : null;
     if (doorId !== this.currentDoor) {
       this.currentDoor = doorId;
@@ -589,34 +591,24 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     // stage zone (auditorium audience area)
-    if (this.stageZone) {
-      const nowInStage = Phaser.Geom.Rectangle.Contains(this.stageZone, fx, fy);
-      if (nowInStage !== this.inStage) {
-        this.inStage = nowInStage;
-        if (nowInStage) bus.emit("near-stage");
-        else bus.emit("leave-stage");
-      }
+    const nowInStage = inZone(this.stageZone, fx, fy);
+    if (nowInStage !== this.inStage) {
+      this.inStage = nowInStage;
+      if (nowInStage) bus.emit("near-stage");
+      else bus.emit("leave-stage");
     }
 
     // presenter zone (podium — emit regardless of seated state)
-    if (this.presenterZone) {
-      const nowInPresenter = Phaser.Geom.Rectangle.Contains(this.presenterZone, fx, fy);
-      if (nowInPresenter !== this.inPresenterSlot) {
-        this.inPresenterSlot = nowInPresenter;
-        if (nowInPresenter) bus.emit("near-presenter-slot");
-        else bus.emit("leave-presenter-slot");
-      }
+    const nowInPresenter = inZone(this.presenterZone, fx, fy);
+    if (nowInPresenter !== this.inPresenterSlot) {
+      this.inPresenterSlot = nowInPresenter;
+      if (nowInPresenter) bus.emit("near-presenter-slot");
+      else bus.emit("leave-presenter-slot");
     }
 
     // seats (only matter once room entered)
     if (this.seated) return;
-    let inSeat: Seat | null = null;
-    for (const s of this.seats)
-      if (
-        this.enteredRooms.has(s.roomId) &&
-        Phaser.Geom.Rectangle.Contains(s.rect, fx, fy)
-      )
-        inSeat = s;
+    const inSeat = findSeat(this.seats, this.enteredRooms, fx, fy);
     if (inSeat !== this.currentSeat) {
       this.currentSeat = inSeat;
       if (inSeat)
@@ -627,9 +619,7 @@ export default class WorldScene extends Phaser.Scene {
 
   /** Prevent walking through a door gap until the server has accepted its key. */
   private keepLockedRoomsClosed() {
-    const room = this.roomAreas.find((area) =>
-      Phaser.Geom.Rectangle.Contains(area.rect, this.player.x, this.player.y + 8)
-    );
+    const room = findRoomArea(this.roomAreas, this.player.x, this.player.y + 8);
     if (!room) {
       this.lastPublicPosition.set(this.player.x, this.player.y);
       return;
@@ -642,10 +632,10 @@ export default class WorldScene extends Phaser.Scene {
 
   /** Detect a genuine walk-out of the private room the player is currently inside. */
   private checkRoomMembership() {
-    if (!this.currentRoom) return;
-    const area = this.roomAreas.find((a) => a.roomId === this.currentRoom);
-    if (!area) return;
-    if (!Phaser.Geom.Rectangle.Contains(area.rect, this.player.x, this.player.y + 8)) {
+    if (
+      this.currentRoom &&
+      hasExitedRoom(this.roomAreas, this.currentRoom, this.player.x, this.player.y + 8)
+    ) {
       this.exitRoom(this.currentRoom);
     }
   }
@@ -658,10 +648,14 @@ export default class WorldScene extends Phaser.Scene {
     if (this.seated) this.stand();
     this.net.leaveRoom();
     bus.emit("room-left", { roomId });
-    const door = this.doorSprites.get(roomId);
-    if (door) {
-      door.setVisible(true);
-      door.play("door-close");
+    const t = doorTransition(this.openDoors.has(roomId) ? "open" : "closed", "exit");
+    if (t.effect === "close") {
+      this.openDoors.delete(roomId);
+      const door = this.doorSprites.get(roomId);
+      if (door) {
+        door.setVisible(true);
+        door.play("door-close");
+      }
     }
   }
 
@@ -674,8 +668,9 @@ export default class WorldScene extends Phaser.Scene {
       Phaser.Input.Keyboard.JustDown(this.keyE) || this.interactQueued;
     this.interactQueued = false;
     if (pressed) {
-      if (this.seated) this.stand();
-      else if (this.currentInteractable) this.triggerInteractable(this.currentInteractable);
+      const action = interactAction(this.seated, this.currentInteractable !== null);
+      if (action === "stand") this.stand();
+      else if (action === "interact") this.triggerInteractable(this.currentInteractable!);
       else this.trySit();
     }
   }
@@ -691,9 +686,10 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private trySit() {
-    if (this.seated || !this.currentSeat) return;
-    const s = this.currentSeat;
-    this.seated = true;
+    const t = seatTransition(this.seated, "sit", this.currentSeat !== null);
+    if (t.effect !== "sit") return;
+    const s = this.currentSeat!;
+    this.seated = t.seated;
     this.player.setPosition(s.cx, s.cy);
     this.player.setVelocity(0, 0);
     this.dir = s.facing;
@@ -704,15 +700,16 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private stand() {
-    if (!this.seated) return;
-    this.seated = false;
+    const t = seatTransition(this.seated, "stand", this.currentSeat !== null);
+    if (t.effect !== "stand") return;
+    this.seated = t.seated;
     this.player.y += 18;
     this.net.stand();
     bus.emit("stood");
   }
 
   private emitPositions(time: number) {
-    if (time - this.lastTick < 66) return;
+    if (!positionsEmitDue(time, this.lastTick)) return;
     this.lastTick = time;
     const cam = this.cameras.main;
     const toScreen = (wx: number, wy: number) => ({

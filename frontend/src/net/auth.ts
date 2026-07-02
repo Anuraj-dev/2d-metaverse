@@ -6,6 +6,15 @@ export { USE_MOCK } from "./config";
 /** Backend base URL (empty in a misconfigured prod build — guarded before use). */
 export const serverBase = SERVER_URL;
 
+/**
+ * The stored session JWT, or "" if unauthenticated. Single source of truth for the
+ * socket handshake and LiveKit token requests — no bogus "dev" placeholder, which
+ * a real backend would reject anyway.
+ */
+export function authToken(): string {
+  return localStorage.getItem("token") ?? "";
+}
+
 async function postJson(path: string, body: unknown): Promise<Response> {
   return fetch(`${serverBase}${path}`, {
     method: "POST",
