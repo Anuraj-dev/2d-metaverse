@@ -6,7 +6,7 @@ SERIAL=${VOLUME_ID//-/}
 MOUNT_POINT=/srv/metaverse-data
 
 DEVICE=""
-for attempt in $(seq 1 30); do
+for _ in $(seq 1 30); do
   DEVICE_NAME=$(lsblk -ndo NAME,SERIAL,TYPE | awk -v serial="$SERIAL" '$2 == serial && $3 == "disk" {print $1; exit}')
   if [[ -n "$DEVICE_NAME" ]]; then
     DEVICE="/dev/$DEVICE_NAME"
