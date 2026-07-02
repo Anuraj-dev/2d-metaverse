@@ -9,11 +9,13 @@ ssm-commands.json
 
 # dependencies
 node_modules/
+shared/node_modules/
 backend/node_modules/
 frontend/node_modules/
 
 # build output
 dist/
+shared/dist/
 backend/dist/
 frontend/dist/
 *.tsbuildinfo

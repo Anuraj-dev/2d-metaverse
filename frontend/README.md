@@ -9,8 +9,13 @@ Built with **React + Phaser 3 + Vite + TypeScript**. Real-time game state runs o
 
 ## Run locally
 
+This is one workspace of an npm-workspaces monorepo. Install once from the repo
+root and build the shared contract package before running:
+
 ```bash
-npm install
+npm install          # from the repo root — installs all workspaces
+npm run build:shared # build @metaverse/shared (the frontend imports its types)
+cd frontend
 npm run dev          # http://localhost:5173
 ```
 
@@ -49,7 +54,8 @@ sign-in.
 | `npm run size` | Bundle-budget check (gzipped entry chunk) |
 
 Root convenience: from the repo root, `npm run lint` / `npm run typecheck` /
-`npm test` run the frontend and backend commands back to back (root `package.json`).
+`npm test` run every workspace (shared, backend, frontend) — the typecheck/test
+scripts build `@metaverse/shared` first (root `package.json`).
 
 ## Type safety (strict baseline)
 
@@ -108,9 +114,14 @@ src/
 ├── game/          Phaser scene (glue) + pure game-logic modules, avatar anims, event bus
 ├── net/           Socket.IO client + a standalone mock (VITE_USE_MOCK)
 ├── media/         LiveKit transport (livekit.ts) + pure media logic (mediaLogic.ts)
-├── ui/            React HUD: chat, room-key modal, video bubbles, media controls
-└── contract.ts    Shared event/payload types the backend mirrors
+└── ui/            React HUD: chat, room-key modal, video bubbles, media controls
 ```
+
+Wire types (`Dir`, `PlayerState`, `ChatMessage`, `SpaceInfo`, …) and event-name /
+limit constants come from the **`@metaverse/shared`** workspace package — the single
+source of truth the backend validates against. There is no local `contract.ts`; the
+frontend imports types (erased at build) and a few runtime constants from
+`@metaverse/shared`.
 
 ### Scene-as-glue + pure modules (the enforced convention)
 
@@ -232,7 +243,7 @@ trace with `npx playwright show-trace <path to trace.zip>`.
 `join → init`, `move → player-moved`, `chat`, `room-enter → room-enter-result`,
 `seat-sit / seat-stand → seat-update`. REST: `/api/v1/{signup,signin,space/:id,livekit/token}`.
 LiveKit rooms: `world:<spaceId>` (mic-only, proximity) and `room:<roomId>` (cam+mic,
-seat-gated). See `src/contract.ts`.
+seat-gated). Event names and payload shapes are defined in `@metaverse/shared`.
 
 ## CI
 

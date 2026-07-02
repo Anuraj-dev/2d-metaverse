@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { ChatMessage } from "../contract";
+import type { ChatMessage } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
 import { playSfx, preloadSfx } from "../media/sfx";

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/frontend-ci.yml", "docker-compose.yml"]
+    paths: ["frontend/**", "shared/**", "package.json", "package-lock.json", ".github/workflows/frontend-ci.yml", "docker-compose.yml"]
   pull_request:
-    paths: ["frontend/**", ".github/workflows/frontend-ci.yml", "docker-compose.yml"]
+    paths: ["frontend/**", "shared/**", "package.json", "package-lock.json", ".github/workflows/frontend-ci.yml", "docker-compose.yml"]
 
 jobs:
   build:
@@ -21,8 +21,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+          cache-dependency-path: package-lock.json
+      - name: Install workspaces
+        working-directory: .
+        run: npm ci
+      - name: Build shared package
+        working-directory: .
+        run: npm run build:shared
       - name: Lint
         run: npm run lint
       - name: Typecheck
@@ -57,7 +62,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Boot composed backend stack
         run: docker compose up -d --build
         env:
@@ -74,8 +79,10 @@ jobs:
           echo "backend never became ready" >&2
           docker compose logs --no-color
           exit 1
-      - run: npm ci
-        working-directory: frontend
+      - name: Install workspaces
+        run: npm ci
+      - name: Build shared package
+        run: npm run build:shared
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
         working-directory: frontend
@@ -111,9 +118,9 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
+    # Deploy from the repo root: the frontend build needs the @metaverse/shared
+    # workspace, so Vercel must see the whole monorepo (root vercel.json drives the
+    # install/build). The Vercel project's Root Directory must be the repo root.
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

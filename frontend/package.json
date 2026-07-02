@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@livekit/components-react": "^2.9.21",
+    "@metaverse/shared": "*",
     "@livekit/components-styles": "^1.2.0",
     "gsap": "^3.15.0",
     "livekit-client": "^2.19.2",

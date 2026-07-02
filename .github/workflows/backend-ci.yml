@@ -5,12 +5,18 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "shared/**"
+      - "package.json"
+      - "package-lock.json"
       - "deploy/**"
       - "docker-compose*.yml"
       - ".github/workflows/backend-*.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "shared/**"
+      - "package.json"
+      - "package-lock.json"
       - "deploy/**"
       - "docker-compose*.yml"
       - ".github/workflows/backend-*.yml"
@@ -25,27 +31,38 @@ concurrency:
 
 jobs:
   test:
-    name: Test backend
+    name: Test shared + backend
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-      - name: Lint
-        run: npm run lint
-      - name: Typecheck
-        run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npm audit --audit-level=moderate
+          cache-dependency-path: package-lock.json
+      - name: Install workspaces
+        run: npm ci
+      - name: Build shared package
+        run: npm run build:shared
+      # Shared contract package: lint, typecheck, schema-fixture tests.
+      - name: Lint shared
+        run: npm run lint --workspace @metaverse/shared
+      - name: Typecheck shared
+        run: npm run typecheck --workspace @metaverse/shared
+      - name: Test shared
+        run: npm run test --workspace @metaverse/shared
+      # Backend.
+      - name: Lint backend
+        run: npm run lint --workspace metaverse-backend
+      - name: Typecheck backend
+        run: npm run typecheck --workspace metaverse-backend
+      - name: Test backend
+        run: npm run test --workspace metaverse-backend
+      - name: Build backend
+        run: npm run build --workspace metaverse-backend
+      - name: Audit
+        run: npm audit --audit-level=moderate
 
   scripts:
     name: Shellcheck & alerter tests
@@ -71,10 +88,11 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - name: Install smoke-test client
-        working-directory: backend
+          cache-dependency-path: package-lock.json
+      - name: Install workspaces (smoke-test + integration client)
         run: npm ci
+      - name: Build shared package
+        run: npm run build:shared
       - name: Validate Compose files
         env:
           TURN_DOMAIN: turn.example.com
@@ -132,7 +150,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
-          context: backend
+          # Root context so the image can build the @metaverse/shared workspace.
+          context: .
+          file: backend/Dockerfile
           push: false
           tags: metaverse-backend:ci
           cache-from: type=gha

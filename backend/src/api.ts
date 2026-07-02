@@ -2,6 +2,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { z } from "zod";
+import { RATE_LIMITS, credentialsSchema, liveKitSchema } from "@metaverse/shared";
 import { issueToken, requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
@@ -9,17 +10,14 @@ import { hashSecret, verifySecret } from "./password.js";
 import { getRoom, getSpace, spaceExists } from "./repository.js";
 import { redis } from "./redis.js";
 
-const credentialsSchema = z.object({
-  username: z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9_-]+$/),
-  password: z.string().min(8).max(128)
-});
-const liveKitSchema = z.object({
-  roomName: z.string().min(1).max(128),
-  presenterKey: z.string().max(128).optional(),
-});
-
+// Request schemas live in @metaverse/shared (single source of truth for wire shapes).
 export const api = Router();
-const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 40, standardHeaders: "draft-8", legacyHeaders: false });
+const authLimiter = rateLimit({
+  windowMs: RATE_LIMITS.authWindowMs,
+  limit: RATE_LIMITS.authLimit,
+  standardHeaders: "draft-8",
+  legacyHeaders: false
+});
 
 api.post("/signup", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);

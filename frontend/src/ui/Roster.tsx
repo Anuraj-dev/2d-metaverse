@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PlayerState } from "../contract";
+import type { PlayerState } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
 

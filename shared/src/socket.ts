@@ -1,0 +1,158 @@
+/**
+ * Socket.IO wire contract: one zod schema per event payload (client → server and
+ * server → client), the inferred TypeScript payload types, and the Socket.IO event
+ * maps built from them.
+ *
+ * The backend `safeParse`s the client → server schemas exactly as before; the
+ * server → client schemas exist so both sides — and the contract fixtures — agree
+ * on outbound shapes too. The JWT travels in the Socket.IO handshake
+ * (`auth: { token }`), never in `join`.
+ */
+import { z } from "zod";
+import { CHAT_SCOPES, DIRS, LIMITS, ROOM_ENTER_REASONS } from "./constants.js";
+
+/* ------------------------------- primitives ------------------------------- */
+
+export const dirSchema = z.enum(DIRS);
+export type Dir = z.infer<typeof dirSchema>;
+
+export const chatScopeSchema = z.enum(CHAT_SCOPES);
+export type ChatScope = z.infer<typeof chatScopeSchema>;
+
+export const playerStateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  x: z.number(),
+  y: z.number(),
+  dir: dirSchema,
+});
+export type PlayerState = z.infer<typeof playerStateSchema>;
+
+/* --------------------------- handshake / auth ----------------------------- */
+
+/** Validates `socket.handshake.auth`. */
+export const socketAuthSchema = z.object({ token: z.string().min(1) });
+export type SocketAuth = z.infer<typeof socketAuthSchema>;
+
+/* --------------------------- client → server ------------------------------ */
+
+export const joinSchema = z.object({ spaceId: z.string().min(1).max(LIMITS.spaceIdMax) });
+export type JoinPayload = z.infer<typeof joinSchema>;
+
+export const moveSchema = z.object({
+  x: z.number().finite().min(0).max(LIMITS.moveCoordMax),
+  y: z.number().finite().min(0).max(LIMITS.moveCoordMax),
+  dir: dirSchema,
+});
+export type MovePayload = z.infer<typeof moveSchema>;
+
+export const chatSchema = z.object({
+  text: z.string().trim().min(1).max(LIMITS.chatTextMax),
+  scope: chatScopeSchema.optional(),
+});
+export type ChatPayload = z.infer<typeof chatSchema>;
+
+export const whisperSchema = z.object({
+  to: z.string().min(1).max(LIMITS.playerIdMax),
+  text: z.string().trim().min(1).max(LIMITS.whisperTextMax),
+});
+export type WhisperPayload = z.infer<typeof whisperSchema>;
+
+export const roomEnterSchema = z.object({
+  roomId: z.string().min(1).max(LIMITS.roomIdMax),
+  key: z.string().min(1).max(LIMITS.roomKeyMax),
+});
+export type RoomEnterPayload = z.infer<typeof roomEnterSchema>;
+
+export const seatSitSchema = z.object({
+  roomId: z.string().min(1).max(LIMITS.roomIdMax),
+  seatId: z.number().int().nonnegative(),
+});
+export type SeatSitPayload = z.infer<typeof seatSitSchema>;
+
+/* --------------------------- server → client ------------------------------ */
+
+export const initSchema = z.object({
+  selfId: z.string(),
+  players: z.array(playerStateSchema),
+});
+export type InitPayload = z.infer<typeof initSchema>;
+
+export const playerJoinedSchema = playerStateSchema;
+export type PlayerJoinedPayload = z.infer<typeof playerJoinedSchema>;
+
+export const playerMovedSchema = z.object({
+  id: z.string(),
+  x: z.number(),
+  y: z.number(),
+  dir: dirSchema,
+});
+export type PlayerMovedPayload = z.infer<typeof playerMovedSchema>;
+
+export const playerLeftSchema = z.object({ id: z.string() });
+export type PlayerLeftPayload = z.infer<typeof playerLeftSchema>;
+
+/**
+ * Outbound chat line. `scope` is a free-form string (either `"world"` or a room id)
+ * — deliberately looser than the inbound {@link chatScopeSchema}.
+ */
+export const chatMessageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  text: z.string(),
+  scope: z.string(),
+});
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+export const whisperMessageSchema = z.object({
+  from: z.string(),
+  fromName: z.string(),
+  to: z.string(),
+  toName: z.string(),
+  text: z.string(),
+});
+export type WhisperMessage = z.infer<typeof whisperMessageSchema>;
+
+export const whisperFailSchema = z.object({ name: z.string() });
+export type WhisperFailPayload = z.infer<typeof whisperFailSchema>;
+
+export const roomEnterResultSchema = z.object({
+  ok: z.boolean(),
+  roomId: z.string(),
+  reason: z.enum(ROOM_ENTER_REASONS).optional(),
+});
+export type RoomEnterResultPayload = z.infer<typeof roomEnterResultSchema>;
+
+export const seatUpdateSchema = z.object({
+  roomId: z.string(),
+  seatId: z.number(),
+  playerId: z.string().nullable(),
+});
+export type SeatUpdatePayload = z.infer<typeof seatUpdateSchema>;
+
+/* ------------------------------ event maps -------------------------------- */
+
+/** Socket.IO listener map for events the server receives from a client. */
+export interface ClientToServerEvents {
+  join: (payload: JoinPayload) => void;
+  move: (payload: MovePayload) => void;
+  chat: (payload: ChatPayload) => void;
+  whisper: (payload: WhisperPayload) => void;
+  "room-enter": (payload: RoomEnterPayload) => void;
+  "room-leave": () => void;
+  "seat-sit": (payload: SeatSitPayload) => void;
+  "seat-stand": () => void;
+}
+
+/** Socket.IO listener map for events the server sends to a client. */
+export interface ServerToClientEvents {
+  init: (payload: InitPayload) => void;
+  "player-joined": (payload: PlayerJoinedPayload) => void;
+  "player-moved": (payload: PlayerMovedPayload) => void;
+  "player-left": (payload: PlayerLeftPayload) => void;
+  chat: (payload: ChatMessage) => void;
+  whisper: (payload: WhisperMessage) => void;
+  "whisper-fail": (payload: WhisperFailPayload) => void;
+  "room-enter-result": (payload: RoomEnterResultPayload) => void;
+  "seat-update": (payload: SeatUpdatePayload) => void;
+}

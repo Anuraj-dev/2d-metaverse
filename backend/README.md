@@ -92,29 +92,30 @@ In CI, the `test` job (no services) runs lint + typecheck + unit tests + build; 
   - The type-checked `no-unsafe-*`/`no-explicit-any` family is relaxed **for test files only** (they assert over inherently-`any` JSON and socket payloads) — production `src` keeps the full baseline.
 - `npm run typecheck` — `tsc -p tsconfig.json --noEmit` (production `src`). Lint's type info comes from `tsconfig.eslint.json`, which additionally covers `test/`.
 - **`.skip`-justification convention:** a skipped test must carry a comment on the line above saying *why* and *when it comes back* (e.g. `// SKIP: needs LiveKit stub — re-enable after #123`), so disabled tests stay visible debts.
-- Root convenience: from the repo root, `npm run lint` / `npm run typecheck` / `npm test` run the frontend and backend commands back to back (root `package.json`).
+- Root convenience: from the repo root, `npm run lint` / `npm run typecheck` / `npm test` run every workspace (shared, backend, frontend); the typecheck/test scripts build `@metaverse/shared` first (root `package.json`).
 
 ## Contract details
 
 - REST routes exactly follow `/api/v1/signup`, `/signin`, `/space/:id`, and `/livekit/token`.
-- Socket event names and payloads mirror `frontend/src/contract.ts`.
+- Socket event names, socket/REST payload schemas, and shared limits are defined once in the **`@metaverse/shared`** workspace package (`shared/src`). The backend imports those zod schemas and `safeParse`s them exactly as before; there is no hand-mirrored contract file. Add a new event/shape in `shared/`, never here — see the root `README.md`.
 - LiveKit world room: `world:<spaceId>` (for example `world:1`). Tokens can publish microphone only.
 - LiveKit private room: `room:<roomId>` (for example `room:1`). A private token is issued only while the caller owns a seat. Standing or disconnecting removes the participant from LiveKit.
 - Socket.IO reconnect recovery has a four-second grace period so brief network changes do not create leave/join churn.
 
 ## Development without Docker for Node
 
-Start PostgreSQL and Redis (Docker is fine), copy `backend/.env.example` to `backend/.env`, then:
+Start PostgreSQL and Redis (Docker is fine), copy `backend/.env.example` to `backend/.env`, then, **from the repository root** (this is an npm-workspaces monorepo — install once at the root):
 
 ```bash
+npm install                            # installs all workspaces (root lockfile)
+npm run build:shared                   # build @metaverse/shared first
 cd backend
-npm install
 npm run db:migrate
 npm run db:seed
 npm run dev
 ```
 
-Use `npm run typecheck`, `npm test`, and `npm run build` before deployment.
+Use `npm run typecheck`, `npm test`, and `npm run build` (each builds `shared` first via the root scripts, or run `npm run build:shared` yourself) before deployment.
 
 ## AWS EC2 deployment requirements
 

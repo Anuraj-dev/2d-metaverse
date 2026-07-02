@@ -53,13 +53,15 @@ jobs:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$RELEASE_SHA"
+          # Root context so the image can build the @metaverse/shared workspace.
           docker buildx build \
             --platform linux/amd64 \
+            --file backend/Dockerfile \
             --build-arg GIT_SHA="$RELEASE_SHA" \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
             --tag "$IMAGE" \
-            --push backend
+            --push .
           echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Build and push watchdog image

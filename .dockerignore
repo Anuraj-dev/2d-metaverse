@@ -1,0 +1,34 @@
+# Backend image build context is the repo root (see backend/Dockerfile).
+# Keep it lean and reproducible: never ship host node_modules or build output,
+# and drop everything the backend image never copies.
+
+# dependencies + build output (image reinstalls / rebuilds from source)
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+
+# secrets / env
+**/.env
+**/.env.*
+*.pem
+ssm-commands.json
+
+# vcs / ci / docs
+.git
+.github
+*.log
+npm-debug.log
+
+# frontend source + assets are not part of the backend image (only its
+# package.json is copied, for workspace resolution)
+frontend/src
+frontend/public
+frontend/e2e
+frontend/index.html
+frontend/test-results
+frontend/playwright-report
+
+# raw asset archives, local scratch
+Assets/
+architecture.html
+fullstack_agent.md

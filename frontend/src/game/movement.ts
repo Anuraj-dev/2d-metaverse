@@ -7,7 +7,7 @@
  * gameplay decisions of its own beyond the freeze cases (seated / typing), which
  * short-circuit before this function is ever called.
  */
-import type { Dir } from "../contract";
+import type { Dir } from "@metaverse/shared";
 
 /** Base walking speed in px/s (matches the scene's historical constant). */
 export const BASE_SPEED = 120;

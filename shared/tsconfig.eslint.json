@@ -1,0 +1,12 @@
+{
+  "//": "Type-checked-lint / typecheck project: like tsconfig.json but also covers",
+  "// ": "the test files and the vitest config, which the emit build excludes.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "//exclude": "Reset the base's test-file exclude so lint/typecheck cover the contract fixtures.",
+  "exclude": [],
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}

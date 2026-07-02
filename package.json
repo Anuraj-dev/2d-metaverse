@@ -1,10 +1,21 @@
 {
   "name": "2d-metaverse",
   "private": true,
-  "//": "Minimal root convenience scripts only (issue #25: one lint command per package + one root convenience). Deliberately no dependencies/workspaces — PRD 8 grows this into the npm-workspaces root.",
+  "//": "npm-workspaces root (PRD 8). The shared contract package is a workspace member consumed by both frontend and backend; it must be built before either typechecks/builds, so the aggregate scripts build it first.",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "devDependenciesComment": "jsdom is the frontend's vitest environment. Vitest hoists to the root node_modules, but npm nests jsdom under frontend/, so the hoisted runner can't resolve it — declaring it at the root hoists it alongside vitest.",
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  },
   "scripts": {
-    "lint": "npm --prefix frontend run lint && npm --prefix backend run lint",
-    "typecheck": "npm --prefix frontend run typecheck && npm --prefix backend run typecheck",
-    "test": "npm --prefix frontend test && npm --prefix backend test"
+    "build:shared": "npm run build --workspace @metaverse/shared",
+    "lint": "npm run lint --workspace @metaverse/shared && npm run lint --workspace metaverse-backend && npm run lint --workspace frontend",
+    "typecheck": "npm run build:shared && npm run typecheck --workspace @metaverse/shared && npm run typecheck --workspace metaverse-backend && npm run typecheck --workspace frontend",
+    "test": "npm run build:shared && npm run test --workspace @metaverse/shared && npm run test --workspace metaverse-backend && npm run test --workspace frontend",
+    "build": "npm run build:shared && npm run build --workspace metaverse-backend && npm run build --workspace frontend"
   }
 }
