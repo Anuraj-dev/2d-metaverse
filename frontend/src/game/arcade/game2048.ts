@@ -97,7 +97,6 @@ function lineIndices(size: number, dir: Move2048): number[][] {
 
 function spawnTile(
   cells: readonly number[],
-  size: number,
   seed: number
 ): { cells: number[]; rngSeed: number } {
   const empties: number[] = [];
@@ -117,8 +116,8 @@ function spawnTile(
 /** Fresh game: an empty board seeded with two tiles. */
 export function init2048(seed: number, size = DEFAULT_2048_SIZE): Game2048State {
   const empty = new Array<number>(size * size).fill(0);
-  const first = spawnTile(empty, size, seed);
-  const second = spawnTile(first.cells, size, first.rngSeed);
+  const first = spawnTile(empty, seed);
+  const second = spawnTile(first.cells, first.rngSeed);
   return {
     size,
     cells: second.cells,
@@ -176,7 +175,7 @@ export function move2048(
   if (state.over) return state;
   const { cells, gained, changed } = applyMove(state.cells, state.size, dir);
   if (!changed) return state;
-  const spawned = spawnTile(cells, state.size, state.rngSeed);
+  const spawned = spawnTile(cells, state.rngSeed);
   const won = state.won || spawned.cells.some((n) => n >= WIN_TILE);
   return {
     ...state,

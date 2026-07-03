@@ -472,6 +472,10 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("locate", (p: { id: string }) => this.locate(p.id));
     bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p));
     bus.on("do-interact", () => (this.interactQueued = true));
+    // Arcade overlay closed → wake the world scene it slept under.
+    bus.on("close-arcade", () => {
+      if (this.scene.isSleeping()) this.scene.wake();
+    });
   }
 
   /** One-time snapshot of map size, terrain + room footprints for the minimap.
@@ -817,6 +821,11 @@ export default class WorldScene extends Phaser.Scene {
       const tx = Number(ia.payload.targetX);
       const ty = Number(ia.payload.targetY);
       if (!isNaN(tx) && !isNaN(ty)) this.player.setPosition(tx, ty);
+    } else if (ia.type === "arcade") {
+      // Freeze the world under the overlay (same sleep pattern as meetings);
+      // React owns the game. close-arcade wakes us (wired in create()).
+      bus.emit("open-arcade", { game: String(ia.payload.game), label: ia.label });
+      if (!this.scene.isSleeping()) this.scene.sleep();
     } else {
       bus.emit("open-interactable", { type: ia.type, label: ia.label, payload: ia.payload });
     }

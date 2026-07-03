@@ -153,6 +153,11 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "portal-exit": { clip: "portal_out", channel: "sfx" },
   "meeting-grid-visible": { clip: "meeting_join", channel: "sfx" },
   "meeting-grid-hidden": { clip: "meeting_leave", channel: "sfx" },
+  // Arcade cabinets (PRD 11): games stay audio-agnostic and emit these domain
+  // events; the mixer decides the blip. Frequent flaps stay silent (no filler).
+  "open-arcade": { clip: "arcade_start", channel: "sfx" },
+  "arcade-point": { clip: "arcade_point", channel: "sfx" },
+  "arcade-over": { clip: "arcade_over", channel: "sfx" },
 };
 
 export function cueForEvent(event: string): SoundCue | null {

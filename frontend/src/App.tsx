@@ -15,6 +15,7 @@ import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
 import MeetingCountdown from "./ui/MeetingCountdown";
+import { ARCADE_GAMES, type ArcadeGame } from "@metaverse/shared";
 import { USE_MOCK } from "./net/auth";
 import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
@@ -34,6 +35,13 @@ const GameCanvas = lazy(() => import("./game/GameCanvas"));
 // The meeting surface (motion + LiveKit React components) loads only when a
 // portal actually fires, keeping the entry chunk inside the bundle budget.
 const MeetingOverlay = lazy(() => import("./ui/MeetingOverlay"));
+// The arcade overlay + its game modules load only when a cabinet is opened,
+// keeping snake/flappy/2048 out of the entry chunk (bundle budget).
+const ArcadeOverlay = lazy(() => import("./ui/arcade/ArcadeOverlay"));
+
+function isArcadeGame(value: string): value is ArcadeGame {
+  return (ARCADE_GAMES as readonly string[]).includes(value);
+}
 
 /** Server→client meeting lifecycle events (PRD 10), mirrored onto the bus. */
 const MEETING_EVENTS = [
@@ -62,6 +70,8 @@ export default function App() {
   const [meeting, setMeeting] = useState<MeetingUiState>(MEETING_NONE);
   // …and the portal/handoff visuals (backdrop snapshot, reveal flag, morph seat).
   const [portal, setPortal] = useState<PortalState | null>(null);
+  // Arcade cabinet overlay (PRD 11): opened by a cabinet interact, null = closed.
+  const [arcade, setArcade] = useState<{ game: ArcadeGame; label: string } | null>(null);
   // The media effect below rebinds this to feed "b-ready" into the handoff.
   const burstCovered = useRef<() => void>(() => {});
 
@@ -84,6 +94,16 @@ export default function App() {
       offInit();
       offErr();
     };
+  }, [entered]);
+
+  // Arcade cabinets: the scene emits open-arcade with a game id; mount the lazy
+  // overlay (which loads the game modules on first open). The world scene sleeps
+  // itself on open and wakes on close-arcade (emitted below).
+  useEffect(() => {
+    if (!entered) return;
+    return bus.on<{ game: string; label: string }>("open-arcade", (p) => {
+      if (isArcadeGame(p.game)) setArcade({ game: p.game, label: p.label });
+    });
   }, [entered]);
 
   // Real mode: world proximity audio + per-room video, driven by net + seat events.
@@ -292,6 +312,18 @@ export default function App() {
         <ChatBox />
         <ChatToast />
         {meeting.status === "countdown" && <MeetingCountdown durationMs={meeting.durationMs} />}
+        {arcade && (
+          <Suspense fallback={null}>
+            <ArcadeOverlay
+              game={arcade.game}
+              label={arcade.label}
+              onClose={() => {
+                setArcade(null);
+                bus.emit("close-arcade");
+              }}
+            />
+          </Suspense>
+        )}
         {portal && meeting.status === "in-meeting" && (
           <Suspense fallback={null}>
             <MeetingOverlay

@@ -32,6 +32,9 @@ const CLIPS = [
   "portal_out",
   "meeting_join",
   "meeting_leave",
+  "arcade_start",
+  "arcade_point",
+  "arcade_over",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */

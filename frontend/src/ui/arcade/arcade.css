@@ -1,0 +1,202 @@
+.arcade-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 16, 0.82);
+  backdrop-filter: blur(3px);
+}
+
+.arcade-overlay {
+  background: #161c2b;
+  color: #e8ecf5;
+  border: 1px solid #2b3550;
+  border-radius: 12px;
+  padding: 16px 18px 20px;
+  max-width: min(760px, 94vw);
+  max-height: 92vh;
+  overflow: auto;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  outline: none;
+  font-family: system-ui, sans-serif;
+}
+
+.arcade-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.arcade-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.arcade-close {
+  background: #24304a;
+  color: #cdd6ea;
+  border: 1px solid #3a4767;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.arcade-close:hover {
+  background: #2f3d5c;
+}
+
+.arcade-body {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.arcade-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.arcade-scoreline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+  color: #aeb8d0;
+}
+.arcade-controls-hint {
+  color: #7c88a6;
+}
+
+.arcade-surface {
+  position: relative;
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.arcade-canvas {
+  display: block;
+  background: #10141f;
+  image-rendering: pixelated;
+}
+
+.arcade-gameover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(10, 14, 24, 0.78);
+  text-align: center;
+}
+.arcade-gameover p {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.arcade-final {
+  color: #f2c14e;
+  font-weight: 600;
+}
+.arcade-play-again {
+  margin-top: 4px;
+  background: #7fd1b9;
+  color: #10141f;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.arcade-play-again:hover {
+  background: #96e0ca;
+}
+
+.arcade-leaderboard {
+  flex: 1;
+  min-width: 180px;
+  background: #10141f;
+  border: 1px solid #26304a;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.arcade-leaderboard h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.arcade-best {
+  margin: 0 0 8px;
+  color: #f2c14e;
+  font-size: 0.85rem;
+}
+.arcade-leaderboard ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.arcade-leaderboard li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  padding: 2px 0;
+}
+.arcade-rank {
+  width: 18px;
+  color: #7c88a6;
+}
+.arcade-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arcade-pts {
+  color: #7fd1b9;
+  font-variant-numeric: tabular-nums;
+}
+.arcade-empty {
+  color: #7c88a6;
+  font-style: italic;
+}
+
+/* 2048 board */
+.arcade-2048 {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  background: #10141f;
+  border-radius: 8px;
+  width: 288px;
+  height: 288px;
+}
+.arcade-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #10141f;
+  background: #1c2436;
+}
+.arcade-tile.t0 {
+  color: transparent;
+}
+.arcade-tile.t2 { background: #cfe8dd; }
+.arcade-tile.t4 { background: #a9dcc9; }
+.arcade-tile.t8 { background: #7fd1b9; }
+.arcade-tile.t16 { background: #6ec2c2; color: #071018; }
+.arcade-tile.t32 { background: #6aa6d6; color: #f5f8ff; }
+.arcade-tile.t64 { background: #6f83d6; color: #f5f8ff; }
+.arcade-tile.t128 { background: #9b7dd6; color: #f5f8ff; }
+.arcade-tile.t256 { background: #c079c9; color: #f5f8ff; }
+.arcade-tile.t512 { background: #e0567a; color: #f5f8ff; }
+.arcade-tile.t1024 { background: #f2924e; color: #10141f; font-size: 0.95rem; }
+.arcade-tile.t2048,
+.arcade-tile.tbig { background: #f2c14e; color: #10141f; font-size: 0.95rem; }
