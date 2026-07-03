@@ -13,10 +13,14 @@
  * loader) so the manager stays unit-testable without Socket.IO or Redis; the
  * socket layer provides the real implementations.
  *
- * Dispatches are serialized per table: each table has its own promise queue so
- * two racing moves cannot interleave their transitions. On first touch after a
- * restart a table hydrates its state from the persisted Redis snapshot (respecting
- * the TTL) before applying, so live matches survive a backend restart.
+ * All board operations for a space — sit, accept, move, stand, disconnect-cleanup,
+ * and the hydration a snapshot read performs — are serialized through a single
+ * per-space promise queue. One serialization domain per space gives a total order
+ * to a table's events (so a move cannot be reordered behind a concurrent stand) and
+ * makes the cross-table one-seat-per-player invariant atomic (a sit's check+commit
+ * sees every other table's committed state). On first touch after a restart a table
+ * hydrates its state from the persisted Redis snapshot (respecting the TTL) before
+ * applying, so live matches survive a backend restart.
  */
 import {
   gameForTable,
