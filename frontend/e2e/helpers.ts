@@ -26,8 +26,12 @@ export const ROOM_KEYS: Record<string, string> = {
 
 /**
  * Map geometry (16px tiles), derived from frontend/public/assets/maps/*.json.
- * The six rooms are split across two maps: `space` (default; rooms 1-3) and
- * `campus` (?map=campus; rooms 4-6). Waypoints are straight wall-free segments
+ * The six rooms are split across two maps: `campus` (the default; rooms 4-6)
+ * and the legacy `space` map (?map=space; rooms 1-3). The campus entry
+ * deliberately navigates with NO ?map query so the suite exercises
+ * DEFAULT_MAP itself — if the default ever regresses to "space", the campus
+ * assertions fail instead of CI staying green (the original prod incident).
+ * Waypoints are straight wall-free segments
  * verified against the walls layer + solid furniture of each map.
  *
  * Door targets put the player's door-sample point (x, y+8) inside the door
@@ -47,7 +51,7 @@ export const MAPS: Record<
   { query: string; rooms: Record<string, RoomRoute> }
 > = {
   space: {
-    query: "",
+    query: "?map=space",
     rooms: {
       "1": {
         doorPath: [
@@ -82,7 +86,8 @@ export const MAPS: Record<
     },
   },
   campus: {
-    query: "?map=campus",
+    // Bare URL on purpose: campus must load as the DEFAULT map (no override).
+    query: "",
     rooms: {
       "4": {
         doorPath: [

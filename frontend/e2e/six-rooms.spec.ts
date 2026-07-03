@@ -1,8 +1,9 @@
 /**
  * User story 5: the named regression for the prod doors incident — all six
  * rooms exist and every door functions (opens with its key) through the real
- * UI. Rooms 1-3 live on the default `space` map, rooms 4-6 on `?map=campus`;
- * the world-info payloads of both maps must cover ids 1..6 between them.
+ * UI. Rooms 1-3 live on the legacy `space` map (`?map=space`), rooms 4-6 on
+ * the default `campus` map; the world-info payloads of both maps must cover
+ * ids 1..6 between them.
  */
 import { test, expect } from "@playwright/test";
 import { enterRoom, MAPS, signUpAndJoin, signInAndJoin, uniqueUser, walkTo } from "./helpers";
