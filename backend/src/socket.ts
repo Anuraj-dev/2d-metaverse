@@ -386,9 +386,8 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = boardMoveSchema.safeParse(payload);
       const { playerId } = socket.data;
       if (!parsed.success || !playerId) return;
-      const now = Date.now();
-      if (socket.data.lastBoardMoveAt && now - socket.data.lastBoardMoveAt < RATE_LIMITS.boardMoveThrottleMs) return;
-      socket.data.lastBoardMoveAt = now;
+      // No throttle needed: a move is turn-gated (at most one legal move per turn)
+      // and any extra/illegal move is rejected cheaply by the pure machine.
       boards.dispatch(parsed.data.tableId, { type: "move", playerId, index: parsed.data.index });
     }));
 

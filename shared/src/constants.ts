@@ -211,6 +211,4 @@ export const RATE_LIMITS = {
   arcadeLeaderboardLimit: 120,
   /** Minimum spacing between accepted `move` events from one socket. */
   moveThrottleMs: 40,
-  /** Minimum spacing between accepted `board-move` events from one socket. */
-  boardMoveThrottleMs: 150,
 } as const;
