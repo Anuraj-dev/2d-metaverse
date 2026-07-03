@@ -4,8 +4,12 @@
  * read one source of truth. No backend.
  */
 export interface Settings {
-  masterVolume: number; // 0..1, applies to all sfx
-  muteSfx: boolean; // silence gameplay sfx (join/leave/sit/ambient)
+  masterVolume: number; // 0..1, master gain over every channel
+  musicVolume: number; // 0..1, background music bed channel
+  sfxVolume: number; // 0..1, event/gameplay sfx channel
+  ambientVolume: number; // 0..1, outdoor ambient bed channel
+  muted: boolean; // master mute — silences everything, volumes preserved
+  muteSfx: boolean; // silence gameplay sfx specifically (kept for back-compat)
   notifySound: boolean; // play a chime on incoming chat
   tabFlash: boolean; // flash the tab title / Web Notification when unfocused
 }
@@ -14,6 +18,10 @@ const KEY = "mv:settings";
 
 const DEFAULTS: Settings = {
   masterVolume: 0.6,
+  musicVolume: 0.4,
+  sfxVolume: 0.7,
+  ambientVolume: 0.5,
+  muted: false,
   muteSfx: false,
   notifySound: true,
   tabFlash: true,

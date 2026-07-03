@@ -386,6 +386,7 @@ export default class WorldScene extends Phaser.Scene {
         this.openDoors.add(p.roomId);
         const door = this.doorSprites.get(p.roomId);
         if (door) {
+          bus.emit("door-open");
           door.play("door-open").once("animationcomplete", () => door.setVisible(false));
         }
       }
@@ -705,6 +706,7 @@ export default class WorldScene extends Phaser.Scene {
       this.openDoors.delete(roomId);
       const door = this.doorSprites.get(roomId);
       if (door) {
+        bus.emit("door-close");
         door.setVisible(true);
         door.play("door-close");
       }

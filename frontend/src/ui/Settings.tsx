@@ -39,7 +39,7 @@ export default function Settings() {
         <div className="settings-panel">
           <h4>Settings</h4>
           <label className="set-row">
-            <span>Volume</span>
+            <span>Master</span>
             <input
               type="range"
               min={0}
@@ -48,6 +48,50 @@ export default function Settings() {
               onChange={(e) =>
                 setSettings({ masterVolume: Number(e.target.value) / 100 })
               }
+            />
+          </label>
+          <label className="set-row">
+            <span>Music</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(s.musicVolume * 100)}
+              onChange={(e) =>
+                setSettings({ musicVolume: Number(e.target.value) / 100 })
+              }
+            />
+          </label>
+          <label className="set-row">
+            <span>Effects</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(s.sfxVolume * 100)}
+              onChange={(e) =>
+                setSettings({ sfxVolume: Number(e.target.value) / 100 })
+              }
+            />
+          </label>
+          <label className="set-row">
+            <span>Ambient</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(s.ambientVolume * 100)}
+              onChange={(e) =>
+                setSettings({ ambientVolume: Number(e.target.value) / 100 })
+              }
+            />
+          </label>
+          <label className="set-row">
+            <span>Mute all</span>
+            <input
+              type="checkbox"
+              checked={s.muted}
+              onChange={(e) => setSettings({ muted: e.target.checked })}
             />
           </label>
           <label className="set-row">

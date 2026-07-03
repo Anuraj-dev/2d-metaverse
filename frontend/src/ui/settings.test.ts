@@ -11,6 +11,30 @@ describe("settings store", () => {
     expect(typeof s.notifySound).toBe("boolean");
   });
 
+  it("exposes per-channel volume + master mute defaults", () => {
+    const s = getSettings();
+    for (const v of [s.musicVolume, s.sfxVolume, s.ambientVolume]) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+    expect(typeof s.muted).toBe("boolean");
+    expect(s.muted).toBe(false);
+  });
+
+  it("persists per-channel volumes and master mute round-trip", () => {
+    setSettings({ musicVolume: 0.1, sfxVolume: 0.9, ambientVolume: 0.2, muted: true });
+    const s = getSettings();
+    expect(s.musicVolume).toBe(0.1);
+    expect(s.sfxVolume).toBe(0.9);
+    expect(s.ambientVolume).toBe(0.2);
+    expect(s.muted).toBe(true);
+    const stored = localStorage.getItem("mv:settings");
+    if (stored === null) throw new Error("settings were not persisted to localStorage");
+    const raw = JSON.parse(stored) as { sfxVolume: number; muted: boolean };
+    expect(raw.sfxVolume).toBe(0.9);
+    expect(raw.muted).toBe(true);
+  });
+
   it("merges patches and persists to localStorage", () => {
     setSettings({ masterVolume: 0.25, muteSfx: true });
     const s = getSettings();
