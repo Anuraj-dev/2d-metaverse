@@ -147,12 +147,12 @@ class WorldAudio {
     const vols = computeVolumes(p.players, this.selfId, remoteIds, AUDIO_CUTOFF);
     if (!vols) return;
     for (const [id, el] of this.audioEls) el.volume = vols.get(id) ?? 0;
-    // E2E-only: surface the computed world-audio volumes on the bus so the
-    // Playwright suite can assert zone isolation without a live RTC subscription
-    // (the flag is statically replaced at build time; prod tree-shakes it out).
-    if (import.meta.env.VITE_E2E_HOOK === "1") {
-      bus.emit("audio-volumes", { volumes: Object.fromEntries(vols) });
-    }
+    // Surface the computed world-audio volumes on the bus unconditionally:
+    // SfxBridge ducks the ambient bed against them in production, and the
+    // Playwright suite asserts zone isolation through the same event (it needs
+    // no build-flag gate — the payload is derived purely from broadcast
+    // positions, never from RTC internals).
+    bus.emit("audio-volumes", { volumes: Object.fromEntries(vols) });
   }
 
   setMicEnabled(on: boolean) {

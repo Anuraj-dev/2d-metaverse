@@ -15,6 +15,8 @@ import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinem
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
 import { positionsEmitDue, moveSendDue } from "../throttle";
+import { tintForHour } from "../dayNight";
+import { terrainFromTiledMap, type TiledMapLike } from "../../ui/minimapTerrain";
 
 const ZOOM = 2.2;
 // Portal Phase A (PRD 10): camera punch-in toward the table over ~350ms. The
@@ -114,17 +116,17 @@ export default class WorldScene extends Phaser.Scene {
     this.net = this.registry.get("net") as Net;
     CHARS.forEach((c) => createCharAnims(this, c));
 
-    // Door open/close: 4 frames in the first row of door1.png (48×96 per frame)
+    // Door open/close: closed(0) → ajar(1) → open door frame(2). The frame
+    // stays visible when open — it dresses the doorway (see gen_door.py).
     this.anims.create({
       key: "door-open",
-      frames: this.anims.generateFrameNumbers("door", { start: 0, end: 3 }),
+      frames: this.anims.generateFrameNumbers("door", { start: 0, end: 2 }),
       frameRate: 8,
       repeat: 0,
     });
     this.anims.create({
       key: "door-close",
       frames: [
-        { key: "door", frame: 3 },
         { key: "door", frame: 2 },
         { key: "door", frame: 1 },
         { key: "door", frame: 0 },
@@ -191,6 +193,7 @@ export default class WorldScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     this.buildFurniture();
+    this.setupAmbience(map);
     this.emitWorldInfo(map);
 
     this.playerLabel = this.makeLabel("You");
@@ -242,12 +245,16 @@ export default class WorldScene extends Phaser.Scene {
       const rect = rectOf(o);
       this.doors.push({ roomId, name: o.name || `Room ${roomId}`, rect });
 
-      // Animated door sprite — scales to match the door gap width
-      const scale = rect.width / 48;
+      // Animated door sprite, bottom-anchored IN the doorway gap so the leaf
+      // fills the opening and the lintel rises above the wall row (PRD 12
+      // bug: the old 48×96 cell centered on the gap floated beside it).
+      // Depth = the doorway's bottom edge: the player y-sorts against it and
+      // walks visually *through* the open frame.
       const sprite = this.add
-        .sprite(rect.centerX, rect.centerY, "door", 0)
-        .setScale(scale)
-        .setDepth(3500);
+        .sprite(rect.centerX, rect.bottom, "door", 0)
+        .setOrigin(0.5, 1)
+        .setScale(rect.width / 32)
+        .setDepth(rect.bottom);
       this.doorSprites.set(roomId, sprite);
     }
     const seatObjs = map.getObjectLayer("seats")?.objects ?? [];
@@ -312,11 +319,78 @@ export default class WorldScene extends Phaser.Scene {
 
     // zone decor authored in the map's `furniture` object layer (data-driven)
     for (const f of this.furniture) {
-      if (f.solid) this.addSolid(solids, f.key, f.x, f.y);
-      else this.add.image(f.x, f.y, f.key).setDepth(f.y);
+      if (f.solid) {
+        this.addSolid(solids, f.key, f.x, f.y);
+      } else {
+        const img = this.add.image(f.x, f.y, f.key).setDepth(f.y);
+        // Foliage sways gently so the world feels alive even when empty.
+        if (f.key.includes("plant") || f.key.includes("tree")) this.addSway(img);
+      }
     }
 
     this.physics.add.collider(this.player, solids);
+  }
+
+  /** A slow, subtle pivot from the base so plants/trees sway in a breeze. */
+  private addSway(img: Phaser.GameObjects.Image) {
+    img.setOrigin(0.5, 1);
+    img.y += img.height / 2; // keep the base anchored where it was drawn
+    this.tweens.add({
+      targets: img,
+      angle: { from: -2.2, to: 2.2 },
+      duration: 2600 + Math.random() * 1200,
+      delay: Math.random() * 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+  }
+
+  /**
+   * Engine-side atmosphere (no assets): a camera-locked day/night tint driven by
+   * the local clock, plus a slow drift of ambient motes over the world. Cheap
+   * wins layered on the tiles. Pure tint math lives in dayNight.ts.
+   */
+  private setupAmbience(map: Phaser.Tilemaps.Tilemap) {
+    // Day/night overlay: fixed to the camera, multiply blend so it darkens.
+    const tintRect = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(6000)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY);
+    const applyTint = () => {
+      const hour = new Date().getHours() + new Date().getMinutes() / 60;
+      const { color, alpha } = tintForHour(hour);
+      tintRect.setFillStyle(color, alpha);
+      tintRect.setSize(this.scale.width, this.scale.height);
+    };
+    applyTint();
+    this.time.addEvent({ delay: 30_000, loop: true, callback: applyTint });
+    this.scale.on("resize", applyTint);
+
+    // Ambient motes: a soft 3px dot texture drifting slowly across the world.
+    const dotKey = "ambient-mote";
+    if (!this.textures.exists(dotKey)) {
+      const g = this.make.graphics({ x: 0, y: 0 }, false);
+      g.fillStyle(0xffffff, 1).fillCircle(3, 3, 3);
+      g.generateTexture(dotKey, 6, 6);
+      g.destroy();
+    }
+    this.add
+      .particles(0, 0, dotKey, {
+        x: { min: 0, max: map.widthInPixels },
+        y: { min: 0, max: map.heightInPixels },
+        lifespan: 9000,
+        speedX: { min: -6, max: 10 },
+        speedY: { min: -4, max: 6 },
+        scale: { min: 0.15, max: 0.5 },
+        alpha: { start: 0.35, end: 0 },
+        frequency: 900,
+        quantity: 1,
+        blendMode: Phaser.BlendModes.ADD,
+      })
+      .setDepth(2500);
   }
 
   private addSolid(
@@ -386,6 +460,7 @@ export default class WorldScene extends Phaser.Scene {
         this.openDoors.add(p.roomId);
         const door = this.doorSprites.get(p.roomId);
         if (door) {
+          bus.emit("door-open");
           door.play("door-open").once("animationcomplete", () => door.setVisible(false));
         }
       }
@@ -399,8 +474,15 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("do-interact", () => (this.interactQueued = true));
   }
 
-  /** One-time snapshot of map size + room footprints for the minimap. */
+  /** One-time snapshot of map size, terrain + room footprints for the minimap.
+   *  Terrain rasterizes the raw Tiled JSON (tilemap cache) through the pure
+   *  ui/minimapTerrain module, so the overview shows the actual authored
+   *  world — ground, paths, buildings — not an empty box (PRD 12 bug #3). */
   private emitWorldInfo(map: Phaser.Tilemaps.Tilemap) {
+    const raw = (
+      this.cache.tilemap.get(activeMap().key) as { data?: TiledMapLike } | undefined
+    )?.data;
+    const terrain = raw ? terrainFromTiledMap(raw) : null;
     const byRoom = new Map<string, Seat[]>();
     for (const s of this.seats) {
       const group = byRoom.get(s.roomId) ?? [];
@@ -419,6 +501,7 @@ export default class WorldScene extends Phaser.Scene {
       width: map.widthInPixels,
       height: map.heightInPixels,
       rooms,
+      terrain,
     });
   }
 
@@ -705,6 +788,7 @@ export default class WorldScene extends Phaser.Scene {
       this.openDoors.delete(roomId);
       const door = this.doorSprites.get(roomId);
       if (door) {
+        bus.emit("door-close");
         door.setVisible(true);
         door.play("door-close");
       }

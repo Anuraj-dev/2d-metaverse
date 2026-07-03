@@ -21,7 +21,7 @@ class EventBus {
 
 /** Game -> UI: 'near-door'{roomId,name} | 'leave-door' | 'near-seat'{...} |
  *  'leave-seat' | 'sat'{roomId,seatId} | 'stood' | 'positions'{...} | 'room-entered'{roomId} |
- *  'room-left'{roomId} | 'world-info'{width,height,rooms}
+ *  'room-left'{roomId} | 'world-info'{width,height,rooms,terrain}
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' */
 export const bus = new EventBus();

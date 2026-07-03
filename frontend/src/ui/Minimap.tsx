@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { bus } from "../game/eventBus";
 import { fitScale } from "./minimapScale";
+import type { TerrainInfo } from "./minimapTerrain";
 
 interface Room {
   id: string;
@@ -13,6 +14,7 @@ interface WorldInfo {
   width: number;
   height: number;
   rooms: Room[];
+  terrain?: TerrainInfo | null;
 }
 interface Dot {
   id: string;
@@ -21,8 +23,11 @@ interface Dot {
   y: number;
 }
 
-/** Overview map: world bounds + room footprints + live player dots. Driven by the
- *  existing `positions` event and a one-time `world-info` snapshot. Frontend-only. */
+/** Overview map: the rasterized world terrain (grass, paths, buildings — see
+ *  minimapTerrain.ts) + room footprints + live player dots. Driven by the
+ *  existing `positions` event and a one-time `world-info` snapshot. The
+ *  terrain rasters once per world onto an offscreen canvas (one pixel per
+ *  tile) and is blitted per draw; only the dots change per tick. */
 export default function Minimap() {
   const [info, setInfo] = useState<WorldInfo | null>(null);
   const [dots, setDots] = useState<Dot[]>([]);
@@ -38,6 +43,26 @@ export default function Minimap() {
       offPos();
     };
   }, []);
+
+  // One offscreen pixel per tile; scaled up crisp at draw time.
+  const terrainCanvas = useMemo(() => {
+    const t = info?.terrain;
+    if (!t) return null;
+    const c = document.createElement("canvas");
+    c.width = t.cols;
+    c.height = t.rows;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    for (let y = 0; y < t.rows; y++) {
+      for (let x = 0; x < t.cols; x++) {
+        const color = t.colors[y * t.cols + x];
+        if (!color) continue;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    return c;
+  }, [info]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -55,9 +80,15 @@ export default function Minimap() {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     ctx.clearRect(0, 0, info.width, info.height);
 
-    // rooms
-    ctx.strokeStyle = "rgba(110,168,254,0.55)";
-    ctx.fillStyle = "rgba(110,168,254,0.10)";
+    // world terrain (pixel-per-tile raster, scaled crisp)
+    if (terrainCanvas) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(terrainCanvas, 0, 0, info.width, info.height);
+    }
+
+    // meeting-room footprints, highlighted over the terrain
+    ctx.strokeStyle = "rgba(110,168,254,0.75)";
+    ctx.fillStyle = "rgba(110,168,254,0.16)";
     ctx.lineWidth = 1 / scale;
     for (const r of info.rooms) {
       ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -76,7 +107,7 @@ export default function Minimap() {
         ctx.stroke();
       }
     }
-  }, [info, dots]);
+  }, [info, dots, terrainCanvas]);
 
   if (!info) return null;
   return (

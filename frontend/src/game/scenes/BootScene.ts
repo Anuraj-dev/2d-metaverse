@@ -35,10 +35,11 @@ export default class BootScene extends Phaser.Scene {
       });
     }
 
-    // animated door sprite (48×96 per frame, 4 frames × 4 directions)
+    // animated door sprite (32×48 per frame: closed / ajar / open frame —
+    // composed by scripts/gen_door.py from the doors_windows tileset)
     this.load.spritesheet("door", `${BASE}/doors/door1.png`, {
-      frameWidth: 48,
-      frameHeight: 96,
+      frameWidth: 32,
+      frameHeight: 48,
     });
 
     // furniture (office interior)

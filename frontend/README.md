@@ -148,6 +148,8 @@ into the modules).
 | `game/portalHandoff.ts` | Phase A/B portal handoff (reveal exactly once, either completion order) |
 | `game/portalCinematic.ts` | Phase A generation guard + effect-injected sequence driver (`runPortalCinematic`): which async cinematic callbacks may still capture/finish/sleep, and the zoom→capture→finish wiring |
 | `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
+| `media/soundMixer.ts` | channel gain math (master over music/sfx/ambient), master mute, ambient duck near voice, event→sound mapping, footstep cadence |
+| `game/dayNight.ts` | hour-of-day → day/night tint colour + alpha (keyframed) |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
 locked-room position rollback (`keepLockedRoomsClosed`), portal payload validation
@@ -205,6 +207,73 @@ changes and adds zero latency). **Phase-2 privacy upgrade** (named, not built): 
 **server-enforced isolation** — the backend swaps a player between LiveKit rooms at
 doorway crossings so the outside client never receives the track at all. Adopt it if the
 client-trust caveat becomes unacceptable.
+
+### Sound + polish pipeline (art & audio direction)
+
+Graphics and audio polish (PRD 12) follow the same **pure-logic + thin-glue**
+split, and every shipped asset is registered for licensing.
+
+**Art & audio direction (keep style cohesion).** Top-down pixel art in the
+current **Pipoya-compatible** family — no resolution/HD re-theme, no avatar
+redraws. Furniture is a cohesive cool office palette; tilesets are re-skinned or
+enriched, never re-laid-out (map coordinates, collision rects, `roomBounds` and
+seats are preserved, and `game/maps.test.ts` cross-checks every tileset against
+its on-disk PNG). Reject a style-mismatched asset rather than blending it. Audio
+bar: **fewer, better, normalized** clips — no filler.
+
+*Pack evaluations (PRD 12 fix round 1):* **LimeZu Modern Interiors** was
+evaluated and **rejected** — outline-less pastel-gradient rendering that clashes
+with the flat-outlined Pipoya family (documented so it isn't re-litigated).
+**Serene Village** is style-compatible (same outline/dither language) and
+remains an approved future source, but the current enrichment ships entirely
+from the already-attributed families: the Pipoya exterior sheet (grass
+variants, flowers, stone plaza family, trees) and Top-Down Retro Interior
+(door frame/leaf recomposed by `scripts/gen_door.py`).
+
+**Sound architecture.** All gain/mute/duck/mapping *decisions* live in the pure
+`media/soundMixer.ts` (channels `master → music / sfx / ambient`, master mute,
+ambient ducking near voice, the event→sound table, footstep cadence) with
+`soundMixer.test.ts` exercising them, playback mocked. `media/sfx.ts` is the thin
+HTMLAudio glue: it plays one-shots at the mixer-computed gain, owns the music +
+ambient loops, and handles browser **autoplay-unlock** (silent until the first
+user gesture, `play()` rejections swallowed). `ui/SfxBridge.tsx` is headless
+wiring: it maps net/bus events (presence, seat, door, portal, meeting) to clips
+via the pure table, derives footsteps from the `positions` tick, and ducks the
+ambient bed against LiveKit voice levels (`audio-volumes` is emitted on every
+positions tick in production, not just under the E2E hook). The world loops are
+**lifecycle-aware** (pure decisions in `loopTargets`): the outdoor ambience only
+sounds while the local player's audio zone is outdoor, both loops fall silent
+across a meeting (portal-in → portal-out), and every transition — duck, zone
+crossing, meeting, sliders — **fades** (`fadeStep`, ~700ms) rather than
+hard-cutting. Volumes persist through the existing
+`ui/settings.ts` store; the Settings panel exposes master/music/effects/ambient
+sliders + mute. **Game logic stays audio-agnostic** — it emits domain events; the
+bridge decides what they sound like.
+
+**Engine-side ambience is code, not assets** (`game/dayNight.ts` + WorldScene):
+a camera-locked day/night tint driven by the local clock, drifting ambient motes
+(particle emitter), and a slow foliage sway (tween). Layer these over tiles
+before reaching for new art.
+
+**Adding an asset.**
+
+1. **Curate, don't bulk-import.** Extract source packs to a scratch dir, pick
+   only the sheets/clips you use, and reject anything off-style.
+2. **Optimize.** Sprites: pack/trim, keep PNGs small. Audio: transcode to Ogg
+   Vorbis (`scripts/curate_audio.py` regenerates the whole soundscape from the
+   owner-supplied Cozy pack — every event SFX is cut from real recorded
+   material at documented timestamps, layered/filtered, peak-normalized; no
+   synthesis). Keep loops short and seamless.
+3. **Register attribution.** Add a row to **`ATTRIBUTIONS.md`** (asset → source →
+   author → license). This is **required** — an unattributed asset must not ship.
+4. **Wire it.** Tilesets go through the `maps.ts` registry (and are auto-checked
+   by `maps.test.ts`); sounds are one row in `soundMixer.ts`' event table + a
+   file under `public/assets/audio/`.
+5. **Budget.** The CI bundle gate (`npm run size`) measures the **gzipped entry
+   JS chunk**, not `public/` assets — but keep audio/art lean anyway for load
+   time. If code polish ever pushes the entry chunk near the budget, raise it
+   *consciously* in `scripts/bundle-budget.mjs` with a justifying comment, never
+   silently.
 
 ### Meetings (portal transition + Meet-style grid)
 
