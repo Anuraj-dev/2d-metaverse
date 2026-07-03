@@ -29,6 +29,7 @@ Nothing is synthesized from oscillators.
 | `message.ogg`, `join.ogg`, `leave.ogg` | Melodic notes from the `8-Intro` arpeggio | Shifted −1 st into the music bed's key family; single soft blip / rising / falling two-note chimes. |
 | `meeting_join.ogg`, `meeting_leave.ogg` | Four `8-Intro` notes | Up/down arpeggio in the bed's key with a warm room reverb. |
 | `portal_in.ogg`, `portal_out.ogg` | Bright metallic hit (`2-Loop(Drums Only)` @ 94.67s) + deep boom (`10-FullLoop(Drums Only)` @ 96.06s) + note tails | Time-stretched, reverbed, **reversed** shimmer swelling into a sub boom (in); boom with a decaying sparkle tail (out). |
+| `arcade_start.ogg`, `arcade_point.ogg`, `arcade_over.ogg` | **Project-original** — synthesized square-wave chiptune (`scripts/curate_audio.py` → `synth_arcade`) | Diegetic 8-bit arcade blips (open arpeggio, score blip, game-over descend). Intentionally a different family from the recorded foley — a cozy pack has no arcade beeps to cut. Project asset (no third-party source). |
 
 ## Sprites & tilesets (`public/assets/`)
 
@@ -46,6 +47,7 @@ release.
 | `doors/door1.png` | Composed in-repo (`scripts/gen_door.py`) from `tilesets/doors_windows.png` (Top-Down Retro Interior) | (pack author) | Free-use pixel interior set — frame + closed/ajar door leaves recomposed into an aligned 3-frame sheet (replaces the Pipoya Door Animation sheet, which was drawn at RPG-Maker tile density). |
 | `furniture/*.png` (desk, chair, sofa, plant, water, vending, …) | Top-Down Retro Interior / Office Furniture pixel packs | (respective pack authors) | Free-use pixel furniture; cool office palette. |
 | `furniture/table_round.png` | Project-original | Redrawn in-repo (PRD 12) | Project asset — replaces the prior flat placeholder, matched to the furniture palette. |
+| `furniture/arcade_snake.png`, `furniture/arcade_flappy.png`, `furniture/arcade_2048.png` | Project-original | Generated in-repo (PRD 11, `scripts/gen_arcade_sprites.py`) | Project asset — 32×32 upright arcade cabinets in the cool-office palette, marquee/screen tinted per game (teal/amber/pink). Not derived from any third-party pack. |
 
 ## How to add a row
 

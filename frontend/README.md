@@ -150,6 +150,10 @@ into the modules).
 | `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
 | `media/soundMixer.ts` | channel gain math (master over music/sfx/ambient), master mute, ambient duck near voice, event→sound mapping, footstep cadence |
 | `game/dayNight.ts` | hour-of-day → day/night tint colour + alpha (keyframed) |
+| `game/arcade/prng.ts` | seeded mulberry32 PRNG (deterministic, serializable seed) |
+| `game/arcade/snake.ts` | Snake tick/turn/eat/collision rules |
+| `game/arcade/flappy.ts` | Flappy gravity/flap/pipe/collision rules |
+| `game/arcade/game2048.ts` | 2048 slide+merge semantics (incl. no-move detection) |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
 locked-room position rollback (`keepLockedRoomsClosed`), portal payload validation
@@ -334,6 +338,53 @@ connection alive); world audio is already disconnected while seated. Portal-out
 wakes the scene, resets the camera, and restores everything. A socket blip
 during a meeting reconnects within the seat-grace window and the client stays
 in the meeting — a blip never ejects you to the world.
+
+### Arcade cabinets (mini-games, PRD 11)
+
+Solid arcade cabinets stand in the campus plaza. Walking next to one shows the
+usual interact hint; pressing **E** opens a full-screen overlay hosting the
+game. The world scene **sleeps** underneath (the same pattern meetings use) and
+**Escape** closes instantly. The overlay pauses the game when the tab loses
+visibility or the window loses focus, and it takes keyboard focus robustly on
+open (blurring any lingering input — e.g. the room-key field — so its focus
+can't swallow the game's keys via the scene's `isTyping` guard).
+
+**Architecture — pure rules, thin renderers, audio-agnostic:**
+
+- **Rules** live in pure modules under `src/game/arcade/` — `snake.ts`,
+  `flappy.ts`, `game2048.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
+  plain values out; no Phaser/net/DOM imports. Randomness flows through the
+  serializable `rngSeed` in each state, so *a given seed + input script always
+  reproduces a run* (asserted by determinism tests). Each module lands with its
+  vitest file in the same commit.
+- **Renderers** are thin React components (`src/ui/arcade/`): one per game, they
+  own a canvas/DOM surface, run the module's tick/reduce on a loop, draw the
+  returned state, and report score/game-over upward. No game *rules* in a
+  renderer or the scene. The overlay (`ArcadeOverlay.tsx`) and its game modules
+  are **lazy-loaded** — a separate chunk, so snake/flappy/2048 never bloat the
+  entry bundle.
+- **Sound stays out of game logic:** games emit domain events on `eventBus`
+  (`arcade-point`, `arcade-over`, `arcade-flap`); `open-arcade` opens the
+  overlay. The sound mixer's event→clip table decides the blip (see *Sound +
+  polish pipeline*) — the games never touch audio.
+- **High scores** are one REST resource (`/api/v1/arcade/scores`), shapes in
+  `@metaverse/shared`. The overlay shows your best + a top-N leaderboard per
+  cabinet. **Scores are client-reported and trusted at this level** — there is
+  no server-side play validation, so the leaderboard is best treated as
+  cosmetic; hardening (server replay/authoritative sim) is out of scope for
+  Phase 1.
+
+**To add a new arcade game** (module contract): create `src/game/arcade/<game>.ts`
+exporting `init<Game>(seed) → State`, a per-tick/per-input reducer
+(`<game>Tick`/`<game>Input`/`move<Game>`) that is pure and deterministic given
+`rngSeed`, plus its `.test.ts` (transition table + a determinism test). Add the
+id to `ARCADE_GAMES` in `@metaverse/shared`. Write a thin renderer in
+`src/ui/arcade/` implementing `ArcadeGameProps` (`seed`, `paused`, `onScore`,
+`onGameOver`) and register it in `ArcadeOverlay`'s `GAMES` map. Place a cabinet
+by editing `scripts/gen_campus.py` (a solid `furn(...)` sprite + an
+`interactType="arcade"` interactable carrying a `game` payload) and regenerate
+the map — never hand-edit `campus.json`. Add a cabinet sprite via
+`scripts/gen_arcade_sprites.py` (+ BootScene key + an ATTRIBUTIONS row).
 
 ### Tests
 

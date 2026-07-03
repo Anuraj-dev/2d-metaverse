@@ -110,6 +110,8 @@ describe("cueForEvent", () => {
       clip: "meeting_join",
       channel: "sfx",
     });
+    expect(cueForEvent("arcade-point")).toEqual({ clip: "arcade_point", channel: "sfx" });
+    expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "sfx" });
   });
   it("returns null for unmapped events", () => {
     expect(cueForEvent("leave-door")).toBeNull();

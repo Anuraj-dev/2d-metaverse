@@ -106,6 +106,25 @@ def encode(src: str, clip: str, quality: str = "3") -> None:
     print(f"  wrote {clip}.ogg ({os.path.getsize(dst)} bytes)")
 
 
+def synth_arcade() -> None:
+    """Synthesize the three arcade cabinet blips (square-wave chiptune)."""
+    def blip(name: str, *segs: tuple[float, int], fade: float) -> str:
+        parts = []
+        for i, (dur, freq) in enumerate(segs):
+            p = os.path.join(TMP, f"{name}_s{i}.wav")
+            run(["sox", "-n", p, "synth", str(dur), "square", str(freq)])
+            parts.append(p)
+        joined = os.path.join(TMP, f"{name}_joined.wav")
+        run(["sox", *parts, joined])
+        out = os.path.join(TMP, f"{name}.wav")
+        run(["sox", joined, out, "fade", "h", "0.005", str(fade), "0.03", "gain", "-n", "-3"])
+        return out
+
+    encode(blip("arcade_point", (0.09, 880), (0.05, 1180), fade=0.14), "arcade_point")
+    encode(blip("arcade_start", (0.08, 523), (0.08, 659), (0.12, 784), fade=0.28), "arcade_start")
+    encode(blip("arcade_over", (0.14, 440), (0.14, 349), (0.22, 262), fade=0.5), "arcade_over")
+
+
 def main() -> None:
     if not os.path.exists(PACK):
         sys.exit(f"pack not found: {PACK}")
@@ -237,6 +256,13 @@ def main() -> None:
     run(["sox", amb_main, amb, "splice", "-q", "60,4"])
     amb = fx(amb, "amb_trimmed", "trim", "0", "60")
     encode(peak_normalize(amb, "amb_n", -20), "ambient_outdoor", quality="2")
+
+    # ── Arcade cabinet blips (PRD 11) ───────────────────────────────────────
+    # Diegetic 8-bit chiptune: the cabinets are retro arcade machines, so their
+    # blips are square-wave synth — intentionally a DIFFERENT family from the
+    # recorded cozy foley above (a cozy pack has no arcade beeps to cut). Kept
+    # short, peak-normalized, and mixed low by the sfx channel like every cue.
+    synth_arcade()
 
     # ── Verification table ──────────────────────────────────────────────────
     print("\nverification:")

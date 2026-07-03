@@ -198,6 +198,51 @@ describe("livekit token", () => {
   });
 });
 
+describe("arcade high scores", () => {
+  it("requires authentication for submit and leaderboard", async () => {
+    expect((await api(base, "/api/v1/arcade/scores/snake")).status).toBe(401);
+    expect((await api(base, "/api/v1/arcade/scores", { body: { game: "snake", score: 1 } })).status).toBe(401);
+  });
+
+  it("keeps only the best per user and returns it on submit", async () => {
+    const { username, token } = await createUser(base, "arc1");
+    const first = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 12 } });
+    expect(first.status).toBe(200);
+    expect(first.json.best).toBe(12);
+    expect(first.json.game).toBe("snake");
+    // A lower score does not lower the stored best.
+    const lower = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 5 } });
+    expect(lower.json.best).toBe(12);
+    // A higher score raises it.
+    const higher = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 20 } });
+    expect(higher.json.best).toBe(20);
+    // The leaderboard lists this user's best with their username.
+    expect(higher.json.top.some((row: { username: string; score: number }) =>
+      row.username === username && row.score === 20)).toBe(true);
+  });
+
+  it("returns the caller's best (null when unplayed) and a sorted top-N", async () => {
+    const { token } = await createUser(base, "arc2");
+    const unplayed = await api(base, "/api/v1/arcade/scores/2048", { token });
+    expect(unplayed.status).toBe(200);
+    expect(unplayed.json.best).toBeNull();
+    expect(Array.isArray(unplayed.json.top)).toBe(true);
+    await api(base, "/api/v1/arcade/scores", { token, body: { game: "2048", score: 256 } });
+    const played = await api(base, "/api/v1/arcade/scores/2048", { token });
+    expect(played.json.best).toBe(256);
+    const scores = played.json.top.map((row: { score: number }) => row.score);
+    expect(scores).toEqual([...scores].sort((a: number, b: number) => b - a));
+  });
+
+  it("rejects an unknown game and a malformed score", async () => {
+    const { token } = await createUser(base, "arc3");
+    expect((await api(base, "/api/v1/arcade/scores/pong", { token })).status).toBe(404);
+    const bad = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: -1 } });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toBe("invalid-score");
+  });
+});
+
 // Runs LAST: exhausting the limiter poisons /signup and /signin for the rest
 // of the 15-minute window (the limiter store is module-scoped in api.ts and
 // keyed by IP, which is the same 127.0.0.1 for every request in this suite).

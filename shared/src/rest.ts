@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import { dirSchema } from "./socket.js";
-import { LIMITS, USERNAME_PATTERN } from "./constants.js";
+import { ARCADE_GAMES, LIMITS, USERNAME_PATTERN } from "./constants.js";
 
 /* ------------------------------- requests --------------------------------- */
 
@@ -39,7 +39,33 @@ export const clientErrorSchema = z.object({
 });
 export type ClientErrorReport = z.infer<typeof clientErrorSchema>;
 
+/** `POST /api/v1/arcade/scores` body: a client-reported score for one cabinet. */
+export const arcadeScoreSchema = z.object({
+  game: z.enum(ARCADE_GAMES),
+  score: z.number().int().min(0).max(LIMITS.arcadeScoreMax),
+});
+export type ArcadeScoreSubmission = z.infer<typeof arcadeScoreSchema>;
+
 /* ------------------------------- responses -------------------------------- */
+
+/** One leaderboard row: a player's best on a cabinet. */
+export const arcadeScoreEntrySchema = z.object({
+  username: z.string(),
+  score: z.number().int(),
+});
+export type ArcadeScoreEntry = z.infer<typeof arcadeScoreEntrySchema>;
+
+/**
+ * `GET /api/v1/arcade/scores/:game` and the `POST` success response: the top-N
+ * leaderboard for a cabinet plus the requesting player's personal best (null if
+ * they have never scored).
+ */
+export const arcadeLeaderboardSchema = z.object({
+  game: z.enum(ARCADE_GAMES),
+  top: z.array(arcadeScoreEntrySchema),
+  best: z.number().int().nullable(),
+});
+export type ArcadeLeaderboard = z.infer<typeof arcadeLeaderboardSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({

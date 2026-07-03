@@ -8,6 +8,14 @@
 /** Movement / facing directions. Order is significant only as a stable list. */
 export const DIRS = ["down", "left", "right", "up"] as const;
 
+/**
+ * Canonical arcade-cabinet game ids. The high-score REST resource validates a
+ * submitted `game` against this tuple, and the frontend keys its cabinets and
+ * leaderboards off the same list — single source of truth for both sides.
+ */
+export const ARCADE_GAMES = ["snake", "flappy", "2048"] as const;
+export type ArcadeGame = (typeof ARCADE_GAMES)[number];
+
 /** Chat channel scopes a client may request. */
 export const CHAT_SCOPES = ["world", "room"] as const;
 
@@ -114,6 +122,10 @@ export const LIMITS = {
   clientErrorUrlMax: 500,
   clientErrorUserAgentMax: 300,
   clientErrorContextMax: 200,
+  /** Arcade high scores. */
+  arcadeScoreMax: 10_000_000,
+  /** Rows returned in a per-game leaderboard. */
+  arcadeLeaderboardMax: 10,
 } as const;
 
 /** Allowed username characters (lowercase alphanumerics, dash, underscore). */
@@ -136,6 +148,12 @@ export const RATE_LIMITS = {
   /** Client-error beacon sink limiter (per IP). */
   clientErrorWindowMs: 60_000,
   clientErrorLimit: 10,
+  /** Arcade high-score submit limiter (per IP). */
+  arcadeScoreWindowMs: 60_000,
+  arcadeScoreLimit: 30,
+  /** Arcade leaderboard read limiter (per IP). */
+  arcadeLeaderboardWindowMs: 60_000,
+  arcadeLeaderboardLimit: 120,
   /** Minimum spacing between accepted `move` events from one socket. */
   moveThrottleMs: 40,
 } as const;

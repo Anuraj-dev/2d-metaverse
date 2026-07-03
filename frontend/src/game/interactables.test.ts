@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseInteractables, findNear, type InteractableDef } from "./interactables";
+import {
+  parseInteractables,
+  findNear,
+  arcadeOpenPayload,
+  type InteractableDef,
+} from "./interactables";
 
 describe("parseInteractables", () => {
   it("returns [] for empty input", () => {
@@ -121,5 +126,53 @@ describe("findNear", () => {
   it("returns first match when multiple interactables overlap position", () => {
     const ia2: InteractableDef = { ...ia, id: "b", label: "B" };
     expect(findNear([ia, ia2], 116, 216)).toBe(ia);
+  });
+});
+
+describe("arcadeOpenPayload (fail-closed scene gate)", () => {
+  function cabinet(payload: InteractableDef["payload"]): InteractableDef {
+    return {
+      id: "arcade_x",
+      label: "Cabinet",
+      type: "arcade",
+      rect: { x: 0, y: 0, w: 32, h: 48 },
+      payload,
+    };
+  }
+
+  it("returns the open payload for every canonical game id", () => {
+    for (const game of ["snake", "flappy", "2048"] as const) {
+      expect(arcadeOpenPayload(cabinet({ game }))).toEqual({
+        game,
+        label: "Cabinet",
+      });
+    }
+  });
+
+  // The scene sleeps on open and only close-arcade wakes it — an unvalidated
+  // emit for a payload App ignores would freeze the world permanently, so
+  // every malformed shape must return null (no emit, no sleep).
+  const malformed: Array<{ name: string; payload: InteractableDef["payload"] }> = [
+    { name: "unknown game id", payload: { game: "pong" } },
+    { name: "empty game id", payload: { game: "" } },
+    { name: "missing game key", payload: {} },
+    { name: "numeric game id", payload: { game: 42 } },
+    { name: "case-mismatched id", payload: { game: "Snake" } },
+  ];
+  for (const { name, payload } of malformed) {
+    it(`returns null for ${name}`, () => {
+      expect(arcadeOpenPayload(cabinet(payload))).toBeNull();
+    });
+  }
+
+  it("returns null for non-arcade interactables even with a valid game id", () => {
+    const info: InteractableDef = {
+      id: "board",
+      label: "Board",
+      type: "info",
+      rect: { x: 0, y: 0, w: 32, h: 32 },
+      payload: { game: "snake" },
+    };
+    expect(arcadeOpenPayload(info)).toBeNull();
   });
 });
