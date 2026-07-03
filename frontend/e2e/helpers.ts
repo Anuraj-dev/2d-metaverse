@@ -482,10 +482,19 @@ export async function sitAtSeat(
 
 /**
  * Board-game tables (PRD 11 phase 2). Player-position targets so the door-sample
- * point (x, y+8) rests inside the 16px seat rect, plus a straight, furniture-free
- * approach path from the campus spawn (960,704) across the open SW plaza. Seats
- * sit either side of a solid table at tile 37/43, so seat 0 is approached from
- * the west column and seat 1 from the east column — neither crosses the table.
+ * point (x, y+8) rests inside the 16px seat rect. The server places joiners at
+ * px (320,288) inside the NW park (backend/src/socket.ts), NOT at the map's
+ * `spawn` object, so the approach threads the park exit: north past the big
+ * plant at (360,296), east along y=264 (clear of the plant and the HQ west
+ * wall at x=480), south through the x=448 corridor between the park tree row
+ * (px 352..416, y 368..384) and the HQ wall column (x 480..496, y 256..400),
+ * east across the open plaza at y=440 (below the HQ south wall at y 384..400),
+ * then straight down the seat column. Every leg is axis-aligned and verified
+ * clear against the walls layer + solid-furniture bodies (player body
+ * [x-9,x+9]x[y,y+14], furniture 0.8w x 0.55h bottom-anchored) with >=16px
+ * margin — robust to walkTo's 6px arrival tolerance. Seats sit either side of
+ * a solid table, so seat 0 descends the west column (x=568) and seat 1 the
+ * east column (x=632); neither final leg crosses a table body.
  */
 export const BOARD_SEATS: Record<
   string,
@@ -493,11 +502,17 @@ export const BOARD_SEATS: Record<
 > = {
   "ttt-1": {
     path0: [
-      [568, 704],
+      [320, 264],
+      [448, 264],
+      [448, 440],
+      [568, 440],
       [568, 816],
     ],
     path1: [
-      [632, 704],
+      [320, 264],
+      [448, 264],
+      [448, 440],
+      [632, 440],
       [632, 816],
     ],
   },
