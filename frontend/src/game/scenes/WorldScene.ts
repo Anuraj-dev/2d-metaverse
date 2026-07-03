@@ -11,7 +11,7 @@ import { movementIntent, BASE_SPEED } from "../movement";
 import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, type RoomArea } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
 import { seatTransition, doorTransition } from "../seatDoor";
-import { CINEMATIC_IDLE, beginPortal, cancelPortal, finishPortal, shouldCapture } from "../portalCinematic";
+import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
 import { positionsEmitDue, moveSendDue } from "../throttle";
@@ -771,44 +771,47 @@ export default class WorldScene extends Phaser.Scene {
    */
   private portalIn() {
     if (this.scene.isSleeping()) return;
-    const begun = beginPortal(this.cinematic);
-    this.cinematic = begun.state;
-    const gen = begun.gen;
     const cam = this.cameras.main;
     cam.stopFollow();
     cam.pan(this.player.x, this.player.y, PORTAL_MS, "Sine.easeInOut");
     cam.fadeOut(PORTAL_FADE_MS, 0, 0, 0);
-    cam.zoomTo(
-      ZOOM * PORTAL_ZOOM_FACTOR,
-      PORTAL_MS,
-      "Sine.easeIn",
-      false,
-      (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-        if (progress === 1 && shouldCapture(this.cinematic, gen)) this.capturePortalFrame(gen);
+    // All Phase A wiring (which gate guards which effect, and in what order)
+    // lives in runPortalCinematic; the scene only supplies real Phaser effects.
+    runPortalCinematic(
+      {
+        get: () => this.cinematic,
+        set: (state) => {
+          this.cinematic = state;
+        },
+      },
+      {
+        startZoom: (onZoomComplete) => {
+          cam.zoomTo(
+            ZOOM * PORTAL_ZOOM_FACTOR,
+            PORTAL_MS,
+            "Sine.easeIn",
+            false,
+            (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+              if (progress === 1) onZoomComplete();
+            },
+          );
+        },
+        captureSnapshot: (onResult) => {
+          try {
+            this.game.renderer.snapshot((snap) => {
+              onResult(snap instanceof HTMLImageElement ? snap.src : null);
+            });
+          } catch {
+            onResult(null);
+          }
+        },
+        scheduleTimeout: (onTimeout) => {
+          this.time.delayedCall(SNAPSHOT_TIMEOUT_MS, onTimeout);
+        },
+        emitDone: (image) => bus.emit("portal-phase-a-done", { image }),
+        sleep: () => this.scene.sleep(),
       },
     );
-  }
-
-  /** Snapshot the canvas at portal peak, hand off to React, then sleep. */
-  private capturePortalFrame(gen: number) {
-    const finish = (image: string | null) => {
-      // portalCinematic decides: finish at most once per generation, and a
-      // canceled portal NEVER finishes — the scene must end AWAKE (no stale
-      // a-done, no late sleep after the player already left).
-      const decision = finishPortal(this.cinematic, gen);
-      this.cinematic = decision.state;
-      if (!decision.finish) return;
-      bus.emit("portal-phase-a-done", { image });
-      this.scene.sleep();
-    };
-    this.time.delayedCall(SNAPSHOT_TIMEOUT_MS, () => finish(null));
-    try {
-      this.game.renderer.snapshot((snap) => {
-        finish(snap instanceof HTMLImageElement ? snap.src : null);
-      });
-    } catch {
-      finish(null);
-    }
   }
 
   /** Portal-out: invalidate any in-flight Phase A, wake the render loop, and

@@ -1,8 +1,12 @@
 /**
- * Pure decision logic for the portal Phase A cinematic's generation guard
- * (PRD 10, review round 2). WorldScene is thin glue: it runs the camera
- * tween, the renderer snapshot and `scene.sleep()`, but every DECISION about
- * whether an async callback is still allowed to act lives here.
+ * Pure decision logic AND sequence wiring for the portal Phase A cinematic
+ * (PRD 10, review rounds 2–3). WorldScene is thin glue: it supplies the camera
+ * tween, the renderer snapshot, the safety timeout and `scene.sleep()` as
+ * injected effects, but every DECISION about whether an async callback is still
+ * allowed to act — and the order the effects fire in — lives here. The
+ * generation guard (`beginPortal`/`cancelPortal`/`shouldCapture`/`finishPortal`)
+ * is the decision layer; `runPortalCinematic` is the effect-injected driver that
+ * threads those gates through the zoom→capture→finish sequence.
  *
  * The hazard this module exists to kill: Phase A's callbacks (zoom
  * completion, renderer snapshot, snapshot timeout) fire up to ~750ms after
@@ -61,4 +65,71 @@ export function finishPortal(
 ): { state: PortalCinematic; finish: boolean } {
   if (gen !== state.gen || state.finished) return { state, finish: false };
   return { state: { ...state, finished: true }, finish: true };
+}
+
+/**
+ * A live read/write handle onto the scene's single `PortalCinematic` field.
+ * The driver reads it at each async callback (never a stale snapshot) so a
+ * `cancelPortal` from `portalOut`/teardown/disconnect — which advances the
+ * generation on the SAME field — is observed by callbacks already in flight.
+ */
+export interface CinematicRef {
+  get: () => PortalCinematic;
+  set: (state: PortalCinematic) => void;
+}
+
+/**
+ * The Phaser side-effects the Phase A sequence needs, injected so the wiring
+ * (which gate guards which effect, and in what order) is testable without a
+ * scene. WorldScene supplies real implementations; tests supply fakes that
+ * capture the callbacks and drive the interleavings by hand.
+ *
+ * - `startZoom(onZoomComplete)` runs the camera punch-in and invokes
+ *   `onZoomComplete` exactly when the zoom reaches its peak (progress === 1).
+ * - `captureSnapshot(onResult)` snapshots the canvas; `onResult` fires with the
+ *   frame (or null on failure) once the async snapshot lands.
+ * - `scheduleTimeout(onTimeout)` arms the safety timeout that races the
+ *   snapshot so a lost snapshot callback can never wedge Phase A open.
+ * - `emitDone(image)` emits `portal-phase-a-done` for the React handoff.
+ * - `sleep()` puts the scene to sleep (freezes the render loop for the meeting).
+ */
+export interface PortalCinematicEffects {
+  startZoom: (onZoomComplete: () => void) => void;
+  captureSnapshot: (onResult: (image: string | null) => void) => void;
+  scheduleTimeout: (onTimeout: () => void) => void;
+  emitDone: (image: string | null) => void;
+  sleep: () => void;
+}
+
+/**
+ * The Phase A sequence driver: mint a generation, run the zoom, and — only
+ * while that generation is still current — capture a frame, then finish
+ * (emit + sleep) at most once as the snapshot and its safety timeout race.
+ *
+ * Every gate consult lives here, so a wiring mutation (dropping the
+ * `shouldCapture` guard, bypassing `finishPortal`, capturing under a canceled
+ * generation, sleeping a re-awakened scene) breaks a driver test rather than
+ * passing silently. The scene is pure glue that supplies the effects.
+ */
+export function runPortalCinematic(ref: CinematicRef, effects: PortalCinematicEffects): void {
+  const begun = beginPortal(ref.get());
+  ref.set(begun.state);
+  const gen = begun.gen;
+
+  effects.startZoom(() => {
+    // Exit before the zoom peaked (stand/Leave/disconnect advanced the gen):
+    // refuse the capture outright — no snapshot, no finish, scene stays awake.
+    if (!shouldCapture(ref.get(), gen)) return;
+
+    const finish = (image: string | null) => {
+      const decision = finishPortal(ref.get(), gen);
+      ref.set(decision.state);
+      if (!decision.finish) return; // stale gen, or already finished — do nothing.
+      effects.emitDone(image);
+      effects.sleep();
+    };
+
+    effects.scheduleTimeout(() => finish(null));
+    effects.captureSnapshot((image) => finish(image));
+  });
 }
