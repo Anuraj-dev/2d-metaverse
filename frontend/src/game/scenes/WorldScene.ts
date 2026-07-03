@@ -11,6 +11,7 @@ import { movementIntent, BASE_SPEED } from "../movement";
 import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, type RoomArea } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
 import { seatTransition, doorTransition } from "../seatDoor";
+import { CINEMATIC_IDLE, beginPortal, cancelPortal, finishPortal, shouldCapture } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
 import { positionsEmitDue, moveSendDue } from "../throttle";
@@ -98,14 +99,12 @@ export default class WorldScene extends Phaser.Scene {
   private lastSent = 0;
   private lastTick = 0;
   /**
-   * Portal transition generation. Incremented by every portalIn AND portalOut:
-   * Phase A's async callbacks (zoom completion, renderer snapshot, timeout)
-   * capture the generation they started under and become no-ops if it has
-   * moved on — a portal-out during the ~350ms cinematic must never be followed
-   * by a late snapshot/`scene.sleep()` (softlock: frozen world with movement
-   * emission stopped).
+   * Generation guard for the portal cinematic's async callbacks. All the
+   * DECISIONS live in the pure module game/portalCinematic.ts (unit-tested,
+   * incl. the exit-mid-cinematic interleavings); this field is just the
+   * scene's copy of its state.
    */
-  private portalGen = 0;
+  private cinematic = CINEMATIC_IDLE;
 
   constructor() {
     super("world");
@@ -772,7 +771,9 @@ export default class WorldScene extends Phaser.Scene {
    */
   private portalIn() {
     if (this.scene.isSleeping()) return;
-    const gen = ++this.portalGen;
+    const begun = beginPortal(this.cinematic);
+    this.cinematic = begun.state;
+    const gen = begun.gen;
     const cam = this.cameras.main;
     cam.stopFollow();
     cam.pan(this.player.x, this.player.y, PORTAL_MS, "Sine.easeInOut");
@@ -783,19 +784,20 @@ export default class WorldScene extends Phaser.Scene {
       "Sine.easeIn",
       false,
       (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-        if (progress === 1 && gen === this.portalGen) this.capturePortalFrame(gen);
+        if (progress === 1 && shouldCapture(this.cinematic, gen)) this.capturePortalFrame(gen);
       },
     );
   }
 
   /** Snapshot the canvas at portal peak, hand off to React, then sleep. */
   private capturePortalFrame(gen: number) {
-    let done = false;
     const finish = (image: string | null) => {
-      // A portal-out (or a newer portal) invalidated this Phase A: the scene
-      // must finish AWAKE — never emit a stale a-done or sleep late.
-      if (done || gen !== this.portalGen) return;
-      done = true;
+      // portalCinematic decides: finish at most once per generation, and a
+      // canceled portal NEVER finishes — the scene must end AWAKE (no stale
+      // a-done, no late sleep after the player already left).
+      const decision = finishPortal(this.cinematic, gen);
+      this.cinematic = decision.state;
+      if (!decision.finish) return;
       bus.emit("portal-phase-a-done", { image });
       this.scene.sleep();
     };
@@ -812,7 +814,7 @@ export default class WorldScene extends Phaser.Scene {
   /** Portal-out: invalidate any in-flight Phase A, wake the render loop, and
    *  restore the camera to world state. */
   private portalOut() {
-    this.portalGen++;
+    this.cinematic = cancelPortal(this.cinematic);
     if (this.scene.isSleeping()) this.scene.wake();
     const cam = this.cameras.main;
     cam.resetFX();

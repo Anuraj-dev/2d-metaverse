@@ -146,6 +146,7 @@ into the modules).
 | `game/interactables.ts` | Tiled objects → interactable defs + hit test |
 | `game/meetingUi.ts` | server meeting-lifecycle events → client meeting state + portal-in/out actions |
 | `game/portalHandoff.ts` | Phase A/B portal handoff (reveal exactly once, either completion order) |
+| `game/portalCinematic.ts` | Phase A generation guard: which async cinematic callbacks may still capture/finish/sleep |
 | `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
