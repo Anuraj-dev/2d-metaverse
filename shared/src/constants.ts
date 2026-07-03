@@ -14,6 +14,20 @@ export const CHAT_SCOPES = ["world", "room"] as const;
 /** Reasons a `room-enter` attempt can be rejected. */
 export const ROOM_ENTER_REASONS = ["bad-key", "full", "rate-limited"] as const;
 
+/**
+ * Reasons a meeting-start countdown can be canceled: a seated player stood up,
+ * an unseated player entered the room, or an occupant left and the all-seated
+ * predicate no longer holds (e.g. the head-count dropped below 2).
+ */
+export const MEETING_CANCEL_REASONS = ["stand", "unseated-entry", "leave"] as const;
+
+/**
+ * Default length of the cancelable "Meeting starting…" countdown, in ms. The
+ * backend may shrink it via config for tests; the wire payload always carries
+ * the effective `durationMs`, so clients must read the payload, not this value.
+ */
+export const MEETING_COUNTDOWN_MS = 3000;
+
 /** Client → server socket event names. */
 export const CLIENT_EVENTS = {
   join: "join",
@@ -37,6 +51,12 @@ export const SERVER_EVENTS = {
   whisperFail: "whisper-fail",
   roomEnterResult: "room-enter-result",
   seatUpdate: "seat-update",
+  meetingCountdown: "meeting-countdown",
+  meetingCountdownCanceled: "meeting-countdown-canceled",
+  meetingStarted: "meeting-started",
+  meetingEnded: "meeting-ended",
+  meetingParticipantJoined: "meeting-participant-joined",
+  meetingParticipantLeft: "meeting-participant-left",
 } as const;
 
 /**
@@ -54,6 +74,12 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.whisperFail,
   SERVER_EVENTS.roomEnterResult,
   SERVER_EVENTS.seatUpdate,
+  SERVER_EVENTS.meetingCountdown,
+  SERVER_EVENTS.meetingCountdownCanceled,
+  SERVER_EVENTS.meetingStarted,
+  SERVER_EVENTS.meetingEnded,
+  SERVER_EVENTS.meetingParticipantJoined,
+  SERVER_EVENTS.meetingParticipantLeft,
 ] as const;
 
 /**

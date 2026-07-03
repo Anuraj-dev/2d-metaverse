@@ -9,7 +9,7 @@
  * (`auth: { token }`), never in `join`.
  */
 import { z } from "zod";
-import { CHAT_SCOPES, DIRS, LIMITS, ROOM_ENTER_REASONS } from "./constants.js";
+import { CHAT_SCOPES, DIRS, LIMITS, MEETING_CANCEL_REASONS, ROOM_ENTER_REASONS } from "./constants.js";
 
 /* ------------------------------- primitives ------------------------------- */
 
@@ -130,6 +130,68 @@ export const seatUpdateSchema = z.object({
 });
 export type SeatUpdatePayload = z.infer<typeof seatUpdateSchema>;
 
+/* ---------------------- server → client: meeting lifecycle ----------------- */
+
+/**
+ * A meeting participant as carried on meeting-lifecycle events. Includes the
+ * display name so the meeting grid can render nameplates without a roster
+ * lookup (the participant may never have been visible in the world to a
+ * latecomer's client).
+ */
+export const meetingParticipantSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+export type MeetingParticipant = z.infer<typeof meetingParticipantSchema>;
+
+/**
+ * The cancelable "Meeting starting…" countdown began: every player in the room
+ * is seated and there are at least two of them. `durationMs` is the effective
+ * server-side countdown length (configurable; see MEETING_COUNTDOWN_MS).
+ */
+export const meetingCountdownSchema = z.object({
+  roomId: z.string(),
+  durationMs: z.number().int().positive(),
+  participants: z.array(meetingParticipantSchema),
+});
+export type MeetingCountdownPayload = z.infer<typeof meetingCountdownSchema>;
+
+export const meetingCountdownCanceledSchema = z.object({
+  roomId: z.string(),
+  reason: z.enum(MEETING_CANCEL_REASONS),
+});
+export type MeetingCountdownCanceledPayload = z.infer<typeof meetingCountdownCanceledSchema>;
+
+/** The countdown elapsed uncanceled: the meeting is live for `participants`. */
+export const meetingStartedSchema = z.object({
+  roomId: z.string(),
+  participants: z.array(meetingParticipantSchema),
+});
+export type MeetingStartedPayload = z.infer<typeof meetingStartedSchema>;
+
+/** The last participant left; the meeting no longer exists. */
+export const meetingEndedSchema = z.object({ roomId: z.string() });
+export type MeetingEndedPayload = z.infer<typeof meetingEndedSchema>;
+
+/**
+ * A latecomer sat down mid-meeting and joined in place. Carries the full
+ * post-join roster so the latecomer's own client (which never saw
+ * `meeting-started`) can render the grid without reconstructing state.
+ */
+export const meetingParticipantJoinedSchema = z.object({
+  roomId: z.string(),
+  participant: meetingParticipantSchema,
+  participants: z.array(meetingParticipantSchema),
+});
+export type MeetingParticipantJoinedPayload = z.infer<typeof meetingParticipantJoinedSchema>;
+
+/** A participant stood up (or disconnected past grace) and left the meeting. */
+export const meetingParticipantLeftSchema = z.object({
+  roomId: z.string(),
+  playerId: z.string(),
+});
+export type MeetingParticipantLeftPayload = z.infer<typeof meetingParticipantLeftSchema>;
+
 /* ------------------------------ event maps -------------------------------- */
 
 /** Socket.IO listener map for events the server receives from a client. */
@@ -155,4 +217,10 @@ export interface ServerToClientEvents {
   "whisper-fail": (payload: WhisperFailPayload) => void;
   "room-enter-result": (payload: RoomEnterResultPayload) => void;
   "seat-update": (payload: SeatUpdatePayload) => void;
+  "meeting-countdown": (payload: MeetingCountdownPayload) => void;
+  "meeting-countdown-canceled": (payload: MeetingCountdownCanceledPayload) => void;
+  "meeting-started": (payload: MeetingStartedPayload) => void;
+  "meeting-ended": (payload: MeetingEndedPayload) => void;
+  "meeting-participant-joined": (payload: MeetingParticipantJoinedPayload) => void;
+  "meeting-participant-left": (payload: MeetingParticipantLeftPayload) => void;
 }
