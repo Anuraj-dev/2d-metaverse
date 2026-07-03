@@ -25,7 +25,9 @@ W, H, TS = 120, 90, 16   # cols × rows × px per tile  →  1920×1440 px
 # floors_walls.png (firstgid=1)
 FLOOR      = 116   # light wood plank — indoor base
 FLOOR_ACC  = 48    # tan plank        — indoor accent
-WALL       = 9     # dark-brown wall  — collision
+WALL       = 69    # brick wall (floors_walls idx 68) — collision.
+                   # NB: idx 8 (old GID 9) was a thin trim strip that rendered
+                   # as broken brown stripes — see PRD 12 bug #1.
 
 # exterior.png (firstgid=163)
 # Indices derived from existing campus.json tracer-bullet and visual inspection:
