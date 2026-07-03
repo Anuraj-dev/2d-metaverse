@@ -67,7 +67,8 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
         onScore(next.score);
         bus.emit("arcade-point");
       }
-      if (!next.alive && !overRef.current) {
+      // Terminal states: death or a full-board win both end the run.
+      if ((!next.alive || next.won) && !overRef.current) {
         overRef.current = true;
         bus.emit("arcade-over");
         onGameOver(next.score);

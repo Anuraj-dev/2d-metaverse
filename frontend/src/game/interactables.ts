@@ -1,3 +1,5 @@
+import { ARCADE_GAMES, type ArcadeGame } from "@metaverse/shared";
+
 export type InteractableType = "portal" | "info" | "whiteboard" | "arcade";
 
 export interface InteractableDef {
@@ -73,4 +75,22 @@ export function findNear(
     }
   }
   return null;
+}
+
+/**
+ * Fail-closed gate for opening the arcade overlay from a cabinet interactable.
+ *
+ * The scene sleeps the world when a cabinet opens, and only the overlay's close
+ * wakes it — so the scene must never sleep for a payload the app shell would
+ * ignore (an unknown game id would otherwise freeze the world permanently).
+ * Returns the validated open payload, or null when the interactable is not an
+ * arcade cabinet or its `game` is not a canonical ARCADE_GAMES id.
+ */
+export function arcadeOpenPayload(
+  ia: InteractableDef
+): { game: ArcadeGame; label: string } | null {
+  if (ia.type !== "arcade") return null;
+  const game = String(ia.payload.game ?? "");
+  if (!(ARCADE_GAMES as readonly string[]).includes(game)) return null;
+  return { game: game as ArcadeGame, label: ia.label };
 }

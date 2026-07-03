@@ -18,8 +18,10 @@ function state(partial: Partial<SnakeState>): SnakeState {
       { x: 3, y: 5 },
     ],
     dir: "right",
+    pendingDir: null,
     food: { x: 9, y: 9 },
     alive: true,
+    won: false,
     score: 0,
     rngSeed: 1,
     ...partial,
@@ -30,27 +32,97 @@ describe("initSnake", () => {
   it("starts alive, length 3, heading right, with food off the body", () => {
     const s = initSnake(1, 12, 10);
     expect(s.alive).toBe(true);
+    expect(s.won).toBe(false);
     expect(s.body).toHaveLength(3);
     expect(s.dir).toBe("right");
+    expect(s.pendingDir).toBeNull();
     expect(s.score).toBe(0);
     expect(s.body.some((c) => c.x === s.food.x && c.y === s.food.y)).toBe(false);
   });
 });
 
-describe("snakeInput", () => {
-  it("accepts a perpendicular turn", () => {
-    expect(snakeInput(state({}), "up").dir).toBe("up");
+describe("snakeInput — buffering", () => {
+  it("buffers the turn without changing the moved direction", () => {
+    const s = snakeInput(state({}), "up");
+    expect(s.pendingDir).toBe("up");
+    expect(s.dir).toBe("right");
   });
 
-  it("rejects a 180° reversal", () => {
-    expect(snakeInput(state({ dir: "right" }), "left").dir).toBe("right");
-    expect(snakeInput(state({ dir: "up" }), "down").dir).toBe("up");
+  it("keeps only the latest input between ticks (1-deep queue)", () => {
+    const s = snakeInput(snakeInput(state({}), "up"), "down");
+    expect(s.pendingDir).toBe("down");
   });
 
-  it("ignores input on a dead snake", () => {
-    const dead = state({ alive: false, dir: "right" });
+  it("ignores input on a dead or won snake", () => {
+    const dead = state({ alive: false });
     expect(snakeInput(dead, "up")).toBe(dead);
+    const won = state({ won: true });
+    expect(snakeInput(won, "up")).toBe(won);
   });
+});
+
+describe("snakeTick — turn resolution (validated against last moved dir)", () => {
+  it("applies a buffered perpendicular turn", () => {
+    const s = snakeTick(snakeInput(state({}), "up"));
+    expect(s.body[0]).toEqual({ x: 5, y: 4 });
+    expect(s.dir).toBe("up");
+    expect(s.pendingDir).toBeNull();
+  });
+
+  it("discards a buffered 180° reversal and keeps moving", () => {
+    const s = snakeTick(snakeInput(state({ dir: "right" }), "left"));
+    expect(s.body[0]).toEqual({ x: 6, y: 5 });
+    expect(s.dir).toBe("right");
+    expect(s.alive).toBe(true);
+  });
+
+  // The round-1 MAJOR: multiple inputs between two ticks must not smuggle in a
+  // reversal. Table of multi-input-per-tick sequences from each heading.
+  const bodies: Record<Dir, SnakeState["body"]> = {
+    right: [
+      { x: 5, y: 5 },
+      { x: 4, y: 5 },
+      { x: 3, y: 5 },
+    ],
+    left: [
+      { x: 5, y: 5 },
+      { x: 6, y: 5 },
+      { x: 7, y: 5 },
+    ],
+    up: [
+      { x: 5, y: 5 },
+      { x: 5, y: 6 },
+      { x: 5, y: 7 },
+    ],
+    down: [
+      { x: 5, y: 5 },
+      { x: 5, y: 4 },
+      { x: 5, y: 3 },
+    ],
+  };
+  const sequences: Array<{ moving: Dir; inputs: Dir[]; expectDir: Dir }> = [
+    // up-then-left while moving right: final input reverses → discarded.
+    { moving: "right", inputs: ["up", "left"], expectDir: "right" },
+    { moving: "right", inputs: ["down", "left"], expectDir: "right" },
+    { moving: "left", inputs: ["up", "right"], expectDir: "left" },
+    { moving: "up", inputs: ["left", "down"], expectDir: "up" },
+    { moving: "down", inputs: ["right", "up"], expectDir: "down" },
+    // a legal final input still applies after an earlier (discarded) one.
+    { moving: "right", inputs: ["left", "up"], expectDir: "up" },
+    { moving: "up", inputs: ["down", "left"], expectDir: "left" },
+    // three inputs, last one legal.
+    { moving: "right", inputs: ["up", "left", "down"], expectDir: "down" },
+  ];
+  for (const { moving, inputs, expectDir } of sequences) {
+    it(`moving ${moving}, inputs [${inputs.join(", ")}] in one tick ⇒ moves ${expectDir}, stays alive`, () => {
+      // Body straight along the moving axis so a folded reversal would collide.
+      let s = state({ dir: moving, body: bodies[moving] });
+      for (const d of inputs) s = snakeInput(s, d);
+      const next = snakeTick(s);
+      expect(next.alive).toBe(true);
+      expect(next.dir).toBe(expectDir);
+    });
+  }
 });
 
 describe("snakeTick — movement", () => {
@@ -64,6 +136,11 @@ describe("snakeTick — movement", () => {
   it("a dead snake is an idempotent no-op", () => {
     const dead = state({ alive: false });
     expect(snakeTick(dead)).toBe(dead);
+  });
+
+  it("a won snake is an idempotent no-op", () => {
+    const won = state({ won: true });
+    expect(snakeTick(won)).toBe(won);
   });
 });
 
@@ -112,7 +189,6 @@ describe("snakeTick — self collision", () => {
         { x: 5, y: 4 },
       ],
     });
-    // Turn left so head goes to (4,5) — clearly free — sanity of the setup.
     const next = snakeTick(snakeInput(s, "up"));
     expect(next.alive).toBe(true);
   });
@@ -127,11 +203,36 @@ describe("snakeTick — eating", () => {
     });
     const next = snakeTick(s);
     expect(next.alive).toBe(true);
+    expect(next.won).toBe(false);
     expect(next.score).toBe(1);
     expect(next.body).toHaveLength(2);
     expect(next.body[0]).toEqual({ x: 5, y: 5 });
     // New food is not on the eaten cell.
     expect(next.food).not.toEqual({ x: 5, y: 5 });
+  });
+
+  it("filling the whole board is a terminal win", () => {
+    // 2x2 board: snake occupies 3 cells, food on the last one. Eating it
+    // fills the board → won; further ticks and inputs are no-ops.
+    const s = state({
+      width: 2,
+      height: 2,
+      dir: "down",
+      body: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      food: { x: 0, y: 1 },
+    });
+    // Head (0,0) moving down reaches (0,1) = food → board full.
+    const wonState = snakeTick(s);
+    expect(wonState.won).toBe(true);
+    expect(wonState.alive).toBe(true);
+    expect(wonState.score).toBe(1);
+    expect(wonState.body).toHaveLength(4);
+    expect(snakeTick(wonState)).toBe(wonState);
+    expect(snakeInput(wonState, "left")).toBe(wonState);
   });
 });
 
@@ -150,7 +251,6 @@ describe("determinism", () => {
     expect(run(777)).toEqual(run(777));
   });
   it("different seeds can diverge (food placement)", () => {
-    // Two long runs eating food will diverge once RNG-placed food differs.
     const a = initSnake(1, 8, 8);
     const b = initSnake(2, 8, 8);
     expect(a.food).not.toEqual(b.food);

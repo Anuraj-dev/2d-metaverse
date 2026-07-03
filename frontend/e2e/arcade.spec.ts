@@ -63,8 +63,14 @@ test("arcade: walk to a cabinet, open, play, and close", async ({ page }) => {
   await page.keyboard.press("ArrowLeft");
   await expect(page.locator(".arcade-overlay")).toBeVisible();
 
-  // Escape closes instantly → overlay unmounts (and emits close-arcade,
-  // waking the scene). Assert on the DOM HUD.
+  // Escape closes instantly → close-arcade fires and the overlay unmounts.
   await page.keyboard.press("Escape");
+  await page.waitForFunction(() =>
+    (window.__testHook?.state.events ?? []).some((e) => e.event === "close-arcade"),
+  );
   await expect(page.locator(".arcade-overlay")).toBeHidden();
+
+  // And the world actually resumed (the scene woke): the player can move
+  // again — walkTo rides the positions ticks, which only flow while awake.
+  await walkTo(page, 1100, 840, { tolerance: 20 });
 });

@@ -22,10 +22,20 @@ export interface SnakeState {
   readonly height: number;
   /** Head first, tail last. */
   readonly body: readonly Cell[];
-  /** Direction the next tick will move in. */
+  /** Direction the snake actually last moved in. */
   readonly dir: Dir;
+  /**
+   * Buffered turn (1-deep queue): the latest input since the last tick,
+   * validated at TICK time against `dir` — the direction actually last moved.
+   * Validating on input alone is bypassable: moving right, pressing up then
+   * left within one tick would legalize the reversal step-by-step and fold the
+   * head into the neck. Deferring the check makes multi-input-per-tick safe.
+   */
+  readonly pendingDir: Dir | null;
   readonly food: Cell;
   readonly alive: boolean;
+  /** Terminal win: the snake fills the entire board. */
+  readonly won: boolean;
   readonly score: number;
   readonly rngSeed: number;
 }
@@ -53,7 +63,7 @@ function eq(a: Cell, b: Cell): boolean {
 
 /**
  * Place food on a random empty cell. If the board is full (win), keep the old
- * food position — the caller treats a full board as a completed game.
+ * food position — the caller marks the game `won` and stops play.
  */
 function placeFood(
   width: number,
@@ -97,37 +107,49 @@ export function initSnake(
     height,
     body,
     dir: "right",
+    pendingDir: null,
     food,
     alive: true,
+    won: false,
     score: 0,
     rngSeed,
   };
 }
 
 /**
- * Queue a turn. A 180° reversal is rejected (you cannot fold back onto your
- * neck); every other direction is accepted for the next tick.
+ * Buffer a turn for the next tick (1-deep queue — the latest input between two
+ * ticks wins). Legality is NOT decided here: the tick validates the buffered
+ * direction against the direction actually last moved, so no input sequence
+ * can smuggle in a 180° reversal. Terminal states ignore input.
  */
 export function snakeInput(state: SnakeState, dir: Dir): SnakeState {
-  if (!state.alive) return state;
-  if (dir === OPPOSITE[state.dir]) return state;
-  return { ...state, dir };
+  if (!state.alive || state.won) return state;
+  return { ...state, pendingDir: dir };
 }
 
 /**
  * Advance one step:
+ *  - the buffered turn applies only if it is not a 180° reversal of the
+ *    direction actually last moved (else it is discarded);
  *  - moving out of bounds or into your own body (except the tail cell you are
- *    about to vacate) kills the snake — state returned with `alive: false`.
- *  - eating food grows the snake (tail retained) and spawns new food.
+ *    about to vacate) kills the snake — state returned with `alive: false`;
+ *  - eating food grows the snake (tail retained) and spawns new food;
+ *  - filling the whole board is a terminal win (`won: true`);
  *  - otherwise the snake slides (tail removed).
- * A dead snake is an idempotent no-op.
+ * Dead or won states are idempotent no-ops.
  */
 export function snakeTick(state: SnakeState): SnakeState {
-  if (!state.alive) return state;
+  if (!state.alive || state.won) return state;
   const head = state.body[0];
   if (!head) return state;
 
-  const delta = DELTA[state.dir];
+  // Resolve the buffered turn against the last actually-moved direction.
+  const dir =
+    state.pendingDir !== null && state.pendingDir !== OPPOSITE[state.dir]
+      ? state.pendingDir
+      : state.dir;
+
+  const delta = DELTA[dir];
   const next: Cell = { x: head.x + delta.x, y: head.y + delta.y };
 
   if (
@@ -136,7 +158,7 @@ export function snakeTick(state: SnakeState): SnakeState {
     next.x >= state.width ||
     next.y >= state.height
   ) {
-    return { ...state, alive: false };
+    return { ...state, dir, pendingDir: null, alive: false };
   }
 
   const eating = eq(next, state.food);
@@ -144,11 +166,12 @@ export function snakeTick(state: SnakeState): SnakeState {
   // current tail cell is legal.
   const bodyToCheck = eating ? state.body : state.body.slice(0, -1);
   if (bodyToCheck.some((c) => eq(c, next))) {
-    return { ...state, alive: false };
+    return { ...state, dir, pendingDir: null, alive: false };
   }
 
   if (eating) {
     const grown = [next, ...state.body];
+    const won = grown.length >= state.width * state.height;
     const { food, rngSeed } = placeFood(
       state.width,
       state.height,
@@ -157,13 +180,16 @@ export function snakeTick(state: SnakeState): SnakeState {
     );
     return {
       ...state,
+      dir,
+      pendingDir: null,
       body: grown,
       food,
+      won,
       score: state.score + 1,
       rngSeed,
     };
   }
 
   const moved = [next, ...state.body.slice(0, -1)];
-  return { ...state, body: moved };
+  return { ...state, dir, pendingDir: null, body: moved };
 }

@@ -6,7 +6,7 @@ import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
 import { CHARS, charForPlayer, isCharKey } from "../chars";
 import { activeMap } from "../maps";
-import { parseInteractables, findNear, type InteractableDef } from "../interactables";
+import { parseInteractables, findNear, arcadeOpenPayload, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
 import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, type RoomArea } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
@@ -822,9 +822,19 @@ export default class WorldScene extends Phaser.Scene {
       const ty = Number(ia.payload.targetY);
       if (!isNaN(tx) && !isNaN(ty)) this.player.setPosition(tx, ty);
     } else if (ia.type === "arcade") {
+      // Fail closed: only a canonical ARCADE_GAMES id may open the overlay.
+      // The scene sleeps here and ONLY close-arcade wakes it, so emitting (and
+      // sleeping) for a payload the app shell would ignore would freeze the
+      // world permanently. Validation lives in the pure arcadeOpenPayload
+      // (interactables.ts) with its own tests; App re-checks as defense in depth.
+      const open = arcadeOpenPayload(ia);
+      if (!open) {
+        console.warn(`arcade cabinet "${ia.id}" has an unknown game id — ignoring`, ia.payload);
+        return;
+      }
       // Freeze the world under the overlay (same sleep pattern as meetings);
       // React owns the game. close-arcade wakes us (wired in create()).
-      bus.emit("open-arcade", { game: String(ia.payload.game), label: ia.label });
+      bus.emit("open-arcade", open);
       if (!this.scene.isSleeping()) this.scene.sleep();
     } else {
       bus.emit("open-interactable", { type: ia.type, label: ia.label, payload: ia.payload });
