@@ -53,13 +53,19 @@ test("cancelling the key prompt leaves the door impassable — no walk-in, no se
           if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
           let minY = Infinity;
           let sawSeat = false;
-          const deadline = Date.now() + 2500;
+          // Ride the positions tick, never the wall clock: a full-speed tick
+          // moves ~8px and the seat row is ~104px past the doorway, so 60
+          // driven ticks give the barge ~5x the distance it would need if the
+          // gate were broken — regardless of CI pacing. A stalled positions
+          // stream is caught by Playwright's test timeout, not a local timer.
+          let ticksLeft = 60;
           const off = hook.on("positions", (payload) => {
             const self = (payload as { players: { self: boolean; x: number; y: number }[] }).players
               .find((p) => p.self);
             if (self) minY = Math.min(minY, self.y);
             if (hook.state.nearSeat) sawSeat = true;
-            if (Date.now() < deadline) {
+            ticksLeft -= 1;
+            if (ticksLeft > 0) {
               hook.emit("move-axis", { x: 0, y: -1 }); // push north, into the room
             } else {
               hook.emit("move-axis", { x: 0, y: 0 });
