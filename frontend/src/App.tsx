@@ -15,7 +15,7 @@ import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
 import MeetingCountdown from "./ui/MeetingCountdown";
-import { ARCADE_GAMES, type ArcadeGame } from "@metaverse/shared";
+import { ARCADE_GAMES, SERVER_EVENTS, type ArcadeGame, type BoardUpdatePayload } from "@metaverse/shared";
 import { USE_MOCK } from "./net/auth";
 import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
@@ -38,9 +38,17 @@ const MeetingOverlay = lazy(() => import("./ui/MeetingOverlay"));
 // The arcade overlay + its game modules load only when a cabinet is opened,
 // keeping snake/flappy/2048 out of the entry chunk (bundle budget).
 const ArcadeOverlay = lazy(() => import("./ui/arcade/ArcadeOverlay"));
+// The board-table panel + its board renderer load only when a player sits at (or
+// walks up to an active) board table, keeping it out of the entry chunk.
+const BoardTablePanel = lazy(() => import("./ui/BoardTablePanel"));
 
 function isArcadeGame(value: string): value is ArcadeGame {
   return (ARCADE_GAMES as readonly string[]).includes(value);
+}
+
+/** A board snapshot worth showing a passing spectator (an occupied table). */
+function boardIsLive(snap: BoardUpdatePayload | undefined): boolean {
+  return !!snap && (snap.phase !== "waiting" || snap.seats.some((s) => s !== null));
 }
 
 /** Server→client meeting lifecycle events (PRD 10), mirrored onto the bus. */
@@ -72,6 +80,13 @@ export default function App() {
   const [portal, setPortal] = useState<PortalState | null>(null);
   // Arcade cabinet overlay (PRD 11): opened by a cabinet interact, null = closed.
   const [arcade, setArcade] = useState<{ game: ArcadeGame; label: string } | null>(null);
+  // Board tables (PRD 11 phase 2): authoritative snapshots per table, the table
+  // the panel currently shows (seated at, or standing beside a live match), and
+  // the last rejection message.
+  const [boardSnapshots, setBoardSnapshots] = useState<Record<string, BoardUpdatePayload>>({});
+  const [boardSeatedTable, setBoardSeatedTable] = useState<string | null>(null);
+  const [boardNearTable, setBoardNearTable] = useState<string | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
   // The media effect below rebinds this to feed "b-ready" into the handoff.
   const burstCovered = useRef<() => void>(() => {});
 
@@ -104,6 +119,49 @@ export default function App() {
     return bus.on<{ game: string; label: string }>("open-arcade", (p) => {
       if (isArcadeGame(p.game)) setArcade({ game: p.game, label: p.label });
     });
+  }, [entered]);
+
+  // Board tables (PRD 11 phase 2): keep authoritative snapshots, drive the sound
+  // cues off state transitions, and track which table the panel should show.
+  useEffect(() => {
+    if (!entered) return;
+    const net = sharedNet();
+    const prev = new Map<string, BoardUpdatePayload>();
+
+    const offUpdate = net.on(SERVER_EVENTS.boardUpdate, (snap: BoardUpdatePayload) => {
+      const before = prev.get(snap.tableId);
+      prev.set(snap.tableId, snap);
+      const filled = (s?: BoardUpdatePayload) => s?.state?.board.filter((c) => c !== 0).length ?? 0;
+      if (snap.phase === "active" && filled(snap) > filled(before)) bus.emit("board-move");
+      if (snap.phase === "over" && before?.phase !== "over") bus.emit("board-win");
+      setBoardSnapshots((current) => ({ ...current, [snap.tableId]: snap }));
+    });
+    const offError = net.on(SERVER_EVENTS.boardError, (err: { tableId: string; reason: string }) => {
+      const messages: Record<string, string> = {
+        "not-your-turn": "Not your turn",
+        "illegal-move": "Illegal move",
+        "seat-taken": "Seat taken",
+        "not-seated": "Sit down to play",
+        "no-match": "No match in progress",
+      };
+      setBoardError(messages[err.reason] ?? "Move rejected");
+      window.setTimeout(() => setBoardError(null), 1800);
+    });
+    const offSat = bus.on<{ tableId: string }>("board-sat", (p) => {
+      setBoardSeatedTable(p.tableId);
+      setBoardError(null);
+    });
+    const offStood = bus.on("board-stood", () => setBoardSeatedTable(null));
+    const offNear = bus.on<{ tableId: string }>("near-board-seat", (p) => setBoardNearTable(p.tableId));
+    const offLeaveNear = bus.on("leave-board-seat", () => setBoardNearTable(null));
+    return () => {
+      offUpdate();
+      offError();
+      offSat();
+      offStood();
+      offNear();
+      offLeaveNear();
+    };
   }, [entered]);
 
   // Real mode: world proximity audio + per-room video, driven by net + seat events.
@@ -324,6 +382,25 @@ export default function App() {
             />
           </Suspense>
         )}
+        {(() => {
+          const tableId =
+            boardSeatedTable ?? (boardIsLive(boardNearTable ? boardSnapshots[boardNearTable] : undefined) ? boardNearTable : null);
+          const snapshot = tableId ? boardSnapshots[tableId] : undefined;
+          if (!snapshot) return null;
+          const net = sharedNet();
+          return (
+            <Suspense fallback={null}>
+              <BoardTablePanel
+                snapshot={snapshot}
+                selfId={selfId}
+                error={boardError}
+                onMove={(index) => net.boardMove(snapshot.tableId, index)}
+                onAccept={() => net.boardAccept(snapshot.tableId)}
+                onLeave={() => bus.emit("do-stand")}
+              />
+            </Suspense>
+          );
+        })()}
         {portal && meeting.status === "in-meeting" && (
           <Suspense fallback={null}>
             <MeetingOverlay

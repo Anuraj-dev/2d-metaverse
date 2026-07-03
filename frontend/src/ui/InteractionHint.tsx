@@ -17,6 +17,12 @@ export default function InteractionHint() {
     const offLeaveSeat = bus.on("leave-seat", () => setHint(null));
     const offSat       = bus.on("sat",  () => setHint("Press E to stand"));
     const offStood     = bus.on("stood", () => setHint(null));
+    const offNearBoard  = bus.on("near-board-seat", (p: { label: string }) =>
+      setHint(`Press E to play ${p.label}`),
+    );
+    const offLeaveBoard = bus.on("leave-board-seat", () => setHint(null));
+    const offBoardSat   = bus.on("board-sat", () => setHint("Press E to leave"));
+    const offBoardStood = bus.on("board-stood", () => setHint(null));
     const offNearIa    = bus.on(
       "near-interactable",
       (p: { label: string; type: InteractableType }) => {
@@ -30,6 +36,10 @@ export default function InteractionHint() {
       offLeaveSeat();
       offSat();
       offStood();
+      offNearBoard();
+      offLeaveBoard();
+      offBoardSat();
+      offBoardStood();
       offNearIa();
       offLeaveIa();
     };

@@ -1,7 +1,13 @@
 import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import {
+  BOARD_MATCH_TTL_SECONDS,
+  BOARD_TABLES,
   RATE_LIMITS,
+  boardAcceptSchema,
+  boardMoveSchema,
+  boardSitSchema,
+  boardUpdateSchema,
   chatSchema,
   joinSchema,
   moveSchema,
@@ -18,6 +24,7 @@ import { isRateLimitExceeded, redis } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
 import type { RoomMeetingSnapshot } from "./meeting.js";
+import { createBoardManager } from "./board-manager.js";
 import type { SeatRef } from "./seat-key.js";
 import { verifySecret } from "./password.js";
 import { removeMediaParticipant } from "./media.js";
@@ -37,6 +44,11 @@ const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = RATE_LIMITS.roomKeyAttemptWindowSeconds;
 
 const spaceChannel = (spaceId: string) => `space:${spaceId}`;
 const roomChannel = (roomId: string) => `room:${roomId}`;
+// Board updates reach seated players + passing spectators via the space channel
+// every joined player already subscribes to — scoped per space so a match in one
+// space is invisible to another running the same campus map. The Redis mirror is
+// likewise scoped by spaceId so table ids (map fixtures) never collide.
+const boardKey = (spaceId: string, tableId: string) => `board:${spaceId}:${tableId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
 
@@ -118,6 +130,39 @@ export function createGameServer(httpServer: HttpServer) {
     log: childLogger({ module: "meeting" }),
   });
 
+  // Board-game tables (PRD 11 phase 2): pure match rules live in boardMatch.ts;
+  // this shell broadcasts each authoritative snapshot to the space channel (seated
+  // players + spectators) and mirrors live matches into per-space Redis keys with
+  // a TTL. Everything is scoped by spaceId so shared table ids never collide.
+  const boards = createBoardManager({
+    graceMs: LEAVE_GRACE_MS,
+    ttlSeconds: BOARD_MATCH_TTL_SECONDS,
+    resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
+    broadcast: (spaceId, payload) => io.to(spaceChannel(spaceId)).emit("board-update", payload),
+    sendError: (playerId, payload) => activeSockets.get(playerId)?.emit("board-error", payload),
+    persist: (spaceId, tableId, snapshot) => {
+      const done =
+        snapshot === null
+          ? redis.del(boardKey(spaceId, tableId))
+          : redis.set(boardKey(spaceId, tableId), JSON.stringify(snapshot), { EX: BOARD_MATCH_TTL_SECONDS });
+      void done.catch((error: unknown) => childLogger({ module: "board" }).error({ err: error, spaceId, tableId }, "board persist failed"));
+    },
+    load: async (spaceId, tableId) => {
+      // Restart recovery: reload the persisted snapshot (TTL enforced by Redis).
+      // Validate our own mirror so a stale/format-changed key degrades to "no
+      // match" instead of corrupting a runtime.
+      const raw = await redis.get(boardKey(spaceId, tableId));
+      if (!raw) return null;
+      const parsed = boardUpdateSchema.safeParse(JSON.parse(raw));
+      if (!parsed.success) {
+        childLogger({ module: "board" }).warn({ spaceId, tableId }, "discarding unparseable board snapshot");
+        return null;
+      }
+      return parsed.data;
+    },
+    log: childLogger({ module: "board" }),
+  });
+
   io.use((socket, next) => {
     const parsed = socketAuthSchema.safeParse(socket.handshake.auth);
     const user = parsed.success ? verifyToken(parsed.data.token) : null;
@@ -144,6 +189,7 @@ export function createGameServer(httpServer: HttpServer) {
       const timeout = pendingLeaves.get(socket.data.playerId);
       if (timeout) clearTimeout(timeout);
       pendingLeaves.delete(socket.data.playerId);
+      boards.cancelForfeit(socket.data.playerId);
       activeSockets.set(socket.data.playerId, socket);
       void redis.hSet(`presence:${socket.data.spaceId}`, socket.data.playerId, JSON.stringify({
         id: socket.data.playerId,
@@ -194,6 +240,15 @@ export function createGameServer(httpServer: HttpServer) {
 
       const spaceRooms = await getSpace(parsed.data.spaceId);
       for (const room of spaceRooms?.rooms ?? []) await emitOccupiedSeats(socket, room.id);
+
+      // Board tables live on the space channel (already joined above): sync each
+      // table's current match state so a latecomer sees any in-progress game
+      // without waiting for the next move. currentSnapshot hydrates from Redis on
+      // first touch, so matches survive a backend restart.
+      for (const { id } of BOARD_TABLES) {
+        const snap = await boards.currentSnapshot(parsed.data.spaceId, id);
+        if (snap) socket.emit("board-update", snap);
+      }
     }));
 
     socket.on("move", safeHandler("move", async (payload) => {
@@ -323,11 +378,43 @@ export function createGameServer(httpServer: HttpServer) {
       }
     }));
 
+    socket.on("board-sit", safeHandler("board-sit", (payload) => {
+      const parsed = boardSitSchema.safeParse(payload);
+      const { playerId, spaceId } = socket.data;
+      if (!parsed.success || !playerId || !spaceId) return;
+      boards.dispatch(spaceId, parsed.data.tableId, { type: "sit", seat: parsed.data.seat as 0 | 1, playerId });
+    }));
+
+    socket.on("board-stand", safeHandler("board-stand", () => {
+      const { playerId, spaceId } = socket.data;
+      if (!playerId || !spaceId) return;
+      boards.stand(spaceId, playerId);
+    }));
+
+    socket.on("board-accept", safeHandler("board-accept", (payload) => {
+      const parsed = boardAcceptSchema.safeParse(payload);
+      const { playerId, spaceId } = socket.data;
+      if (!parsed.success || !playerId || !spaceId) return;
+      boards.dispatch(spaceId, parsed.data.tableId, { type: "accept", playerId });
+    }));
+
+    socket.on("board-move", safeHandler("board-move", (payload) => {
+      const parsed = boardMoveSchema.safeParse(payload);
+      const { playerId, spaceId } = socket.data;
+      if (!parsed.success || !playerId || !spaceId) return;
+      // No throttle needed: a move is turn-gated (at most one legal move per turn)
+      // and any extra/illegal move is rejected cheaply by the pure machine.
+      boards.dispatch(spaceId, parsed.data.tableId, { type: "move", playerId, index: parsed.data.index });
+    }));
+
     socket.on("disconnect", (reason) => {
       if (joinTimeout) clearTimeout(joinTimeout);
       log.info({ reason }, "socket disconnected");
       const { playerId, spaceId } = socket.data;
       if (!playerId || !spaceId) return;
+      // Board match: forfeit after the same grace window (a recovered socket
+      // cancels it). No board reconnect restores the seat, so this frees the table.
+      boards.scheduleForfeit(spaceId, playerId);
       const oldTimeout = pendingLeaves.get(playerId);
       if (oldTimeout) clearTimeout(oldTimeout);
       pendingLeaves.set(playerId, setTimeout(() => void (async () => {

@@ -4,6 +4,7 @@
  * particular no zod — so consumers can pull event names and limits without dragging
  * the schema/runtime cost into their bundle.
  */
+import type { BoardGame } from "./games/board.js";
 
 /** Movement / facing directions. Order is significant only as a stable list. */
 export const DIRS = ["down", "left", "right", "up"] as const;
@@ -15,6 +16,48 @@ export const DIRS = ["down", "left", "right", "up"] as const;
  */
 export const ARCADE_GAMES = ["snake", "flappy", "2048"] as const;
 export type ArcadeGame = (typeof ARCADE_GAMES)[number];
+
+/**
+ * Board-game tables (PRD 11 phase 2). Each table is a two-seat, server-
+ * authoritative match of one board game. This registry is the single source of
+ * truth for which tables exist and which game each runs: the campus map authors
+ * seats/props against these ids, the backend validates `tableId`/`game`, and the
+ * frontend renders the board by looking the id up here. `maps.test.ts` cross-
+ * checks the generated map against this list.
+ */
+export const BOARD_TABLE_IDS = ["ttt-1", "c4-1"] as const;
+export type BoardTableId = (typeof BOARD_TABLE_IDS)[number];
+
+export const BOARD_TABLES: readonly { id: BoardTableId; game: BoardGame }[] = [
+  { id: "ttt-1", game: "tictactoe" },
+  { id: "c4-1", game: "connect4" },
+];
+
+/** The board game a given table runs, or undefined for an unknown id. */
+export function gameForTable(tableId: string): BoardGame | undefined {
+  return BOARD_TABLES.find((t) => t.id === tableId)?.game;
+}
+
+/** Phases of a board-table match, as seen on the wire. */
+export const BOARD_MATCH_PHASES = ["waiting", "offer", "active", "over"] as const;
+export type BoardMatchPhase = (typeof BOARD_MATCH_PHASES)[number];
+
+/** How a board match ended. */
+export const BOARD_END_REASONS = ["win", "draw", "forfeit"] as const;
+export type BoardEndReason = (typeof BOARD_END_REASONS)[number];
+
+/** Reasons the server rejects a board action (typed error to the client). */
+export const BOARD_MOVE_REJECTIONS = [
+  "not-seated",
+  "not-your-turn",
+  "illegal-move",
+  "no-match",
+  "seat-taken",
+] as const;
+export type BoardMoveRejection = (typeof BOARD_MOVE_REJECTIONS)[number];
+
+/** TTL (seconds) on the Redis snapshot of a live board match. */
+export const BOARD_MATCH_TTL_SECONDS = 8 * 60 * 60;
 
 /** Chat channel scopes a client may request. */
 export const CHAT_SCOPES = ["world", "room"] as const;
@@ -46,6 +89,10 @@ export const CLIENT_EVENTS = {
   roomLeave: "room-leave",
   seatSit: "seat-sit",
   seatStand: "seat-stand",
+  boardSit: "board-sit",
+  boardStand: "board-stand",
+  boardAccept: "board-accept",
+  boardMove: "board-move",
 } as const;
 
 /** Server → client socket event names. */
@@ -65,6 +112,8 @@ export const SERVER_EVENTS = {
   meetingEnded: "meeting-ended",
   meetingParticipantJoined: "meeting-participant-joined",
   meetingParticipantLeft: "meeting-participant-left",
+  boardUpdate: "board-update",
+  boardError: "board-error",
 } as const;
 
 /**
@@ -88,6 +137,8 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.meetingEnded,
   SERVER_EVENTS.meetingParticipantJoined,
   SERVER_EVENTS.meetingParticipantLeft,
+  SERVER_EVENTS.boardUpdate,
+  SERVER_EVENTS.boardError,
 ] as const;
 
 /**
@@ -126,6 +177,10 @@ export const LIMITS = {
   arcadeScoreMax: 10_000_000,
   /** Rows returned in a per-game leaderboard. */
   arcadeLeaderboardMax: 10,
+  /** Board-game seat index (two seats per table: 0 and 1). */
+  boardSeatMax: 1,
+  /** Sanity ceiling on a board move index (Connect-4 has 7 cols, TTT 9 cells). */
+  boardMoveIndexMax: 41,
 } as const;
 
 /** Allowed username characters (lowercase alphanumerics, dash, underscore). */

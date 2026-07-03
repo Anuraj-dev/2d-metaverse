@@ -8,7 +8,7 @@ import { CHARS, charForPlayer, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, arcadeOpenPayload, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
-import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, type RoomArea } from "../zones";
+import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, rectContains, type RoomArea } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
 import { seatTransition, doorTransition } from "../seatDoor";
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
@@ -56,6 +56,19 @@ interface Seat {
   cy: number;
 }
 
+/** A board-table seat: a public plaza seat that opens a two-player board match.
+ * Independent of private-room seats (no room entry / meeting trigger). */
+interface BoardSeat {
+  tableId: string;
+  seat: number;
+  game: string;
+  label: string;
+  facing: Dir;
+  rect: Phaser.Geom.Rectangle;
+  cx: number;
+  cy: number;
+}
+
 export default class WorldScene extends Phaser.Scene {
   private net!: Net;
   private player!: Phaser.Physics.Arcade.Sprite;
@@ -93,6 +106,9 @@ export default class WorldScene extends Phaser.Scene {
   private currentDoor: string | null = null;
   private currentSeat: Seat | null = null;
   private seated = false;
+  private boardSeats: BoardSeat[] = [];
+  private currentBoardSeat: BoardSeat | null = null;
+  private boardSeated = false;
   private currentRoom: string | null = null;
   private lastPublicPosition = new Phaser.Math.Vector2();
   private avatar = "char1";
@@ -270,6 +286,24 @@ export default class WorldScene extends Phaser.Scene {
         cy,
       });
     }
+    // Board tables (PRD 11 phase 2): plaza seats keyed by tableId, NOT room
+    // seats — their own array so they skip the room/meeting/minimap machinery.
+    const boardSeatObjs = map.getObjectLayer("board_seats")?.objects ?? [];
+    for (const o of boardSeatObjs) {
+      const cx = (o.x ?? 0) + (o.width || 16) / 2;
+      const cy = (o.y ?? 0) + (o.height || 16) / 2;
+      this.boardSeats.push({
+        tableId: prop(o, "tableId") ?? "",
+        seat: Number(prop(o, "seat") ?? 0),
+        game: prop(o, "game") ?? "",
+        label: prop(o, "label") ?? "",
+        facing: (prop(o, "facing") as Dir) ?? "down",
+        rect: rectOf(o, 16, 16),
+        cx,
+        cy,
+      });
+    }
+
     const furnObjs = map.getObjectLayer("furniture")?.objects ?? [];
     for (const o of furnObjs) {
       const key = prop(o, "key");
@@ -316,6 +350,10 @@ export default class WorldScene extends Phaser.Scene {
       this.addSolid(solids, "f_table_round", cx, cy - 4);
       for (const s of seats) this.addChair(s);
     }
+
+    // Board-table chairs (the solid table itself is authored in the map's
+    // furniture layer). Same chair sprites/orientation as room seats.
+    for (const s of this.boardSeats) this.addChair(s);
 
     // zone decor authored in the map's `furniture` object layer (data-driven)
     for (const f of this.furniture) {
@@ -411,7 +449,7 @@ export default class WorldScene extends Phaser.Scene {
     img.refreshBody();
   }
 
-  private addChair(seat: Seat) {
+  private addChair(seat: { facing: Dir; cx: number; cy: number }) {
     // Use the front-view chair for up/down seats and the side-view chair for
     // left/right, each oriented so the seat opens toward the table.
     const depth = seat.cy - 2;
@@ -465,8 +503,14 @@ export default class WorldScene extends Phaser.Scene {
         }
       }
     });
-    bus.on("do-sit", () => this.trySit());
-    bus.on("do-stand", () => this.stand());
+    bus.on("do-sit", () => {
+      if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
+      else this.trySit();
+    });
+    bus.on("do-stand", () => {
+      if (this.boardSeated) this.boardStand();
+      else this.stand();
+    });
     bus.on("portal-enter", () => this.portalIn());
     bus.on("portal-exit", () => this.portalOut());
     bus.on("locate", (p: { id: string }) => this.locate(p.id));
@@ -640,9 +684,9 @@ export default class WorldScene extends Phaser.Scene {
 
   private handleMovement(time: number) {
     const body = this.player;
-    if (this.seated || isTyping()) {
+    if (this.seated || this.boardSeated || isTyping()) {
       body.setVelocity(0, 0);
-      if (!this.seated) {
+      if (!this.seated && !this.boardSeated) {
         this.player.anims.stop();
         this.player.setFrame(idleFrame(this.dir));
       }
@@ -740,8 +784,25 @@ export default class WorldScene extends Phaser.Scene {
       else bus.emit("leave-presenter-slot");
     }
 
+    // board-table seats (public plaza; ungated by room entry)
+    if (!this.boardSeated && !this.seated) {
+      let inBoard: BoardSeat | null = null;
+      for (const s of this.boardSeats) if (rectContains(s.rect, fx, fy)) inBoard = s;
+      if (inBoard !== this.currentBoardSeat) {
+        this.currentBoardSeat = inBoard;
+        if (inBoard)
+          bus.emit("near-board-seat", {
+            tableId: inBoard.tableId,
+            seat: inBoard.seat,
+            game: inBoard.game,
+            label: inBoard.label,
+          });
+        else bus.emit("leave-board-seat");
+      }
+    }
+
     // seats (only matter once room entered)
-    if (this.seated) return;
+    if (this.seated || this.boardSeated) return;
     const inSeat = findSeat(this.seats, this.enteredRooms, fx, fy);
     if (inSeat !== this.currentSeat) {
       this.currentSeat = inSeat;
@@ -808,12 +869,43 @@ export default class WorldScene extends Phaser.Scene {
       Phaser.Input.Keyboard.JustDown(this.keyE) || this.interactQueued;
     this.interactQueued = false;
     if (pressed) {
+      // Board seats take priority when standing near one (they aren't
+      // interactables, so interactAction would otherwise return "sit").
+      if (this.boardSeated) {
+        this.boardStand();
+        return;
+      }
+      if (!this.seated && this.currentBoardSeat && !this.currentInteractable) {
+        this.tryBoardSit();
+        return;
+      }
       const action = interactAction(this.seated, this.currentInteractable !== null);
       if (action === "stand") this.stand();
       else if (action === "interact" && this.currentInteractable)
         this.triggerInteractable(this.currentInteractable);
       else if (action === "sit") this.trySit();
     }
+  }
+
+  private tryBoardSit() {
+    const s = this.currentBoardSeat;
+    if (this.boardSeated || this.seated || !s) return;
+    this.boardSeated = true;
+    this.player.setPosition(s.cx, s.cy);
+    this.player.setVelocity(0, 0);
+    this.dir = s.facing;
+    this.player.anims.stop();
+    this.player.setFrame(idleFrame(s.facing));
+    this.net.boardSit(s.tableId, s.seat);
+    bus.emit("board-sat", { tableId: s.tableId, seat: s.seat, game: s.game, label: s.label });
+  }
+
+  private boardStand() {
+    if (!this.boardSeated) return;
+    this.boardSeated = false;
+    this.player.y += 18;
+    this.net.boardStand();
+    bus.emit("board-stood");
   }
 
   private triggerInteractable(ia: InteractableDef) {
