@@ -69,6 +69,29 @@ describe("findRoomArea", () => {
   it("returns the only containing area", () => expect(findRoomArea(areas, 120, 120)?.roomId).toBe("B"));
 });
 
+describe("locked-room entry gate invariant", () => {
+  // Mirrors space.json room "1": bounds x496-704 y16-192, door zone y192-208,
+  // seat near (568,96). The collision gate (WorldScene.keepLockedRoomsClosed)
+  // snaps the player back whenever findRoomArea reports the sampled feet point is
+  // inside an un-entered room, and findSeat keeps the room's seats undetectable
+  // until the room is entered. Both predicates must hold, or a cancelled key
+  // prompt would let the player walk in past the doorway and sit.
+  const areas: RoomArea[] = [{ roomId: "1", rect: rect(496, 16, 208, 176) }];
+  const seats: SeatZone[] = [{ roomId: "1", seatId: 0, rect: rect(560, 88, 16, 16) }];
+
+  it("detects the room area at the doorway threshold so the gate blocks entry", () => {
+    // Feet on the south wall line (y=192) are already "inside" (inclusive rects).
+    expect(findRoomArea(areas, 592, 192)?.roomId).toBe("1");
+  });
+  it("keeps the room's seats hidden until the room is entered", () => {
+    expect(findSeat(seats, new Set(), 568, 96)).toBeNull();
+    expect(findSeat(seats, new Set(["1"]), 568, 96)?.seatId).toBe(0);
+  });
+  it("treats the door zone just south of the room as public so the player can stand to unlock", () => {
+    expect(findRoomArea(areas, 592, 200)).toBeNull();
+  });
+});
+
 describe("hasExitedRoom", () => {
   const areas: RoomArea[] = [{ roomId: "A", rect: rect(0, 0, 100, 100) }];
 
