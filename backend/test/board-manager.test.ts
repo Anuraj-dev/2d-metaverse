@@ -69,6 +69,31 @@ function activeSnapshot(tableId: string, game: BoardGame, seat0: string, seat1: 
   };
 }
 
+/**
+ * A loader whose per-table hydration blocks until `release`d — used to hold a
+ * `sit` suspended mid-hydration so cleanup / a second sit can overlap it. Tolerant
+ * of release-before-load: a value released early resolves the load when it arrives.
+ */
+function deferredLoad(): {
+  load: Loader;
+  release: (spaceId: string, tableId: string, value?: BoardUpdatePayload | null) => void;
+} {
+  const pending = new Map<string, (v: BoardUpdatePayload | null) => void>();
+  const early = new Map<string, BoardUpdatePayload | null>();
+  const load: Loader = (spaceId, tableId) => {
+    const key = `${spaceId}|${tableId}`;
+    if (early.has(key)) return Promise.resolve(early.get(key) ?? null);
+    return new Promise<BoardUpdatePayload | null>((resolve) => pending.set(key, resolve));
+  };
+  const release = (spaceId: string, tableId: string, value: BoardUpdatePayload | null = null): void => {
+    const key = `${spaceId}|${tableId}`;
+    const resolve = pending.get(key);
+    if (resolve) resolve(value);
+    else early.set(key, value);
+  };
+  return { load, release };
+}
+
 describe("board manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -237,5 +262,48 @@ describe("board manager", () => {
     const afterMove = await manager.currentSnapshot(SPACE, TABLE);
     expect(afterMove?.state?.board[0]).toBe(1);
     expect(afterMove?.state?.turn).toBe(2);
+  });
+
+  // --- Concurrency: the one-table-per-player invariant is CROSS-table, so it can
+  // only hold if all of a space's seat mutations are serialized together. These
+  // tests overlap the operations (both in flight before either commits) — the
+  // second would strand/double-seat under the old per-table queues. ---
+
+  it("two overlapping sits to different tables — exactly one wins", async () => {
+    const gate = deferredLoad();
+    const { manager, errors } = makeManager(gate.load);
+    // Both sits are dispatched before either commits (each blocks in hydration).
+    manager.dispatch(SPACE, TABLE, { type: "sit", seat: 0, playerId: "a" });
+    manager.dispatch(SPACE, C4, { type: "sit", seat: 0, playerId: "a" });
+    gate.release(SPACE, TABLE);
+    gate.release(SPACE, C4);
+    await manager.settle();
+
+    const seatedAt = [
+      (await manager.currentSnapshot(SPACE, TABLE))?.seats[0]?.id,
+      (await manager.currentSnapshot(SPACE, C4))?.seats[0]?.id,
+    ].filter((id) => id === "a");
+    expect(seatedAt).toHaveLength(1); // never seated at both
+    // The second (C4, enqueued after the TABLE sit) is the one rejected.
+    expect(errors).toContainEqual({ playerId: "a", payload: { tableId: C4, reason: "seat-taken" } });
+  });
+
+  it("cleanup never strands a sit still queued behind hydration", async () => {
+    const gate = deferredLoad();
+    const { manager, persists } = makeManager(gate.load);
+    // The sit is queued but suspended in hydration (Redis load not resolved yet)…
+    manager.dispatch(SPACE, TABLE, { type: "sit", seat: 0, playerId: "a" });
+    // …when the player disconnects and cleanup fires. Under per-table queues the
+    // scan would miss the uncommitted sit and the seat would leak; the shared
+    // seat queue orders cleanup strictly after the sit commits.
+    manager.stand(SPACE, "a");
+    gate.release(SPACE, TABLE);
+    await manager.settle();
+
+    const ttt = await manager.currentSnapshot(SPACE, TABLE);
+    expect(ttt?.seats[0]).toBeNull(); // seat freed, not stranded
+    expect(ttt?.phase).toBe("waiting");
+    // The Redis mirror was cleared (idle), not left holding a ghost occupant.
+    expect(persists.at(-1)).toEqual({ spaceId: SPACE, tableId: TABLE, snapshot: null });
   });
 });
