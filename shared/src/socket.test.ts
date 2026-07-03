@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   chatSchema,
   joinSchema,
+  meetingCountdownCanceledSchema,
+  meetingCountdownSchema,
+  meetingEndedSchema,
+  meetingParticipantJoinedSchema,
+  meetingParticipantLeftSchema,
+  meetingStartedSchema,
   moveSchema,
   roomEnterResultSchema,
   roomEnterSchema,
@@ -10,7 +16,7 @@ import {
   socketAuthSchema,
   whisperSchema,
 } from "./socket.js";
-import { LIMITS } from "./constants.js";
+import { LIMITS, MEETING_CANCEL_REASONS } from "./constants.js";
 
 describe("socket handshake auth", () => {
   it("accepts a non-empty token", () => {
@@ -104,5 +110,97 @@ describe("server → client shapes", () => {
   it("allows a null playerId on seat-update (a freed seat)", () => {
     expect(seatUpdateSchema.safeParse({ roomId: "1", seatId: 0, playerId: null }).success).toBe(true);
     expect(seatUpdateSchema.safeParse({ roomId: "1", seatId: 0, playerId: "p1" }).success).toBe(true);
+  });
+});
+
+describe("meeting lifecycle shapes (server → client)", () => {
+  const alice = { id: "p1", name: "alice" };
+  const bob = { id: "p2", name: "bob" };
+
+  it("validates a meeting-countdown with participants and a positive durationMs", () => {
+    expect(
+      meetingCountdownSchema.safeParse({ roomId: "1", durationMs: 3000, participants: [alice, bob] }).success,
+    ).toBe(true);
+  });
+  it("rejects a meeting-countdown with a non-positive or fractional durationMs", () => {
+    expect(
+      meetingCountdownSchema.safeParse({ roomId: "1", durationMs: 0, participants: [alice] }).success,
+    ).toBe(false);
+    expect(
+      meetingCountdownSchema.safeParse({ roomId: "1", durationMs: 1.5, participants: [alice] }).success,
+    ).toBe(false);
+  });
+  it("rejects a countdown participant missing an id or name", () => {
+    expect(
+      meetingCountdownSchema.safeParse({ roomId: "1", durationMs: 3000, participants: [{ id: "p1" }] }).success,
+    ).toBe(false);
+  });
+  it("validates a meeting-countdown-canceled for each known reason and rejects unknown ones", () => {
+    for (const reason of MEETING_CANCEL_REASONS) {
+      expect(meetingCountdownCanceledSchema.safeParse({ roomId: "1", reason }).success).toBe(true);
+    }
+    expect(meetingCountdownCanceledSchema.safeParse({ roomId: "1", reason: "boredom" }).success).toBe(false);
+  });
+  it("validates a meeting-started with its participant roster", () => {
+    expect(meetingStartedSchema.safeParse({ roomId: "1", participants: [alice, bob] }).success).toBe(true);
+    expect(meetingStartedSchema.safeParse({ roomId: "1" }).success).toBe(false);
+  });
+  it("validates a meeting-ended carrying only the roomId", () => {
+    expect(meetingEndedSchema.safeParse({ roomId: "1" }).success).toBe(true);
+    expect(meetingEndedSchema.safeParse({}).success).toBe(false);
+  });
+  it("validates a meeting-participant-joined carrying the joiner and the post-join roster", () => {
+    expect(
+      meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: bob, participants: [alice, bob] }).success,
+    ).toBe(true);
+    expect(meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: bob }).success).toBe(false);
+    expect(
+      meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: { id: "p1" }, participants: [] }).success,
+    ).toBe(false);
+  });
+  it("validates a meeting-participant-left by playerId", () => {
+    expect(meetingParticipantLeftSchema.safeParse({ roomId: "1", playerId: "p1" }).success).toBe(true);
+    expect(meetingParticipantLeftSchema.safeParse({ roomId: "1" }).success).toBe(false);
+  });
+
+  it("rejects unknown top-level keys on every meeting schema (strict contract)", () => {
+    expect(
+      meetingCountdownSchema.safeParse({
+        roomId: "1",
+        durationMs: 3000,
+        participants: [alice],
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      meetingCountdownCanceledSchema.safeParse({ roomId: "1", reason: "stand", extra: true }).success,
+    ).toBe(false);
+    expect(
+      meetingStartedSchema.safeParse({ roomId: "1", participants: [alice], extra: true }).success,
+    ).toBe(false);
+    expect(meetingEndedSchema.safeParse({ roomId: "1", extra: true }).success).toBe(false);
+    expect(
+      meetingParticipantJoinedSchema.safeParse({
+        roomId: "1",
+        participant: alice,
+        participants: [alice],
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      meetingParticipantLeftSchema.safeParse({ roomId: "1", playerId: "p1", extra: true }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown keys nested inside a participant", () => {
+    const sneaky = { id: "p1", name: "alice", role: "admin" };
+    expect(
+      meetingCountdownSchema.safeParse({ roomId: "1", durationMs: 3000, participants: [sneaky] }).success,
+    ).toBe(false);
+    expect(meetingStartedSchema.safeParse({ roomId: "1", participants: [sneaky] }).success).toBe(false);
+    expect(
+      meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: sneaky, participants: [alice] })
+        .success,
+    ).toBe(false);
   });
 });

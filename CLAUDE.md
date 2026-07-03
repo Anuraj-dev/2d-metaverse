@@ -49,6 +49,11 @@ Raja is using Fable 5 as the primary model in this project until 2026-07-06. Whi
 - Test style: table-driven / transition-matrix (incl. illegal transitions) for pure modules; React Testing Library + jsdom for React and the `App.tsx` media-transition chain — stub the Phaser canvas + heavy HUD children and assert media-manager calls + rendered HUD state, never Phaser internals or private fields. Everything runs in the single `npm test` (vitest/jsdom) step — no new pipeline stages.
 - The `game/eventBus.ts` typed bus is the Phaser↔React contract seam (and the future E2E hook); assert scene→React interactions through it.
 
+# Meeting lifecycle (PRD 10)
+
+- **The meeting-start rules live in exactly one place: the pure trigger state machine `backend/src/meeting.ts`** — every player in the room zone seated ∧ count ≥ 2 arms a cancelable countdown (canceled by a stand or an unseated entry); the countdown elapsing starts the meeting; a latecomer's sit joins in place; a participant's stand (or grace-expired disconnect) leaves alone; the last leaver ends it. Change meeting-start behavior **there**, with its exhaustive transition tests (`backend/test/meeting.test.ts`) — never re-derive the rules in socket handlers or the frontend.
+- `backend/src/meeting-manager.ts` is the side-effect shell (countdown timer, per-room serialization, room-scoped broadcasts). The frontend only *reacts*: `frontend/src/game/meetingUi.ts` maps the broadcast events onto client actions (portal-in / portal-out), and `frontend/src/game/portalHandoff.ts` aligns the two-phase portal reveal. Meeting wire payloads live in `@metaverse/shared` like every other event. Client-facing rules + resource policy: `frontend/README.md` → *Meetings*.
+
 # E2E conventions (Playwright)
 
 - The E2E suite lives in `frontend/e2e/` and runs chromium-only against the BUILT frontend (`vite preview`, port 4173) + the docker-composed backend stack. It is PR-blocking (`e2e` job in `frontend-ci.yml`). Full local-run recipe: `frontend/README.md` → *E2E tests (Playwright)*.

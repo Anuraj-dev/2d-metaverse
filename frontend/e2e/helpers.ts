@@ -42,6 +42,8 @@ export interface RoomRoute {
   doorPath: [number, number][];
   /** Waypoints from the door to seat 0 of the room. */
   seatPath: [number, number][];
+  /** Waypoints from the door to seat 1 (for two-player seat scenarios). */
+  seat1Path?: [number, number][];
   /** Waypoint that leaves the room bounds again (fires room-left). */
   exit: [number, number];
 }
@@ -62,6 +64,12 @@ export const MAPS: Record<
           [592, 150],
           [564, 150],
           [568, 96],
+        ],
+        // Mirror of seatPath toward the right-hand chair (seat 1 at 632,104).
+        seat1Path: [
+          [592, 150],
+          [628, 150],
+          [632, 96],
         ],
         exit: [592, 260],
       },
@@ -382,6 +390,7 @@ export async function sitAtSeat(
   page: Page,
   map: "space" | "campus",
   roomId: string,
+  opts: { seat?: 0 | 1 } = {},
 ): Promise<void> {
   // The seat path leaves the doorway STRAIGHT UP (x stays inside the door
   // rect until well inside the room bounds): a diagonal first leg can, under
@@ -393,7 +402,10 @@ export async function sitAtSeat(
   // early-stop: stopping on near-seat mid-motion can coast out the far side).
   const room = MAPS[map].rooms[roomId];
   if (!room) throw new Error(`sitAtSeat: unknown room "${roomId}" in map "${map}"`);
-  const path = room.seatPath;
+  const path = opts.seat === 1 ? room.seat1Path : room.seatPath;
+  if (!path) {
+    throw new Error(`sitAtSeat: no seat-${opts.seat ?? 0} path for room "${roomId}" in map "${map}"`);
+  }
   for (const [i, [x, y]] of path.entries()) {
     if (i < path.length - 1) {
       await walkTo(page, x, y);

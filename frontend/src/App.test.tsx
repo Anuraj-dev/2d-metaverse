@@ -82,6 +82,26 @@ vi.mock("./ui/InteractableModal", () => ({ default: () => null }));
 vi.mock("./ui/StageScreen", () => ({ default: () => null }));
 vi.mock("./ui/ChatBox", () => ({ default: () => null }));
 vi.mock("./ui/ChatToast", () => ({ default: () => null }));
+// The meeting overlay (lazy, motion + LiveKit components) is stubbed to a
+// props echo so the app-shell tests assert App's portal orchestration —
+// mount/unmount, reveal flag, backdrop, roster — not the visuals.
+vi.mock("./ui/MeetingOverlay", () => ({
+  default: (props: {
+    revealed: boolean;
+    backdrop: string | null;
+    participants: { id: string }[];
+    onBurstCovered: () => void;
+  }) => (
+    <div
+      data-testid="meeting-overlay"
+      data-revealed={String(props.revealed)}
+      data-backdrop={props.backdrop ?? ""}
+      data-count={props.participants.length}
+    >
+      <button onClick={props.onBurstCovered}>burst-covered</button>
+    </div>
+  ),
+}));
 
 import App from "./App";
 
@@ -223,6 +243,186 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(order).toEqual(["world-stop", "room-join", "stage-join"])
     );
+  });
+
+  it("shows the meeting countdown toast and clears it on cancellation", async () => {
+    render(<App />);
+    await enterAndInit();
+    await emit(() =>
+      netMock.net.emit("meeting-countdown", {
+        roomId: "D",
+        durationMs: 3000,
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+        ],
+      })
+    );
+    expect(await screen.findByTestId("meeting-countdown")).toBeTruthy();
+    await emit(() =>
+      netMock.net.emit("meeting-countdown-canceled", { roomId: "D", reason: "stand" })
+    );
+    expect(screen.queryByTestId("meeting-countdown")).toBeNull();
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+  });
+
+  it("portals in on meeting-started: portal-enter fires, overlay mounts, reveal waits for A then B", async () => {
+    render(<App />);
+    await enterAndInit();
+    const busEvents: string[] = [];
+    const offEnter = bus.on("portal-enter", () => busEvents.push("portal-enter"));
+    const offVisible = bus.on("meeting-grid-visible", () => busEvents.push("grid-visible"));
+
+    await emit(() =>
+      netMock.net.emit("meeting-started", {
+        roomId: "D",
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+        ],
+      })
+    );
+    const overlay = await screen.findByTestId("meeting-overlay");
+    expect(overlay.getAttribute("data-revealed")).toBe("false");
+    expect(overlay.getAttribute("data-count")).toBe("2");
+    await waitFor(() => expect(busEvents).toContain("portal-enter"));
+
+    // Phase A finishes first (A-before-B ordering): still not revealed.
+    await emit(() => bus.emit("portal-phase-a-done", { image: "data:image/png;base64,x" }));
+    expect(screen.getByTestId("meeting-overlay").getAttribute("data-revealed")).toBe("false");
+    expect(busEvents).not.toContain("grid-visible");
+
+    // Phase B (burst covered) completes the pair: reveal, with the backdrop.
+    fireEvent.click(screen.getByText("burst-covered"));
+    await waitFor(() =>
+      expect(screen.getByTestId("meeting-overlay").getAttribute("data-revealed")).toBe("true")
+    );
+    expect(screen.getByTestId("meeting-overlay").getAttribute("data-backdrop")).toBe(
+      "data:image/png;base64,x"
+    );
+    expect(busEvents).toContain("grid-visible");
+    offEnter();
+    offVisible();
+  });
+
+  it("reveals with the opposite ordering too (B ready before A done)", async () => {
+    render(<App />);
+    await enterAndInit();
+    await emit(() =>
+      netMock.net.emit("meeting-started", {
+        roomId: "D",
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+        ],
+      })
+    );
+    await screen.findByTestId("meeting-overlay");
+    fireEvent.click(screen.getByText("burst-covered"));
+    expect(screen.getByTestId("meeting-overlay").getAttribute("data-revealed")).toBe("false");
+    await emit(() => bus.emit("portal-phase-a-done", { image: null }));
+    await waitFor(() =>
+      expect(screen.getByTestId("meeting-overlay").getAttribute("data-revealed")).toBe("true")
+    );
+  });
+
+  it("portals out alone on own participant-left; a remote's departure only shrinks the roster", async () => {
+    render(<App />);
+    await enterAndInit();
+    const busEvents: string[] = [];
+    const offExit = bus.on("portal-exit", () => busEvents.push("portal-exit"));
+    await emit(() =>
+      netMock.net.emit("meeting-started", {
+        roomId: "D",
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+          { id: "p3", name: "cat" },
+        ],
+      })
+    );
+    await screen.findByTestId("meeting-overlay");
+
+    // A remote leaves: overlay stays, roster shrinks.
+    await emit(() =>
+      netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: "p2" })
+    );
+    expect(screen.getByTestId("meeting-overlay").getAttribute("data-count")).toBe("2");
+    expect(busEvents).toEqual([]);
+
+    // Own departure: overlay unmounts and the scene is woken via portal-exit.
+    await emit(() =>
+      netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: SELF })
+    );
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+    await waitFor(() => expect(busEvents).toContain("portal-exit"));
+    offExit();
+  });
+
+  it("holds the media queue for Phase A and cancels it when self leaves mid-cinematic (no late reveal)", async () => {
+    render(<App />);
+    await enterAndInit();
+    const busEvents: string[] = [];
+    const offEnter = bus.on("portal-enter", () => busEvents.push("portal-enter"));
+    const offExit = bus.on("portal-exit", () => busEvents.push("portal-exit"));
+    const offVisible = bus.on("meeting-grid-visible", () => busEvents.push("grid-visible"));
+
+    await emit(() =>
+      netMock.net.emit("meeting-started", {
+        roomId: "D",
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+        ],
+      })
+    );
+    await screen.findByTestId("meeting-overlay");
+    await waitFor(() => expect(busEvents).toContain("portal-enter"));
+
+    // Phase A is still running (no portal-phase-a-done): the portal-in op must
+    // HOLD the queue — an op enqueued behind it may not start.
+    await emit(() => bus.emit("near-stage"));
+    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+
+    // Self leaves mid-cinematic: cancellation settles the pending Phase A, the
+    // queue drains in order (portal-exit runs, then the stage join), and the
+    // overlay is gone.
+    await emit(() =>
+      netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: SELF })
+    );
+    await waitFor(() => expect(busEvents).toContain("portal-exit"));
+    await waitFor(() => expect(media.stageVideo.joinAsAudience).toHaveBeenCalled());
+    expect(busEvents.indexOf("portal-enter")).toBeLessThan(busEvents.indexOf("portal-exit"));
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+
+    // The abandoned cinematic completing late must be inert: no overlay
+    // resurrection, no reveal. (Scene-side, the portal generation guard makes
+    // the same late callback skip its snapshot/sleep entirely.)
+    await emit(() => bus.emit("portal-phase-a-done", { image: "data:late" }));
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+    expect(busEvents).not.toContain("grid-visible");
+    offEnter();
+    offExit();
+    offVisible();
+  });
+
+  it("a latecomer portals in on their own participant-joined", async () => {
+    render(<App />);
+    await enterAndInit();
+    await emit(() =>
+      netMock.net.emit("meeting-participant-joined", {
+        roomId: "D",
+        participant: { id: SELF, name: "me" },
+        participants: [
+          { id: "p2", name: "bob" },
+          { id: "p3", name: "cat" },
+          { id: SELF, name: "me" },
+        ],
+      })
+    );
+    const overlay = await screen.findByTestId("meeting-overlay");
+    expect(overlay.getAttribute("data-count")).toBe("3");
+    expect(overlay.getAttribute("data-revealed")).toBe("false");
   });
 
   it("unmount mid-transition: queued ops are dropped, teardown waits for the pending op", async () => {

@@ -16,6 +16,8 @@ import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
 import { isRateLimitExceeded, redis } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
+import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
+import type { RoomMeetingSnapshot } from "./meeting.js";
 import type { SeatRef } from "./seat-key.js";
 import { verifySecret } from "./password.js";
 import { removeMediaParticipant } from "./media.js";
@@ -71,7 +73,7 @@ function broadcastFreedSeat(io: ReturnType<typeof createGameServer>, spaceId: st
   if (seat) io.to(spaceChannel(spaceId)).emit("seat-update", { ...seat, playerId: null });
 }
 
-async function leaveCurrentRoom(socket: GameSocket): Promise<void> {
+async function leaveCurrentRoom(socket: GameSocket, meetings: MeetingManager): Promise<void> {
   const { currentRoomId, playerId } = socket.data;
   if (!currentRoomId || !playerId) return;
   await socket.leave(roomChannel(currentRoomId));
@@ -79,6 +81,15 @@ async function leaveCurrentRoom(socket: GameSocket): Promise<void> {
   await redis.del(`room-access:${playerId}:${currentRoomId}`);
   // A client must not remain connected to a room after its socket membership ends.
   await removeMediaParticipant(`room:${currentRoomId}`, playerId);
+  meetings.dispatch(currentRoomId, { type: "leave", playerId });
+}
+
+/** Players holding one of the room's seats right now (Redis seat keys). */
+async function seatedIn(roomId: string): Promise<string[]> {
+  const seatIds = await getSeatIds(roomId);
+  if (seatIds.length === 0) return [];
+  const occupants = await redis.mGet(seatIds.map((seatId) => `seat:${roomId}:${seatId}`));
+  return occupants.filter((playerId): playerId is string => Boolean(playerId));
 }
 
 export function createGameServer(httpServer: HttpServer) {
@@ -86,6 +97,25 @@ export function createGameServer(httpServer: HttpServer) {
     cors: { origin: config.corsOrigins, credentials: false },
     transports: ["websocket"],
     connectionStateRecovery: { maxDisconnectionDuration: LEAVE_GRACE_MS, skipMiddlewares: false }
+  });
+
+  // Meeting-start trigger (PRD 10): the pure rules live in meeting.ts; this
+  // shell derives room snapshots from the Socket.IO adapter (who is in the
+  // room zone) + Redis seat keys (who is seated) and broadcasts room-scoped.
+  const meetings = createMeetingManager({
+    countdownMs: config.MEETING_COUNTDOWN_MS,
+    getSnapshot: async (roomId): Promise<RoomMeetingSnapshot> => {
+      const socketIds = io.sockets.adapter.rooms.get(roomChannel(roomId)) ?? new Set<string>();
+      const occupants: string[] = [];
+      for (const socketId of socketIds) {
+        const memberId = io.sockets.sockets.get(socketId)?.data.playerId;
+        if (memberId) occupants.push(memberId);
+      }
+      return { occupants, seated: await seatedIn(roomId) };
+    },
+    resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
+    broadcast: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
+    log: childLogger({ module: "meeting" }),
   });
 
   io.use((socket, next) => {
@@ -241,7 +271,7 @@ export function createGameServer(httpServer: HttpServer) {
         socket.emit("room-enter-result", { ok: false, roomId: room.id, reason: "full" });
         return;
       }
-      if (socket.data.currentRoomId && socket.data.currentRoomId !== room.id) await leaveCurrentRoom(socket);
+      if (socket.data.currentRoomId && socket.data.currentRoomId !== room.id) await leaveCurrentRoom(socket, meetings);
       socket.data.currentRoomId = room.id;
       await socket.join(roomChannel(room.id));
       await redis.set(`room-access:${playerId}:${room.id}`, "1", { EX: 8 * 60 * 60 });
@@ -249,10 +279,13 @@ export function createGameServer(httpServer: HttpServer) {
       // eviction prevents a stale client from leaking or receiving world audio.
       await removeMediaParticipant(`world:${spaceId}`, playerId);
       socket.emit("room-enter-result", { ok: true, roomId: room.id });
+      // An unseated entry cancels a pending meeting countdown; a seated player
+      // re-entering (reconnect within grace) must not.
+      if (!alreadySeatedHere) meetings.dispatch(room.id, { type: "enter", playerId });
     }));
 
     socket.on("room-leave", safeHandler("room-leave", async () => {
-      await leaveCurrentRoom(socket);
+      await leaveCurrentRoom(socket, meetings);
     }));
 
     socket.on("seat-sit", safeHandler("seat-sit", async (payload) => {
@@ -270,9 +303,13 @@ export function createGameServer(httpServer: HttpServer) {
       }
       if (result.previous && (result.previous.roomId !== room.id || result.previous.seatId !== parsed.data.seatId)) {
         broadcastFreedSeat(io, spaceId, result.previous);
-        if (result.previous.roomId !== room.id) await removeMediaParticipant(`room:${result.previous.roomId}`, playerId);
+        if (result.previous.roomId !== room.id) {
+          await removeMediaParticipant(`room:${result.previous.roomId}`, playerId);
+          meetings.dispatch(result.previous.roomId, { type: "stand", playerId });
+        }
       }
       io.to(spaceChannel(spaceId)).emit("seat-update", { roomId: room.id, seatId: parsed.data.seatId, playerId });
+      meetings.dispatch(room.id, { type: "sit", playerId });
     }));
 
     socket.on("seat-stand", safeHandler("seat-stand", async () => {
@@ -280,7 +317,10 @@ export function createGameServer(httpServer: HttpServer) {
       if (!playerId || !spaceId) return;
       const previous = await standPlayer(playerId);
       broadcastFreedSeat(io, spaceId, previous);
-      if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);
+      if (previous) {
+        await removeMediaParticipant(`room:${previous.roomId}`, playerId);
+        meetings.dispatch(previous.roomId, { type: "stand", playerId });
+      }
     }));
 
     socket.on("disconnect", (reason) => {
@@ -303,6 +343,11 @@ export function createGameServer(httpServer: HttpServer) {
         if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);
         await removeMediaParticipant(`world:${spaceId}`, playerId);
         io.to(spaceChannel(spaceId)).emit("player-left", { id: playerId });
+        // Meeting semantics: leaving past grace is a stand (participant-left /
+        // meeting-ended); an unseated occupant evaporating can also complete
+        // the all-seated picture for those remaining.
+        if (previous) meetings.dispatch(previous.roomId, { type: "stand", playerId });
+        else if (socket.data.currentRoomId) meetings.dispatch(socket.data.currentRoomId, { type: "leave", playerId });
       })().catch((error) => log.error({ err: error }, "socket cleanup failed")), LEAVE_GRACE_MS));
     });
   });

@@ -31,10 +31,24 @@ const TRACKED_EVENTS = [
   "near-stage",
   "leave-stage",
   "audio-volumes",
+  // Meeting lifecycle (PRD 10): server events mirrored by the app shell,
+  // plus the portal/grid milestones the shell and overlay emit.
+  "meeting-countdown",
+  "meeting-countdown-canceled",
+  "meeting-started",
+  "meeting-ended",
+  "meeting-participant-joined",
+  "meeting-participant-left",
+  "portal-enter",
+  "portal-exit",
+  "portal-phase-a-done",
+  "meeting-grid-visible",
+  "meeting-grid-hidden",
 ] as const;
 
-/** High-frequency events kept out of the bounded event log (state-only). */
-const LOG_EXCLUDED = new Set<string>(["positions", "audio-volumes"]);
+/** High-frequency events kept out of the bounded event log (state-only).
+ *  portal-phase-a-done is excluded for size: its payload is a canvas dataURL. */
+const LOG_EXCLUDED = new Set<string>(["positions", "audio-volumes", "portal-phase-a-done"]);
 const EVENT_LOG_CAP = 1000;
 
 interface LoggedEvent {
@@ -56,6 +70,12 @@ interface HookState {
   currentRoomId: string | null;
   /** Own seat, from sat / stood. */
   seated: { roomId: string; seatId: number | string } | null;
+  /** Raw room meeting phase, from the mirrored meeting-lifecycle events.
+   *  Note: room-scoped and self-agnostic — whether THIS client is in the grid
+   *  is `meetingGridVisible` (and the DOM), not this field. */
+  meeting: { status: "countdown" | "in-meeting"; roomId: string } | null;
+  /** True between meeting-grid-visible and meeting-grid-hidden. */
+  meetingGridVisible: boolean;
 }
 
 export interface TestHook {
@@ -88,6 +108,8 @@ export function installTestHook(): void {
     nearSeat: null,
     currentRoomId: null,
     seated: null,
+    meeting: null,
+    meetingGridVisible: false,
   };
 
   for (const event of TRACKED_EVENTS) {
@@ -121,6 +143,22 @@ export function installTestHook(): void {
           break;
         case "stood":
           state.seated = null;
+          break;
+        case "meeting-countdown":
+          state.meeting = { status: "countdown", roomId: (payload as { roomId: string }).roomId };
+          break;
+        case "meeting-started":
+          state.meeting = { status: "in-meeting", roomId: (payload as { roomId: string }).roomId };
+          break;
+        case "meeting-countdown-canceled":
+        case "meeting-ended":
+          state.meeting = null;
+          break;
+        case "meeting-grid-visible":
+          state.meetingGridVisible = true;
+          break;
+        case "meeting-grid-hidden":
+          state.meetingGridVisible = false;
           break;
       }
     });
