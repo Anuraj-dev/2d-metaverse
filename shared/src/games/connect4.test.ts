@@ -124,11 +124,9 @@ describe("connect4 draw", () => {
     const lastPlayer: BoardPlayer = owner(0, 0) === 1 ? 1 : 2;
 
     const outcome = applyConnect4Move({ board, turn: lastPlayer, result: { status: "in_progress" } }, lastPlayer, 0);
-    expect(outcome.ok).toBe(true);
-    if (outcome.ok) {
-      expect(outcome.state.result).toEqual({ status: "draw" });
-      expect(connect4LegalMoves(outcome.state)).toEqual([]);
-    }
+    if (!outcome.ok) throw new Error(`expected the final drop to be accepted, got ${outcome.error}`);
+    expect(outcome.state.result).toEqual({ status: "draw" });
+    expect(connect4LegalMoves(outcome.state)).toEqual([]);
   });
 });
 
