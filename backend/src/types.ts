@@ -16,4 +16,5 @@ export interface SocketData {
   spaceId?: string;
   currentRoomId?: string;
   lastMoveAt?: number;
+  lastBoardMoveAt?: number;
 }

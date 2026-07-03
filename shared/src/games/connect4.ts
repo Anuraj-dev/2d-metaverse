@@ -68,7 +68,7 @@ const DIRECTIONS: readonly (readonly [number, number])[] = [
  * The winning run of {@link CONNECT4_WIN} cells through (row,col) for `player`,
  * or null. Scans both directions along each axis from the placed disc.
  */
-function winningLine(board: readonly Cell[], player: BoardPlayer, row: number, col: number): readonly number[] | null {
+function winningLine(board: readonly Cell[], player: BoardPlayer, row: number, col: number): number[] | null {
   for (const [dr, dc] of DIRECTIONS) {
     const cells: number[] = [index(row, col)];
     for (const sign of [1, -1]) {

@@ -24,7 +24,7 @@ export type BoardGame = (typeof BOARD_GAMES)[number];
  */
 export type BoardResult =
   | { status: "in_progress" }
-  | { status: "won"; winner: BoardPlayer; line: readonly number[] }
+  | { status: "won"; winner: BoardPlayer; line: number[] }
   | { status: "draw" };
 
 /** Reasons a move is rejected. Shared across both games. */

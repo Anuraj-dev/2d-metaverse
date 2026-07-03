@@ -60,9 +60,9 @@ export function isTicTacToeLegalMove(state: BoardState, player: BoardPlayer, ind
 }
 
 /** The winning line for `player` on `board`, or null. */
-function winningLine(board: readonly Cell[], player: BoardPlayer): readonly number[] | null {
+function winningLine(board: readonly Cell[], player: BoardPlayer): number[] | null {
   for (const line of TICTACTOE_LINES) {
-    if (line.every((i) => cellAt(board, i) === player)) return line;
+    if (line.every((i) => cellAt(board, i) === player)) return [...line];
   }
   return null;
 }

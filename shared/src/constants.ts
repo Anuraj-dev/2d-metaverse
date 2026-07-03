@@ -52,6 +52,7 @@ export const BOARD_MOVE_REJECTIONS = [
   "not-your-turn",
   "illegal-move",
   "no-match",
+  "seat-taken",
 ] as const;
 export type BoardMoveRejection = (typeof BOARD_MOVE_REJECTIONS)[number];
 
