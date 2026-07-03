@@ -264,12 +264,15 @@ describe("board manager", () => {
     expect(afterMove?.state?.turn).toBe(2);
   });
 
-  // --- Concurrency: the one-table-per-player invariant is CROSS-table, so it can
-  // only hold if all of a space's seat mutations are serialized together. These
-  // tests overlap the operations (both in flight before either commits) — the
-  // second would strand/double-seat under the old per-table queues. ---
+  // --- Concurrency: with one queue per space, every board event in a space is
+  // totally ordered, so the one-table-per-player invariant, same-table event order,
+  // and cleanup are all atomic within the space. ---
 
   it("two overlapping sits to different tables — exactly one wins", async () => {
+    // NOTE: not discriminating on its own — a per-table check→commit is already
+    // atomic single-threaded, so this held for the old design too. It guards the
+    // invariant holds when both sits are in flight; the same-table ordering and
+    // cleanup tests below are the ones that fail against the earlier split queues.
     const gate = deferredLoad();
     const { manager, errors } = makeManager(gate.load);
     // Both sits are dispatched before either commits (each blocks in hydration).
@@ -288,14 +291,40 @@ describe("board manager", () => {
     expect(errors).toContainEqual({ playerId: "a", payload: { tableId: C4, reason: "seat-taken" } });
   });
 
+  it("same-table move, move, stand apply in arrival order — the second move still commits", async () => {
+    const { manager, updates } = makeManager();
+    // Active match: a = seat 0 (mark 1, moves first), b = seat 1 (mark 2).
+    manager.dispatch(SPACE, TABLE, { type: "sit", seat: 0, playerId: "a" });
+    manager.dispatch(SPACE, TABLE, { type: "sit", seat: 1, playerId: "b" });
+    manager.dispatch(SPACE, TABLE, { type: "accept", playerId: "a" });
+    manager.dispatch(SPACE, TABLE, { type: "accept", playerId: "b" });
+    await manager.settle();
+
+    // a moves, b's move is dispatched, then a stands — all before settling. Under
+    // the earlier split (moves per-table, stand per-space) the stand could overtake
+    // b's queued move, forfeit first, and reject b's move as "no-match" (board[1]
+    // never set). With one space queue the arrival order holds: both moves commit,
+    // THEN the forfeit.
+    manager.dispatch(SPACE, TABLE, { type: "move", playerId: "a", index: 0 });
+    manager.dispatch(SPACE, TABLE, { type: "move", playerId: "b", index: 1 });
+    manager.stand(SPACE, "a");
+    await manager.settle();
+
+    const last = updates.at(-1)?.payload;
+    expect(last?.phase).toBe("over");
+    expect(last?.reason).toBe("forfeit");
+    expect(last?.state?.board[0]).toBe(1); // a's move committed
+    expect(last?.state?.board[1]).toBe(2); // b's move committed BEFORE the forfeit
+  });
+
   it("cleanup never strands a sit still queued behind hydration", async () => {
     const gate = deferredLoad();
     const { manager, persists } = makeManager(gate.load);
     // The sit is queued but suspended in hydration (Redis load not resolved yet)…
     manager.dispatch(SPACE, TABLE, { type: "sit", seat: 0, playerId: "a" });
     // …when the player disconnects and cleanup fires. Under per-table queues the
-    // scan would miss the uncommitted sit and the seat would leak; the shared
-    // seat queue orders cleanup strictly after the sit commits.
+    // scan would miss the uncommitted sit and the seat would leak; the single
+    // space queue orders cleanup strictly after the sit commits.
     manager.stand(SPACE, "a");
     gate.release(SPACE, TABLE);
     await manager.settle();

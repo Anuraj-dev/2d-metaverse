@@ -74,7 +74,6 @@ interface TableRuntime {
   game: BoardGame;
   rules: BoardRules;
   state: BoardMatchState;
-  queue: Promise<void>;
   /** Shared hydrate-once promise; set on first touch, awaited by all callers. */
   hydration?: Promise<void>;
 }
@@ -85,15 +84,18 @@ const runtimeKey = (spaceId: string, tableId: string): string => `${spaceId} ${t
 export function createBoardManager(deps: BoardManagerDeps): BoardManager {
   const tables = new Map<string, TableRuntime>();
   const graceTimers = new Map<string, NodeJS.Timeout>();
-  // One serialization queue PER SPACE for every seat mutation (sit / accept /
-  // stand / disconnect-cleanup). The one-table-per-player invariant is a CROSS
-  // -table rule, so the per-table queues can't enforce it: two sits to different
-  // tables would each check "seated elsewhere?" against not-yet-committed state
-  // and both pass, and a cleanup scan can't see a sit still queued behind
-  // hydration. Funneling all occupant changes for a space through one queue makes
-  // the cross-table check+commit and the cleanup atomic w.r.t. each other. Only
-  // `move` (never touches occupants) keeps its per-table queue for concurrency.
-  const seatQueues = new Map<string, Promise<void>>();
+  // ONE serialization queue per space for EVERY board operation in that space —
+  // sit, accept, move, stand, disconnect-cleanup, and the hydration currentSnapshot
+  // does. Board table ids are shared campus-map fixtures, but per-table queues are
+  // not enough: the one-table-per-player invariant is a CROSS-table rule, and
+  // splitting seat mutations from moves reorders a table's own events (a stand
+  // could overtake an in-flight move) while out-of-queue hydration could restore a
+  // stale occupant after a sit committed elsewhere (double-seat). Funneling all of
+  // a space's board events through one queue gives total per-table order and makes
+  // hydration + the invariant check + commit atomic within the space. Serializing
+  // a space's few, instantaneous board transitions is free (meeting-manager keys
+  // its runtimes per room the same way).
+  const spaceQueues = new Map<string, Promise<unknown>>();
 
   const runtime = (spaceId: string, tableId: string): TableRuntime | undefined => {
     const mapKey = runtimeKey(spaceId, tableId);
@@ -107,10 +109,21 @@ export function createBoardManager(deps: BoardManagerDeps): BoardManager {
       game,
       rules: rulesFor(game),
       state: IDLE_BOARD_MATCH,
-      queue: Promise.resolve(),
     };
     tables.set(mapKey, table);
     return table;
+  };
+
+  /**
+   * Serialize `op` on the space's single queue and return its result. The stored
+   * tail swallows rejections so one failing op never poisons the queue; each
+   * caller handles (logs) its own errors on the returned promise.
+   */
+  const enqueue = <T>(spaceId: string, op: () => Promise<T>): Promise<T> => {
+    const tail = spaceQueues.get(spaceId) ?? Promise.resolve();
+    const result = tail.then(op);
+    spaceQueues.set(spaceId, result.then(() => undefined, () => undefined));
+    return result;
   };
 
   const occupant = (state: BoardMatchState, seat: 0 | 1): BoardOccupant | null => {
@@ -183,10 +196,9 @@ export function createBoardManager(deps: BoardManagerDeps): BoardManager {
     tablesInSpace(spaceId).filter((t) => seatOf(t.state.occupants, playerId) !== null);
 
   /**
-   * Run a machine transition and emit its effects. SYNCHRONOUS: the caller must
-   * have hydrated the table first, so there is no await between reading and
-   * committing `table.state` — two transitions can never interleave a read with
-   * another's commit, whichever queue they run on.
+   * Run a machine transition and emit its effects. SYNCHRONOUS: the caller (always
+   * inside the space queue) must have hydrated the table first, so there is no
+   * await between reading and committing `table.state`.
    */
   const applyTransition = (table: TableRuntime, event: BoardMatchEvent): void => {
     const { state, effects } = boardMatchTransition(table.state, event, table.rules);
@@ -215,66 +227,38 @@ export function createBoardManager(deps: BoardManagerDeps): BoardManager {
     }
   };
 
-  /** Serialize `op` on the space's seat queue (all occupant changes go here). */
-  const enqueueSeat = (spaceId: string, op: () => Promise<void>): Promise<void> => {
-    const next = (seatQueues.get(spaceId) ?? Promise.resolve())
-      .then(op)
-      .catch((error: unknown) => deps.log.error({ err: error, spaceId }, "board seat op failed"));
-    seatQueues.set(spaceId, next);
-    return next;
-  };
-
-  /** A seat-affecting event (sit / accept / table-scoped stand) on the seat queue. */
-  const seatApply = (spaceId: string, tableId: string, event: BoardMatchEvent): void => {
-    void enqueueSeat(spaceId, async () => {
+  const dispatch = (spaceId: string, tableId: string, event: BoardMatchEvent): void => {
+    // Every table event (sit / accept / move) runs on the space queue, preserving
+    // total per-table order — B's queued move can never be reordered behind a stand.
+    void enqueue(spaceId, async () => {
       const table = runtime(spaceId, tableId);
       if (!table) {
-        deps.log.warn({ spaceId, tableId, event: event.type }, "board seat op for unknown table");
+        deps.log.warn({ spaceId, tableId, event: event.type }, "board dispatch for unknown table");
         return;
       }
       await ensureHydrated(table);
       // One-table-per-player invariant: reject a sit when the player already holds
-      // a seat at a DIFFERENT table in the space. The check + the resulting commit
-      // are atomic across the space because every sit/stand runs on this one queue.
+      // a seat at a DIFFERENT table in the space. Hydration, the check and the
+      // commit are atomic because the whole space runs on this one queue.
       if (event.type === "sit" && seatedTables(spaceId, event.playerId).some((t) => t !== table)) {
         deps.sendError(event.playerId, { tableId: tableId as BoardErrorPayload["tableId"], reason: "seat-taken" });
         return;
       }
       applyTransition(table, event);
-    });
-  };
-
-  const dispatch = (spaceId: string, tableId: string, event: BoardMatchEvent): void => {
-    // A `move` never changes occupants, so it keeps its own per-table queue for
-    // concurrency; everything that touches seats is serialized per space.
-    if (event.type === "move") {
-      const table = runtime(spaceId, tableId);
-      if (!table) {
-        deps.log.warn({ spaceId, tableId }, "board move for unknown table");
-        return;
-      }
-      table.queue = table.queue
-        .then(async () => {
-          await ensureHydrated(table);
-          applyTransition(table, event);
-        })
-        .catch((error: unknown) => deps.log.error({ err: error, spaceId, tableId, event }, "board move failed"));
-      return;
-    }
-    seatApply(spaceId, tableId, event);
+    }).catch((error: unknown) => deps.log.error({ err: error, spaceId, tableId, event }, "board dispatch failed"));
   };
 
   const stand = (spaceId: string, playerId: string): void => {
-    // On the seat queue so it is atomic w.r.t. sits: a sit still queued behind
-    // hydration commits BEFORE this cleanup runs, so it is always seen and cleaned
-    // up — no stranded seat, timer or Redis key. Cleans up ALL of the player's
-    // tables (belt-and-suspenders; the invariant keeps it to one in practice).
-    void enqueueSeat(spaceId, async () => {
+    // On the space queue, so a sit still queued behind hydration commits BEFORE
+    // this cleanup runs and is always seen and cleaned up — no stranded seat, timer
+    // or Redis key. Cleans up ALL the player's tables (belt-and-suspenders; the
+    // invariant keeps it to one in practice).
+    void enqueue(spaceId, async () => {
       await Promise.all(tablesInSpace(spaceId).map((t) => ensureHydrated(t)));
       for (const table of seatedTables(spaceId, playerId)) {
         applyTransition(table, { type: "stand", playerId });
       }
-    });
+    }).catch((error: unknown) => deps.log.error({ err: error, spaceId, playerId }, "board cleanup failed"));
   };
 
   const scheduleForfeit = (spaceId: string, playerId: string): void => {
@@ -297,18 +281,19 @@ export function createBoardManager(deps: BoardManagerDeps): BoardManager {
     }
   };
 
-  const currentSnapshot = async (spaceId: string, tableId: string): Promise<BoardUpdatePayload | null> => {
-    const table = runtime(spaceId, tableId);
-    if (!table) return null;
-    await ensureHydrated(table);
-    return snapshot(table);
-  };
+  const currentSnapshot = (spaceId: string, tableId: string): Promise<BoardUpdatePayload | null> =>
+    // On the space queue too: hydration mutates occupants, so ordering it with
+    // sits/stands prevents a delayed restore from re-seating a player after they
+    // committed a seat elsewhere.
+    enqueue(spaceId, async () => {
+      const table = runtime(spaceId, tableId);
+      if (!table) return null;
+      await ensureHydrated(table);
+      return snapshot(table);
+    });
 
   const settle = async (): Promise<void> => {
-    // Drain seat queues first (a seat op may free a table), then the per-table
-    // move queues. Neither enqueues onto the other, so one pass of each suffices.
-    await Promise.all([...seatQueues.values()]);
-    await Promise.all([...tables.values()].map((table) => table.queue));
+    await Promise.all([...spaceQueues.values()]);
   };
 
   return { dispatch, stand, scheduleForfeit, cancelForfeit, currentSnapshot, settle };
