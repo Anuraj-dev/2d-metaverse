@@ -15,16 +15,17 @@ function stubSearch(search: string) {
 }
 
 describe("maps registry", () => {
-  it("defaults to the space map when no override", () => {
+  it("defaults to the campus map when no override", () => {
     stubSearch("");
     expect(activeMapKey()).toBe(DEFAULT_MAP);
-    expect(activeMap()).toBe(MAPS.space);
-  });
-
-  it("honors ?map=campus override", () => {
-    stubSearch("?map=campus");
     expect(activeMapKey()).toBe("campus");
     expect(activeMap()).toBe(MAPS.campus);
+  });
+
+  it("honors the ?map=space legacy escape hatch", () => {
+    stubSearch("?map=space");
+    expect(activeMapKey()).toBe("space");
+    expect(activeMap()).toBe(MAPS.space);
   });
 
   it("ignores an unknown map override", () => {

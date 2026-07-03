@@ -35,9 +35,10 @@ export const MAPS: Record<string, MapDef> = {
   },
 };
 
-export const DEFAULT_MAP = "space";
+export const DEFAULT_MAP = "campus";
 
-/** Active map key, overridable via `?map=campus` for in-progress worlds. */
+/** Active map key. Campus is the live world; `?map=space` is the legacy escape
+ * hatch to the original office map (`?map=<key>` selects any registered map). */
 export function activeMapKey(): string {
   if (typeof window !== "undefined") {
     const q = new URLSearchParams(window.location.search).get("map");

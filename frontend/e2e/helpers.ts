@@ -47,7 +47,7 @@ export const MAPS: Record<
   { query: string; rooms: Record<string, RoomRoute> }
 > = {
   space: {
-    query: "",
+    query: "?map=space",
     rooms: {
       "1": {
         doorPath: [
