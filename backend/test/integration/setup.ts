@@ -30,6 +30,7 @@ process.env.STAGE_KEY ??= "stage-presenter-123";
 // Shrink socket timings so timeout/grace paths are testable in milliseconds.
 process.env.JOIN_TIMEOUT_MS ??= "500";
 process.env.LEAVE_GRACE_MS ??= "400";
+process.env.MEETING_COUNTDOWN_MS ??= "300";
 
 const failure = (service: string, url: string, hint: string) =>
   `Integration tests require ${service} at ${url} but it is unreachable. ` +
