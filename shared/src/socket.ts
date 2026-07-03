@@ -9,7 +9,18 @@
  * (`auth: { token }`), never in `join`.
  */
 import { z } from "zod";
-import { CHAT_SCOPES, DIRS, LIMITS, MEETING_CANCEL_REASONS, ROOM_ENTER_REASONS } from "./constants.js";
+import {
+  BOARD_END_REASONS,
+  BOARD_MATCH_PHASES,
+  BOARD_MOVE_REJECTIONS,
+  BOARD_TABLE_IDS,
+  CHAT_SCOPES,
+  DIRS,
+  LIMITS,
+  MEETING_CANCEL_REASONS,
+  ROOM_ENTER_REASONS,
+} from "./constants.js";
+import { BOARD_GAMES } from "./games/board.js";
 
 /* ------------------------------- primitives ------------------------------- */
 
@@ -69,6 +80,31 @@ export const seatSitSchema = z.object({
   seatId: z.number().int().nonnegative(),
 });
 export type SeatSitPayload = z.infer<typeof seatSitSchema>;
+
+/* ----------------------- client → server: board games ---------------------- */
+/* Strict contracts (new; no legacy payloads). The board rules themselves live in
+ * `@metaverse/shared` games modules — these schemas only guard the wire. */
+
+const boardTableIdSchema = z.enum(BOARD_TABLE_IDS);
+const boardSeatIndexSchema = z.number().int().min(0).max(LIMITS.boardSeatMax);
+
+/** Sit down at seat 0 or 1 of a board table. */
+export const boardSitSchema = z.strictObject({
+  tableId: boardTableIdSchema,
+  seat: boardSeatIndexSchema,
+});
+export type BoardSitPayload = z.infer<typeof boardSitSchema>;
+
+/** Accept the pending match offer at a table (both seats must accept to start). */
+export const boardAcceptSchema = z.strictObject({ tableId: boardTableIdSchema });
+export type BoardAcceptPayload = z.infer<typeof boardAcceptSchema>;
+
+/** Play a move: a cell index (tic-tac-toe) or column (Connect-4). */
+export const boardMoveSchema = z.strictObject({
+  tableId: boardTableIdSchema,
+  index: z.number().int().min(0).max(LIMITS.boardMoveIndexMax),
+});
+export type BoardMovePayload = z.infer<typeof boardMoveSchema>;
 
 /* --------------------------- server → client ------------------------------ */
 
@@ -196,6 +232,61 @@ export const meetingParticipantLeftSchema = z.strictObject({
 });
 export type MeetingParticipantLeftPayload = z.infer<typeof meetingParticipantLeftSchema>;
 
+/* ---------------------- server → client: board games ----------------------- */
+/* The authoritative match snapshot the server broadcasts on every transition
+ * (seat change, offer, accept, move, forfeit, end). Mirrors the pure `BoardState`
+ * value type in the games modules so a validated state travels unchanged. */
+
+/** A board cell: 0 empty, 1 seat-0 player, 2 seat-1 player. */
+export const boardCellSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+/** A player mark (seat 0 → 1, seat 1 → 2). */
+export const boardPlayerSchema = z.union([z.literal(1), z.literal(2)]);
+
+export const boardResultSchema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("in_progress") }),
+  z.strictObject({ status: z.literal("won"), winner: boardPlayerSchema, line: z.array(z.number().int()) }),
+  z.strictObject({ status: z.literal("draw") }),
+]);
+export type BoardResultWire = z.infer<typeof boardResultSchema>;
+
+/** The serialized game state (board, turn, result) that drives rendering. */
+export const boardGameStateSchema = z.strictObject({
+  board: z.array(boardCellSchema),
+  turn: boardPlayerSchema,
+  result: boardResultSchema,
+});
+export type BoardGameStateWire = z.infer<typeof boardGameStateSchema>;
+
+/** A seat occupant. `accepted` is meaningful only during the offer phase. */
+export const boardOccupantSchema = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  accepted: z.boolean(),
+});
+export type BoardOccupant = z.infer<typeof boardOccupantSchema>;
+
+/**
+ * Full authoritative snapshot of a table, broadcast space-wide on every change
+ * so seated players and passing spectators render the same board. `state` is
+ * null until a match starts; `reason` is set only once the match is over.
+ */
+export const boardUpdateSchema = z.strictObject({
+  tableId: boardTableIdSchema,
+  game: z.enum(BOARD_GAMES),
+  phase: z.enum(BOARD_MATCH_PHASES),
+  seats: z.tuple([boardOccupantSchema.nullable(), boardOccupantSchema.nullable()]),
+  state: boardGameStateSchema.nullable(),
+  reason: z.enum(BOARD_END_REASONS).nullable(),
+});
+export type BoardUpdatePayload = z.infer<typeof boardUpdateSchema>;
+
+/** A rejected board action, sent only to the offending client. */
+export const boardErrorSchema = z.strictObject({
+  tableId: boardTableIdSchema,
+  reason: z.enum(BOARD_MOVE_REJECTIONS),
+});
+export type BoardErrorPayload = z.infer<typeof boardErrorSchema>;
+
 /* ------------------------------ event maps -------------------------------- */
 
 /** Socket.IO listener map for events the server receives from a client. */
@@ -208,6 +299,10 @@ export interface ClientToServerEvents {
   "room-leave": () => void;
   "seat-sit": (payload: SeatSitPayload) => void;
   "seat-stand": () => void;
+  "board-sit": (payload: BoardSitPayload) => void;
+  "board-stand": () => void;
+  "board-accept": (payload: BoardAcceptPayload) => void;
+  "board-move": (payload: BoardMovePayload) => void;
 }
 
 /** Socket.IO listener map for events the server sends to a client. */
@@ -227,4 +322,6 @@ export interface ServerToClientEvents {
   "meeting-ended": (payload: MeetingEndedPayload) => void;
   "meeting-participant-joined": (payload: MeetingParticipantJoinedPayload) => void;
   "meeting-participant-left": (payload: MeetingParticipantLeftPayload) => void;
+  "board-update": (payload: BoardUpdatePayload) => void;
+  "board-error": (payload: BoardErrorPayload) => void;
 }

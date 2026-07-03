@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  boardAcceptSchema,
+  boardErrorSchema,
+  boardMoveSchema,
+  boardSitSchema,
+  boardUpdateSchema,
   chatSchema,
   joinSchema,
   meetingCountdownCanceledSchema,
@@ -16,7 +21,7 @@ import {
   socketAuthSchema,
   whisperSchema,
 } from "./socket.js";
-import { LIMITS, MEETING_CANCEL_REASONS } from "./constants.js";
+import { BOARD_MOVE_REJECTIONS, LIMITS, MEETING_CANCEL_REASONS } from "./constants.js";
 
 describe("socket handshake auth", () => {
   it("accepts a non-empty token", () => {
@@ -202,5 +207,100 @@ describe("meeting lifecycle shapes (server → client)", () => {
       meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: sneaky, participants: [alice] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("board-game client → server shapes", () => {
+  it("accepts a valid board-sit and rejects an unknown table / bad seat", () => {
+    expect(boardSitSchema.safeParse({ tableId: "ttt-1", seat: 0 }).success).toBe(true);
+    expect(boardSitSchema.safeParse({ tableId: "c4-1", seat: 1 }).success).toBe(true);
+    expect(boardSitSchema.safeParse({ tableId: "nope", seat: 0 }).success).toBe(false);
+    expect(boardSitSchema.safeParse({ tableId: "ttt-1", seat: 2 }).success).toBe(false);
+    expect(boardSitSchema.safeParse({ tableId: "ttt-1", seat: -1 }).success).toBe(false);
+    expect(boardSitSchema.safeParse({ tableId: "ttt-1", seat: 0, extra: 1 }).success).toBe(false);
+  });
+
+  it("accepts a valid board-move and rejects out-of-range / non-integer indices", () => {
+    expect(boardMoveSchema.safeParse({ tableId: "ttt-1", index: 8 }).success).toBe(true);
+    expect(boardMoveSchema.safeParse({ tableId: "ttt-1", index: -1 }).success).toBe(false);
+    expect(boardMoveSchema.safeParse({ tableId: "ttt-1", index: LIMITS.boardMoveIndexMax + 1 }).success).toBe(false);
+    expect(boardMoveSchema.safeParse({ tableId: "ttt-1", index: 1.5 }).success).toBe(false);
+  });
+
+  it("accepts a valid board-accept and rejects unknown keys", () => {
+    expect(boardAcceptSchema.safeParse({ tableId: "c4-1" }).success).toBe(true);
+    expect(boardAcceptSchema.safeParse({ tableId: "c4-1", extra: true }).success).toBe(false);
+  });
+});
+
+describe("board-game server → client shapes", () => {
+  const occupant = { id: "p1", name: "alice", accepted: true };
+  const liveState = { board: [0, 1, 2, 0, 0, 0, 0, 0, 0], turn: 2, result: { status: "in_progress" } };
+
+  it("validates a full active-phase snapshot", () => {
+    expect(
+      boardUpdateSchema.safeParse({
+        tableId: "ttt-1",
+        game: "tictactoe",
+        phase: "active",
+        seats: [occupant, { id: "p2", name: "bob", accepted: true }],
+        state: liveState,
+        reason: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("validates a waiting snapshot with an empty seat and no state", () => {
+    expect(
+      boardUpdateSchema.safeParse({
+        tableId: "c4-1",
+        game: "connect4",
+        phase: "waiting",
+        seats: [occupant, null],
+        state: null,
+        reason: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a bad phase, bad cell value, and unknown keys", () => {
+    expect(
+      boardUpdateSchema.safeParse({
+        tableId: "ttt-1",
+        game: "tictactoe",
+        phase: "paused",
+        seats: [null, null],
+        state: null,
+        reason: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      boardUpdateSchema.safeParse({
+        tableId: "ttt-1",
+        game: "tictactoe",
+        phase: "active",
+        seats: [occupant, occupant],
+        state: { board: [3], turn: 1, result: { status: "in_progress" } },
+        reason: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      boardUpdateSchema.safeParse({
+        tableId: "ttt-1",
+        game: "tictactoe",
+        phase: "waiting",
+        seats: [null, null],
+        state: null,
+        reason: null,
+        extra: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates every rejection reason and rejects unknown ones", () => {
+    for (const reason of BOARD_MOVE_REJECTIONS) {
+      expect(boardErrorSchema.safeParse({ tableId: "ttt-1", reason }).success).toBe(true);
+    }
+    expect(boardErrorSchema.safeParse({ tableId: "ttt-1", reason: "meh" }).success).toBe(false);
   });
 });
