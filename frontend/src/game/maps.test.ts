@@ -166,3 +166,44 @@ describe("tileset integrity (JSON ↔ image on disk)", () => {
     }
   });
 });
+
+describe("campus arcade cabinets (PRD 11)", () => {
+  interface TiledObject {
+    name: string;
+    properties?: { name: string; value: unknown }[];
+  }
+  interface ObjectLayer {
+    name: string;
+    type: string;
+    objects?: TiledObject[];
+  }
+  function objects(layerName: string): TiledObject[] {
+    const json = loadMap("campus") as unknown as { layers: ObjectLayer[] };
+    return json.layers.find((l) => l.name === layerName)?.objects ?? [];
+  }
+  function prop(o: TiledObject, name: string): unknown {
+    return o.properties?.find((p) => p.name === name)?.value;
+  }
+
+  const ARCADE_GAMES = new Set(["snake", "flappy", "2048"]);
+
+  it("places exactly three arcade interactables, each with a valid game id + label", () => {
+    const arcades = objects("interactables").filter((o) => prop(o, "interactType") === "arcade");
+    expect(arcades).toHaveLength(3);
+    const games = arcades.map((o) => prop(o, "game"));
+    expect(new Set(games)).toEqual(ARCADE_GAMES);
+    for (const o of arcades) {
+      expect(typeof prop(o, "label")).toBe("string");
+      expect(String(prop(o, "label")).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("backs each cabinet interactable with a solid cabinet sprite", () => {
+    const furniture = objects("furniture");
+    for (const game of ARCADE_GAMES) {
+      const cabinet = furniture.find((o) => o.name === `f_arcade_${game}`);
+      expect(cabinet, `missing cabinet sprite f_arcade_${game}`).toBeDefined();
+      expect(prop(cabinet as TiledObject, "solid")).toBe(true);
+    }
+  });
+});

@@ -150,6 +150,10 @@ into the modules).
 | `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
 | `media/soundMixer.ts` | channel gain math (master over music/sfx/ambient), master mute, ambient duck near voice, event→sound mapping, footstep cadence |
 | `game/dayNight.ts` | hour-of-day → day/night tint colour + alpha (keyframed) |
+| `game/arcade/prng.ts` | seeded mulberry32 PRNG (deterministic, serializable seed) |
+| `game/arcade/snake.ts` | Snake tick/turn/eat/collision rules |
+| `game/arcade/flappy.ts` | Flappy gravity/flap/pipe/collision rules |
+| `game/arcade/game2048.ts` | 2048 slide+merge semantics (incl. no-move detection) |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
 locked-room position rollback (`keepLockedRoomsClosed`), portal payload validation

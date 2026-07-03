@@ -372,6 +372,39 @@ interactables_objs = [
              )},
         ],
     },
+    # ── Arcade cabinets (PRD 11) — each zone sits on its cabinet's tile so a
+    # player standing on an adjacent walkable tile is within the 2x2 findNear
+    # rect and can press E to open the game overlay. `game` selects the module.
+    {
+        "id": 40010, "name": "arcade_snake",
+        "x": 70 * TS, "y": 50 * TS, "width": 2 * TS, "height": 2 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "arcade"},
+            {"name": "label",        "type": "string", "value": "Snake"},
+            {"name": "game",         "type": "string", "value": "snake"},
+        ],
+    },
+    {
+        "id": 40011, "name": "arcade_flappy",
+        "x": 73 * TS, "y": 50 * TS, "width": 2 * TS, "height": 2 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "arcade"},
+            {"name": "label",        "type": "string", "value": "Flappy"},
+            {"name": "game",         "type": "string", "value": "flappy"},
+        ],
+    },
+    {
+        "id": 40012, "name": "arcade_2048",
+        "x": 76 * TS, "y": 50 * TS, "width": 2 * TS, "height": 2 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "arcade"},
+            {"name": "label",        "type": "string", "value": "2048"},
+            {"name": "game",         "type": "string", "value": "2048"},
+        ],
+    },
 ]
 
 # ── STAGE (Auditorium) ───────────────────────────────────────────────────
@@ -500,6 +533,12 @@ furn("f_plant_big",  32,  3, True)
 furn("f_plant_big",  77,  3, True)
 furn("f_bookshelf_tall", 32, 10, True)
 furn("f_bookshelf_tall", 77, 10, True)
+
+# Arcade corner (plaza, SE of spawn) — solid cabinets; each pairs with an
+# arcade interactable zone at the same tile (see interactables_objs).
+furn("f_arcade_snake",  70, 50, True)
+furn("f_arcade_flappy", 73, 50, True)
+furn("f_arcade_2048",   76, 50, True)
 
 # ── Tilemap JSON ──────────────────────────────────────────────────────────
 tilemap = {
