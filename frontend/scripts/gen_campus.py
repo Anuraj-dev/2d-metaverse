@@ -541,6 +541,36 @@ furn("f_arcade_snake",  70, 50, True)
 furn("f_arcade_flappy", 73, 50, True)
 furn("f_arcade_2048",   76, 50, True)
 
+# ── Board-game tables (PRD 11 phase 2) ────────────────────────────────────
+# Two two-seat tables in the SW plaza. tableId + game must match the shared
+# BOARD_TABLES registry; each seat opens a server-authoritative match. The board
+# itself renders in a React HUD panel — the map only carries the solid table
+# sprite and the two opposite seats.
+board_seats = []
+
+
+def board_table(table_id, game, label, cx, ty):
+    furn("f_table_small", cx, ty, True)  # solid table at the centre tile
+    for seat, (tx, facing) in enumerate([(cx - 2, "right"), (cx + 2, "left")]):
+        board_seats.append({
+            "id": 41000 + len(board_seats),
+            "name": f"{table_id}_seat_{seat}",
+            "x": tx * TS, "y": ty * TS,
+            "width": TS, "height": TS,
+            "rotation": 0, "type": "", "visible": True,
+            "properties": [
+                {"name": "tableId", "type": "string", "value": table_id},
+                {"name": "seat",    "type": "int",    "value": seat},
+                {"name": "game",    "type": "string", "value": game},
+                {"name": "label",   "type": "string", "value": label},
+                {"name": "facing",  "type": "string", "value": facing},
+            ],
+        })
+
+
+board_table("ttt-1", "tictactoe", "Tic-Tac-Toe", 37, 51)
+board_table("c4-1",  "connect4",  "Connect 4",   43, 51)
+
 # ── Tilemap JSON ──────────────────────────────────────────────────────────
 tilemap = {
     "compressionlevel": -1,
@@ -585,6 +615,8 @@ tilemap = {
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": door_zones},
         {"id": 4,  "name": "seats",       "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": seats_objs},
+        {"id": 13, "name": "board_seats", "type": "objectgroup", "visible": True,
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": board_seats},
         {"id": 7,  "name": "roomBounds",  "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": room_bounds},
         {"id": 6,  "name": "furniture",   "type": "objectgroup", "visible": True,

@@ -11,6 +11,12 @@ import {
   CLIENT_EVENTS,
   SERVER_EVENTS,
   SERVER_EVENT_NAMES,
+  gameForTable,
+  rulesFor,
+  type BoardGame,
+  type BoardState,
+  type BoardTableId,
+  type BoardUpdatePayload,
   type ClientToServerEvents,
   type Dir,
   type InitPayload,
@@ -31,6 +37,10 @@ export interface Net {
   leaveRoom(): void;
   sit(roomId: string, seatId: number): void;
   stand(): void;
+  boardSit(tableId: string, seat: number): void;
+  boardStand(): void;
+  boardAccept(tableId: string): void;
+  boardMove(tableId: string, index: number): void;
   selfId: string;
   disconnect(): void;
 }
@@ -110,6 +120,18 @@ export class RealNet implements Net {
   }
   stand() {
     this.socket.emit(CLIENT_EVENTS.seatStand);
+  }
+  boardSit(tableId: string, seat: number) {
+    this.socket.emit(CLIENT_EVENTS.boardSit, { tableId: tableId as BoardTableId, seat });
+  }
+  boardStand() {
+    this.socket.emit(CLIENT_EVENTS.boardStand);
+  }
+  boardAccept(tableId: string) {
+    this.socket.emit(CLIENT_EVENTS.boardAccept, { tableId: tableId as BoardTableId });
+  }
+  boardMove(tableId: string, index: number) {
+    this.socket.emit(CLIENT_EVENTS.boardMove, { tableId: tableId as BoardTableId, index });
   }
   disconnect() {
     this.socket.disconnect();
@@ -224,6 +246,75 @@ export class MockNet implements Net {
   stand() {
     /* seat freed handled by scene */
   }
+
+  /* --- Board tables: a local practice sandbox (you vs a random bot). --- */
+  private boardTableId: string | null = null;
+  private boardGame: BoardGame = "tictactoe";
+  private boardSeat: 0 | 1 = 0;
+  private boardState: BoardState | null = null;
+
+  private emitBoard(phase: BoardUpdatePayload["phase"], reason: BoardUpdatePayload["reason"] = null) {
+    if (!this.boardTableId) return;
+    const me = { id: this.selfId, name: this.name, accepted: phase !== "offer" };
+    const bot = { id: "practice-bot", name: "Practice Bot", accepted: phase !== "offer" };
+    const seats: BoardUpdatePayload["seats"] = this.boardSeat === 0 ? [me, bot] : [bot, me];
+    this.bus.emit(SERVER_EVENTS.boardUpdate, {
+      tableId: this.boardTableId as BoardTableId,
+      game: this.boardGame,
+      phase,
+      seats,
+      state: phase === "active" || phase === "over" ? this.boardState : null,
+      reason,
+    });
+  }
+  private botMark(): 1 | 2 {
+    return this.boardSeat === 0 ? 2 : 1;
+  }
+  private botTurn() {
+    if (!this.boardState || this.boardState.result.status !== "in_progress") return;
+    if (this.boardState.turn !== this.botMark()) return;
+    const rules = rulesFor(this.boardGame);
+    const legal: number[] = [];
+    for (let i = 0; i < 42; i += 1) if (rules.applyMove(this.boardState, this.botMark(), i).ok) legal.push(i);
+    const pick = legal[Math.floor(Math.random() * legal.length)];
+    if (pick === undefined) return;
+    setTimeout(() => {
+      if (!this.boardState) return;
+      const out = rules.applyMove(this.boardState, this.botMark(), pick);
+      if (!out.ok) return;
+      this.boardState = out.state;
+      const done = out.state.result.status !== "in_progress";
+      this.emitBoard(done ? "over" : "active", done ? (out.state.result.status === "draw" ? "draw" : "win") : null);
+    }, 500);
+  }
+  boardSit(tableId: string, seat: number) {
+    this.boardTableId = tableId;
+    this.boardGame = gameForTable(tableId) ?? "tictactoe";
+    this.boardSeat = seat === 1 ? 1 : 0;
+    this.boardState = null;
+    this.emitBoard("offer");
+  }
+  boardAccept(tableId: string) {
+    if (tableId !== this.boardTableId) return;
+    this.boardState = rulesFor(this.boardGame).create();
+    this.emitBoard("active");
+    this.botTurn();
+  }
+  boardMove(tableId: string, index: number) {
+    if (tableId !== this.boardTableId || !this.boardState) return;
+    const myMark = this.boardSeat === 0 ? 1 : 2;
+    const out = rulesFor(this.boardGame).applyMove(this.boardState, myMark, index);
+    if (!out.ok) return;
+    this.boardState = out.state;
+    const done = out.state.result.status !== "in_progress";
+    this.emitBoard(done ? "over" : "active", done ? (out.state.result.status === "draw" ? "draw" : "win") : null);
+    if (!done) this.botTurn();
+  }
+  boardStand() {
+    this.boardTableId = null;
+    this.boardState = null;
+  }
+
   disconnect() {
     if (this.timer) clearInterval(this.timer);
   }

@@ -207,3 +207,66 @@ describe("campus arcade cabinets (PRD 11)", () => {
     }
   });
 });
+
+describe("campus board-game tables (PRD 11 phase 2)", () => {
+  interface TiledObject {
+    name: string;
+    x?: number;
+    y?: number;
+    properties?: { name: string; value: unknown }[];
+  }
+  interface ObjectLayer {
+    name: string;
+    objects?: TiledObject[];
+  }
+  function objects(layerName: string): TiledObject[] {
+    const json = loadMap("campus") as unknown as { layers: ObjectLayer[] };
+    return json.layers.find((l) => l.name === layerName)?.objects ?? [];
+  }
+  function prop(o: TiledObject, name: string): unknown {
+    return o.properties?.find((p) => p.name === name)?.value;
+  }
+
+  // Must match @metaverse/shared BOARD_TABLES exactly.
+  const EXPECTED: Record<string, string> = { "ttt-1": "tictactoe", "c4-1": "connect4" };
+
+  it("authors exactly two opposite seats per table with matching game + label", () => {
+    const seats = objects("board_seats");
+    expect(seats).toHaveLength(Object.keys(EXPECTED).length * 2);
+
+    for (const [tableId, game] of Object.entries(EXPECTED)) {
+      const tableSeats = seats.filter((o) => prop(o, "tableId") === tableId);
+      expect(tableSeats, `table ${tableId}`).toHaveLength(2);
+      // Distinct seat indices 0 and 1.
+      expect(new Set(tableSeats.map((o) => prop(o, "seat")))).toEqual(new Set([0, 1]));
+      for (const o of tableSeats) {
+        expect(prop(o, "game")).toBe(game);
+        expect(String(prop(o, "label")).length).toBeGreaterThan(0);
+        expect(["left", "right", "up", "down"]).toContain(prop(o, "facing"));
+      }
+      // Opposite seats: aligned on one axis, separated on the other.
+      const [a, b] = tableSeats;
+      const sameRow = (a?.y ?? 0) === (b?.y ?? 0);
+      const sameCol = (a?.x ?? 0) === (b?.x ?? 0);
+      expect(sameRow !== sameCol).toBe(true);
+    }
+  });
+
+  it("places a solid table sprite between each table's seats", () => {
+    const furniture = objects("furniture");
+    const seats = objects("board_seats");
+    for (const tableId of Object.keys(EXPECTED)) {
+      const tableSeats = seats.filter((o) => prop(o, "tableId") === tableId);
+      const midX = tableSeats.reduce((a, o) => a + (o.x ?? 0), 0) / tableSeats.length;
+      const midY = tableSeats.reduce((a, o) => a + (o.y ?? 0), 0) / tableSeats.length;
+      const table = furniture.find(
+        (o) =>
+          o.name.startsWith("f_table") &&
+          prop(o, "solid") === true &&
+          Math.abs((o.x ?? 0) - (midX + 8)) <= 16 &&
+          Math.abs((o.y ?? 0) - (midY + 8)) <= 16,
+      );
+      expect(table, `missing solid table sprite for ${tableId}`).toBeDefined();
+    }
+  });
+});

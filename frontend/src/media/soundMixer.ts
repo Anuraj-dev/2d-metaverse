@@ -158,6 +158,11 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "open-arcade": { clip: "arcade_start", channel: "sfx" },
   "arcade-point": { clip: "arcade_point", channel: "sfx" },
   "arcade-over": { clip: "arcade_over", channel: "sfx" },
+  // Board-game tables (PRD 11 phase 2): reuse the existing sit/arcade cues — the
+  // game stays audio-agnostic and emits these domain events; the mixer decides.
+  "board-sat": { clip: "sit", channel: "sfx" },
+  "board-move": { clip: "arcade_point", channel: "sfx" },
+  "board-win": { clip: "arcade_over", channel: "sfx" },
 };
 
 export function cueForEvent(event: string): SoundCue | null {
