@@ -144,6 +144,8 @@ into the modules).
 | `game/proximity.ts` | distance → spatial-audio volume (falloff curve) |
 | `game/audioZones.ts` | room rects → audio zones; (my zone, their zone, distance) → volume |
 | `game/interactables.ts` | Tiled objects → interactable defs + hit test |
+| `game/meetingUi.ts` | server meeting-lifecycle events → client meeting state + portal-in/out actions |
+| `game/portalHandoff.ts` | Phase A/B portal handoff (reveal exactly once, either completion order) |
 | `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
@@ -202,6 +204,62 @@ changes and adds zero latency). **Phase-2 privacy upgrade** (named, not built): 
 **server-enforced isolation** — the backend swaps a player between LiveKit rooms at
 doorway crossings so the outside client never receives the track at all. Adopt it if the
 client-trust caveat becomes unacceptable.
+
+### Meetings (portal transition + Meet-style grid)
+
+Sitting down together turns a room into a meeting — no button hunt.
+
+**Lifecycle rules** (authoritative: the pure trigger state machine
+`backend/src/meeting.ts`, referenced from the root `CLAUDE.md` — the frontend
+never re-derives them):
+
+- The meeting starts when **every player inside the room zone is seated AND
+  at least 2 are seated**. A solo sitter keeps today's behavior — no portal.
+- Reaching that state starts a **cancelable ~3s countdown** ("Meeting
+  starting…", stand up to abort). It cancels if anyone stands or enters the
+  room unseated, and re-arms when the condition holds again.
+- A **latecomer** who sits mid-meeting gets their own solo portal and joins in
+  place. A participant who **stands (or clicks Leave, or drops past the
+  reconnect grace)** portals out alone while the meeting continues; the **last
+  leaver ends the meeting**.
+- The server broadcasts the lifecycle room-scoped (`meeting-countdown`,
+  `meeting-countdown-canceled`, `meeting-started`, `meeting-ended`,
+  `meeting-participant-joined/-left` — shapes in `@metaverse/shared`);
+  `game/meetingUi.ts` reduces them to what *this* client shows and does.
+
+**Two-phase portal transition**, orchestrated by App's media-transition
+sequencer:
+
+- **Phase A (Phaser, `WorldScene.portalIn`)**: camera punch-in
+  (`ZOOM × 2.4` over ~350ms) + slow fade toward the table, then ONE canvas
+  frame is captured at the portal peak and the scene **sleeps**.
+- **Phase B (React, `ui/MeetingOverlay.tsx`)**: a motion warp-burst expands
+  from the seat and covers the viewport, then cross-fades into the grid.
+- The pure handoff machine (`game/portalHandoff.ts`) reveals the grid exactly
+  once, only when BOTH phases signalled — no gap and no double-flash whichever
+  side finishes first. The self seat morphs into the self tile via a motion
+  `layoutId` for spatial continuity.
+
+**Meet surface** (`ui/MeetingGrid.tsx`): LiveKit's React components
+(`GridLayout`/`ParticipantTile`/`VideoTrack`) — not raw `<video>` elements —
+give responsive tiles, active-speaker emphasis and screen-share tiles. The
+custom tile adds username nameplates and, when a camera is off (or media is
+unavailable entirely), the participant's **in-game pixel sprite**
+(`ui/PixelAvatar.tsx`, same deterministic `charForPlayer` mapping the world
+uses). Media routing is unchanged: the grid **upgrades the existing seat-gated
+per-room LiveKit connection** (`media/livekit.ts` `roomVideo`) — no new token
+semantics; with no media the grid falls back to roster-only tiles. The heavy
+meeting chunk (motion + LiveKit components) is lazy-loaded so the entry bundle
+stays inside its budget.
+
+**Resource policy**: the captured frame — blurred + darkened — IS the world
+for the meeting's duration; the Phaser scene is asleep (no render loop), so an
+hour-long meeting doesn't cook a laptop. With `update()` stopped, socket
+movement emission pauses too (the Socket.IO transport heartbeat keeps the
+connection alive); world audio is already disconnected while seated. Portal-out
+wakes the scene, resets the camera, and restores everything. A socket blip
+during a meeting reconnects within the seat-grace window and the client stays
+in the meeting — a blip never ejects you to the world.
 
 ### Tests
 
@@ -277,7 +335,10 @@ trace with `npx playwright show-trace <path to trace.zip>`.
 ### Backend contract (Socket.IO)
 
 `join → init`, `move → player-moved`, `chat`, `room-enter → room-enter-result`,
-`seat-sit / seat-stand → seat-update`. REST: `/api/v1/{signup,signin,space/:id,livekit/token}`.
+`seat-sit / seat-stand → seat-update` (+ room-scoped meeting lifecycle:
+`meeting-countdown`, `meeting-countdown-canceled`, `meeting-started`,
+`meeting-ended`, `meeting-participant-joined/-left`).
+REST: `/api/v1/{signup,signin,space/:id,livekit/token}`.
 LiveKit rooms: `world:<spaceId>` (mic-only, proximity) and `room:<roomId>` (cam+mic,
 seat-gated). Event names and payload shapes are defined in `@metaverse/shared`.
 
