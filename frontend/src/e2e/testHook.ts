@@ -31,6 +31,11 @@ const TRACKED_EVENTS = [
   // Arcade cabinets (PRD 11): overlay open/close milestones.
   "open-arcade",
   "close-arcade",
+  // Board tables (PRD 11 phase 2): seat proximity + sit/stand milestones.
+  "near-board-seat",
+  "leave-board-seat",
+  "board-sat",
+  "board-stood",
   "near-stage",
   "leave-stage",
   "audio-volumes",
@@ -73,6 +78,10 @@ interface HookState {
   currentRoomId: string | null;
   /** Own seat, from sat / stood. */
   seated: { roomId: string; seatId: number | string } | null;
+  /** Board-table seat in range, from near-board-seat / leave-board-seat. */
+  nearBoardSeat: { tableId: string; seat: number } | null;
+  /** Own board-table seat, from board-sat / board-stood. */
+  boardSeated: { tableId: string; seat: number } | null;
   /** Raw room meeting phase, from the mirrored meeting-lifecycle events.
    *  Note: room-scoped and self-agnostic — whether THIS client is in the grid
    *  is `meetingGridVisible` (and the DOM), not this field. */
@@ -111,6 +120,8 @@ export function installTestHook(): void {
     nearSeat: null,
     currentRoomId: null,
     seated: null,
+    nearBoardSeat: null,
+    boardSeated: null,
     meeting: null,
     meetingGridVisible: false,
   };
@@ -146,6 +157,18 @@ export function installTestHook(): void {
           break;
         case "stood":
           state.seated = null;
+          break;
+        case "near-board-seat":
+          state.nearBoardSeat = payload as HookState["nearBoardSeat"];
+          break;
+        case "leave-board-seat":
+          state.nearBoardSeat = null;
+          break;
+        case "board-sat":
+          state.boardSeated = payload as HookState["boardSeated"];
+          break;
+        case "board-stood":
+          state.boardSeated = null;
           break;
         case "meeting-countdown":
           state.meeting = { status: "countdown", roomId: (payload as { roomId: string }).roomId };

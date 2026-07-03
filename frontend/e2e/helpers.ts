@@ -480,6 +480,62 @@ export async function sitAtSeat(
   }
 }
 
+/**
+ * Board-game tables (PRD 11 phase 2). Player-position targets so the door-sample
+ * point (x, y+8) rests inside the 16px seat rect, plus a straight, furniture-free
+ * approach path from the campus spawn (960,704) across the open SW plaza. Seats
+ * sit either side of a solid table at tile 37/43, so seat 0 is approached from
+ * the west column and seat 1 from the east column — neither crosses the table.
+ */
+export const BOARD_SEATS: Record<
+  string,
+  { path0: [number, number][]; path1: [number, number][] }
+> = {
+  "ttt-1": {
+    path0: [
+      [568, 704],
+      [568, 816],
+    ],
+    path1: [
+      [632, 704],
+      [632, 816],
+    ],
+  },
+};
+
+/** Walk to a board-table seat and sit with the E key (campus map only). */
+export async function sitAtBoard(page: Page, tableId: string, seat: 0 | 1): Promise<void> {
+  const cfg = BOARD_SEATS[tableId];
+  if (!cfg) throw new Error(`sitAtBoard: unknown table "${tableId}"`);
+  const path = seat === 0 ? cfg.path0 : cfg.path1;
+  for (const [i, [x, y]] of path.entries()) {
+    if (i < path.length - 1) {
+      await walkTo(page, x, y);
+      continue;
+    }
+    let arrived = false;
+    for (let attempt = 0; attempt < 4 && !arrived; attempt += 1) {
+      await walkTo(page, x, y, { tolerance: 3 });
+      arrived = await page.evaluate(
+        (id) => window.__testHook?.state.nearBoardSeat?.tableId === id,
+        tableId,
+      );
+    }
+    if (!arrived) throw new Error(`sitAtBoard: never entered board seat zone for ${tableId}`);
+  }
+  await page.keyboard.down("e");
+  try {
+    await page.waitForFunction(
+      ({ id, s }) =>
+        window.__testHook?.state.boardSeated?.tableId === id &&
+        window.__testHook?.state.boardSeated?.seat === s,
+      { id: tableId, s: seat },
+    );
+  } finally {
+    await page.keyboard.up("e");
+  }
+}
+
 /** Open chat with Enter, type, send (chat closes itself after submit). */
 export async function sendChat(page: Page, text: string): Promise<void> {
   await page.keyboard.press("Enter");
