@@ -89,4 +89,22 @@ The backend serves REST + Socket.IO at `http://localhost:3001`.
 - **Frontend deploy (Vercel)**: the frontend is a workspace member that imports
   `shared`, so **the Vercel project's Root Directory must be the repository root**
   (root `vercel.json` drives the install/build: it installs the workspace and builds
-  shared before the frontend).
+  shared before the frontend). See [Vercel deployment](#vercel-deployment) below.
+
+### Vercel deployment
+
+The frontend deploys to Vercel, configured by the root [`vercel.json`](vercel.json):
+
+- **Root Directory must be the repository root.** The frontend imports
+  `@metaverse/shared`, which only resolves when the whole workspace is installed, so
+  Vercel builds from the repo root — set the Vercel project's **Root Directory** to
+  the repository root (this is a dashboard setting, not something `vercel.json` can
+  override).
+- **What `vercel.json` does.** `installCommand: npm ci` installs and hoists the
+  workspace against the root lockfile; `buildCommand` then builds `shared` first
+  (`npm run build:shared`) and compiles the frontend against it
+  (`npm run build --workspace frontend`), publishing `frontend/dist`.
+- **`main` auto-deploy is disabled on purpose** (`git.deploymentEnabled.main: false`).
+  Production ships only through the frontend CI `deploy` job, which stamps the build
+  with the git SHA (`VITE_GIT_SHA`); Vercel's own push-to-`main` deploy is turned off
+  so there is a single production path. Branch/PR previews are unaffected.

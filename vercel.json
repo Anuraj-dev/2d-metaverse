@@ -1,5 +1,4 @@
 {
-  "//": "Frontend is a workspace member that imports the @metaverse/shared package, so Vercel must build from the repo root (set the project's Root Directory to the repository root). Install hoists the workspace; the build compiles shared first, then the frontend.",
   "git": { "deploymentEnabled": { "main": false } },
   "framework": "vite",
   "installCommand": "npm ci",
