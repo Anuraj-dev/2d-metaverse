@@ -76,3 +76,54 @@ export async function getSeatIds(roomId: string): Promise<number[]> {
   const result = await pool.query<{ id: number }>("SELECT id FROM seats WHERE room_id = $1 ORDER BY id", [roomId]);
   return result.rows.map((row) => row.id);
 }
+
+/**
+ * Record a score for a user on a game, keeping only their best (a lower score
+ * is ignored). Returns the user's best after the write. Client-reported scores
+ * are trusted at this level — see README's arcade high-scores caveat.
+ */
+export async function submitArcadeScore(
+  userId: string,
+  game: string,
+  score: number
+): Promise<number> {
+  const result = await pool.query<{ score: number }>(
+    `INSERT INTO arcade_scores (user_id, game, score, updated_at)
+     VALUES ($1, $2, $3, now())
+     ON CONFLICT (user_id, game) DO UPDATE
+       SET score = GREATEST(arcade_scores.score, EXCLUDED.score),
+           updated_at = now()
+     RETURNING score`,
+    [userId, game, score]
+  );
+  return result.rows[0]?.score ?? score;
+}
+
+/** The top-N best scores for a game, joined to usernames, highest first. */
+export async function getArcadeLeaderboard(
+  game: string,
+  limit: number
+): Promise<{ username: string; score: number }[]> {
+  const result = await pool.query<{ username: string; score: number }>(
+    `SELECT u.username, a.score
+     FROM arcade_scores a
+     JOIN users u ON u.id = a.user_id
+     WHERE a.game = $1
+     ORDER BY a.score DESC, a.updated_at ASC
+     LIMIT $2`,
+    [game, limit]
+  );
+  return result.rows.map((row) => ({ username: row.username, score: row.score }));
+}
+
+/** A single user's best on a game, or null if they have never scored. */
+export async function getArcadeBest(
+  userId: string,
+  game: string
+): Promise<number | null> {
+  const result = await pool.query<{ score: number }>(
+    "SELECT score FROM arcade_scores WHERE user_id = $1 AND game = $2",
+    [userId, game]
+  );
+  return result.rows[0]?.score ?? null;
+}

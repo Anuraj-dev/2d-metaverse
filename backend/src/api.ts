@@ -2,12 +2,28 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { z } from "zod";
-import { RATE_LIMITS, credentialsSchema, liveKitSchema } from "@metaverse/shared";
+import {
+  ARCADE_GAMES,
+  LIMITS,
+  RATE_LIMITS,
+  arcadeScoreSchema,
+  credentialsSchema,
+  liveKitSchema,
+  type ArcadeGame,
+  type ArcadeLeaderboard,
+} from "@metaverse/shared";
 import { issueToken, requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
 import { hashSecret, verifySecret } from "./password.js";
-import { getRoom, getSpace, spaceExists } from "./repository.js";
+import {
+  getArcadeBest,
+  getArcadeLeaderboard,
+  getRoom,
+  getSpace,
+  spaceExists,
+  submitArcadeScore,
+} from "./repository.js";
 import { redis } from "./redis.js";
 
 // Request schemas live in @metaverse/shared (single source of truth for wire shapes).
@@ -18,6 +34,22 @@ const authLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false
 });
+const arcadeScoreLimiter = rateLimit({
+  windowMs: RATE_LIMITS.arcadeScoreWindowMs,
+  limit: RATE_LIMITS.arcadeScoreLimit,
+  standardHeaders: "draft-8",
+  legacyHeaders: false
+});
+const arcadeLeaderboardLimiter = rateLimit({
+  windowMs: RATE_LIMITS.arcadeLeaderboardWindowMs,
+  limit: RATE_LIMITS.arcadeLeaderboardLimit,
+  standardHeaders: "draft-8",
+  legacyHeaders: false
+});
+
+function isArcadeGame(value: string): value is ArcadeGame {
+  return (ARCADE_GAMES as readonly string[]).includes(value);
+}
 
 api.post("/signup", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);
@@ -64,6 +96,35 @@ api.get("/space/:id", requireAuth, async (request, response) => {
     return;
   }
   response.json(space);
+});
+
+api.post("/arcade/scores", arcadeScoreLimiter, requireAuth, async (request, response) => {
+  const parsed = arcadeScoreSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "invalid-score", details: z.flattenError(parsed.error).fieldErrors });
+    return;
+  }
+  const user = (request as AuthenticatedRequest).user;
+  const best = await submitArcadeScore(user.id, parsed.data.game, parsed.data.score);
+  const top = await getArcadeLeaderboard(parsed.data.game, LIMITS.arcadeLeaderboardMax);
+  const payload: ArcadeLeaderboard = { game: parsed.data.game, top, best };
+  response.json(payload);
+});
+
+api.get("/arcade/scores/:game", arcadeLeaderboardLimiter, requireAuth, async (request, response) => {
+  const raw = Array.isArray(request.params.game) ? request.params.game[0] : request.params.game;
+  const game = raw ?? "";
+  if (!isArcadeGame(game)) {
+    response.status(404).json({ error: "unknown-game" });
+    return;
+  }
+  const user = (request as AuthenticatedRequest).user;
+  const [top, best] = await Promise.all([
+    getArcadeLeaderboard(game, LIMITS.arcadeLeaderboardMax),
+    getArcadeBest(user.id, game),
+  ]);
+  const payload: ArcadeLeaderboard = { game, top, best };
+  response.json(payload);
 });
 
 api.post("/livekit/token", requireAuth, async (request, response) => {

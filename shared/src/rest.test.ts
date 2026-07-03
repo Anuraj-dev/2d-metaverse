@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  arcadeLeaderboardSchema,
+  arcadeScoreSchema,
   clientErrorSchema,
   credentialsSchema,
   liveKitSchema,
@@ -41,6 +43,34 @@ describe("client error report", () => {
     expect(
       clientErrorSchema.safeParse({ message: "x".repeat(LIMITS.clientErrorMessageMax + 1), sha: "abc" }).success,
     ).toBe(false);
+  });
+});
+
+describe("arcade score submission", () => {
+  it("accepts a valid score for a known game", () => {
+    expect(arcadeScoreSchema.safeParse({ game: "snake", score: 12 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "2048", score: 0 }).success).toBe(true);
+  });
+  it("rejects an unknown game", () => {
+    expect(arcadeScoreSchema.safeParse({ game: "pong", score: 1 }).success).toBe(false);
+  });
+  it("rejects a negative, non-integer, or over-cap score", () => {
+    expect(arcadeScoreSchema.safeParse({ game: "snake", score: -1 }).success).toBe(false);
+    expect(arcadeScoreSchema.safeParse({ game: "snake", score: 1.5 }).success).toBe(false);
+    expect(
+      arcadeScoreSchema.safeParse({ game: "snake", score: LIMITS.arcadeScoreMax + 1 }).success,
+    ).toBe(false);
+  });
+});
+
+describe("arcade leaderboard response", () => {
+  it("validates a leaderboard with a null personal best", () => {
+    const board = { game: "flappy", top: [{ username: "alice", score: 9 }], best: null };
+    expect(arcadeLeaderboardSchema.safeParse(board).success).toBe(true);
+  });
+  it("rejects a non-integer score in a row", () => {
+    const bad = { game: "flappy", top: [{ username: "a", score: 1.2 }], best: 3 };
+    expect(arcadeLeaderboardSchema.safeParse(bad).success).toBe(false);
   });
 });
 
