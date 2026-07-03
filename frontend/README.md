@@ -221,6 +221,15 @@ seats are preserved, and `game/maps.test.ts` cross-checks every tileset against
 its on-disk PNG). Reject a style-mismatched asset rather than blending it. Audio
 bar: **fewer, better, normalized** clips — no filler.
 
+*Pack evaluations (PRD 12 fix round 1):* **LimeZu Modern Interiors** was
+evaluated and **rejected** — outline-less pastel-gradient rendering that clashes
+with the flat-outlined Pipoya family (documented so it isn't re-litigated).
+**Serene Village** is style-compatible (same outline/dither language) and
+remains an approved future source, but the current enrichment ships entirely
+from the already-attributed families: the Pipoya exterior sheet (grass
+variants, flowers, stone plaza family, trees) and Top-Down Retro Interior
+(door frame/leaf recomposed by `scripts/gen_door.py`).
+
 **Sound architecture.** All gain/mute/duck/mapping *decisions* live in the pure
 `media/soundMixer.ts` (channels `master → music / sfx / ambient`, master mute,
 ambient ducking near voice, the event→sound table, footstep cadence) with
@@ -230,7 +239,13 @@ ambient loops, and handles browser **autoplay-unlock** (silent until the first
 user gesture, `play()` rejections swallowed). `ui/SfxBridge.tsx` is headless
 wiring: it maps net/bus events (presence, seat, door, portal, meeting) to clips
 via the pure table, derives footsteps from the `positions` tick, and ducks the
-ambient bed against LiveKit voice levels. Volumes persist through the existing
+ambient bed against LiveKit voice levels (`audio-volumes` is emitted on every
+positions tick in production, not just under the E2E hook). The world loops are
+**lifecycle-aware** (pure decisions in `loopTargets`): the outdoor ambience only
+sounds while the local player's audio zone is outdoor, both loops fall silent
+across a meeting (portal-in → portal-out), and every transition — duck, zone
+crossing, meeting, sliders — **fades** (`fadeStep`, ~700ms) rather than
+hard-cutting. Volumes persist through the existing
 `ui/settings.ts` store; the Settings panel exposes master/music/effects/ambient
 sliders + mute. **Game logic stays audio-agnostic** — it emits domain events; the
 bridge decides what they sound like.
