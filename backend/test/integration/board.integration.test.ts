@@ -1,7 +1,7 @@
 /**
  * Board-game tables at the socket seam (PRD 11 phase 2): the server validates
  * seat membership, turn order and move legality against the shared rules, and
- * broadcasts each authoritative snapshot to the board room. The match rules and
+ * broadcasts each authoritative snapshot to the space channel. The match rules and
  * shell are unit-tested separately (test/boardMatch.test.ts, board-manager.test.ts);
  * these prove the real wiring — sockets, Redis persistence + TTL, and the
  * disconnect-grace forfeit (LEAVE_GRACE_MS is shrunk to 400ms by setup.ts).
@@ -84,10 +84,11 @@ describe("board tables — socket seam", () => {
     const b = await joinPlayer("bwb");
     await startMatch("ttt-1", a, b);
 
-    // A live match is mirrored to Redis with a positive TTL.
+    // A live match is mirrored to Redis with a positive TTL. The key is scoped by
+    // spaceId ("1" here) so the same table id in another space never collides.
     let ttl = -2;
     for (let i = 0; i < 20 && ttl <= 0; i += 1) {
-      ttl = await redis.ttl("board:ttt-1");
+      ttl = await redis.ttl("board:1:ttt-1");
       if (ttl <= 0) await sleep(20);
     }
     expect(ttl).toBeGreaterThan(0);

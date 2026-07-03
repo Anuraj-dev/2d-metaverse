@@ -45,17 +45,26 @@ function safeFillers(line: readonly number[], count: number): number[] {
   return picked;
 }
 
+/** Guarded filler accessor: safeFillers is built to supply enough cells, but
+ *  index access is `number | undefined` under noUncheckedIndexedAccess, so we
+ *  throw rather than assert with `!` (repo rule: no bare non-null assertions). */
+function filler(fillers: readonly number[], i: number): number {
+  const cell = fillers[i];
+  if (cell === undefined) throw new Error(`ticTacToe test: safeFillers missing cell ${i}`);
+  return cell;
+}
+
 describe("ticTacToe wins — every line for both players", () => {
   for (const line of TICTACTOE_LINES) {
     const [a, b, c] = line;
 
     it(`player 1 wins on line ${line.join("-")}`, () => {
-      const [f0, f1] = safeFillers(line, 2);
+      const f = safeFillers(line, 2);
       const state = play([
         [1, a],
-        [2, f0!],
+        [2, filler(f, 0)],
         [1, b],
-        [2, f1!],
+        [2, filler(f, 1)],
         [1, c],
       ]);
       expect(state.result).toEqual({ status: "won", winner: 1, line });
@@ -63,13 +72,13 @@ describe("ticTacToe wins — every line for both players", () => {
     });
 
     it(`player 2 wins on line ${line.join("-")}`, () => {
-      const [f0, f1, f2] = safeFillers(line, 3);
+      const f = safeFillers(line, 3);
       const state = play([
-        [1, f0!],
+        [1, filler(f, 0)],
         [2, a],
-        [1, f1!],
+        [1, filler(f, 1)],
         [2, b],
-        [1, f2!],
+        [1, filler(f, 2)],
         [2, c],
       ]);
       expect(state.result).toEqual({ status: "won", winner: 2, line });
