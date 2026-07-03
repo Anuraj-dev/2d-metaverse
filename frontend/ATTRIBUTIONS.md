@@ -43,7 +43,7 @@ release.
 | `characters/char1..char4.png` | Penzilla-style interior characters | (interior character pack) | Free-use pixel character set. |
 | `tilesets/exterior.png` | Pipoya RPG Tileset 32x32 (exterior) | Pipoya | Per Pipoya's free-use terms. |
 | `tilesets/floors_walls.png`, `tilesets/doors_windows.png`, `tilesets/small_items.png`, `tilesets/furniture.png` | Top-Down Retro Interior / Office Furniture pixel packs | (respective pack authors) | Free-use pixel interior sets. |
-| `doors/door1.png` | Door Animation pack | (pack author) | Free-use animated door sprite. |
+| `doors/door1.png` | Composed in-repo (`scripts/gen_door.py`) from `tilesets/doors_windows.png` (Top-Down Retro Interior) | (pack author) | Free-use pixel interior set — frame + closed/ajar door leaves recomposed into an aligned 3-frame sheet (replaces the Pipoya Door Animation sheet, which was drawn at RPG-Maker tile density). |
 | `furniture/*.png` (desk, chair, sofa, plant, water, vending, …) | Top-Down Retro Interior / Office Furniture pixel packs | (respective pack authors) | Free-use pixel furniture; cool office palette. |
 | `furniture/table_round.png` | Project-original | Redrawn in-repo (PRD 12) | Project asset — replaces the prior flat placeholder, matched to the furniture palette. |
 

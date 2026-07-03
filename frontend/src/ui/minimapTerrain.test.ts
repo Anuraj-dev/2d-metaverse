@@ -96,7 +96,7 @@ describe("colorForGid fallbacks", () => {
 
   it("unlisted exterior GIDs fall back to the grass family color", () => {
     expect(colorForGid(500, tilesets)).toBe(colorForGid(600, tilesets));
-    expect(colorForGid(500, tilesets)).not.toBe(TERRAIN_COLORS[269]);
+    expect(colorForGid(500, tilesets)).not.toBe(TERRAIN_COLORS[1946]); // ≠ stone
   });
 
   it("unlisted floors_walls GIDs fall back to the wood family color", () => {

@@ -116,17 +116,17 @@ export default class WorldScene extends Phaser.Scene {
     this.net = this.registry.get("net") as Net;
     CHARS.forEach((c) => createCharAnims(this, c));
 
-    // Door open/close: 4 frames in the first row of door1.png (48×96 per frame)
+    // Door open/close: closed(0) → ajar(1) → open door frame(2). The frame
+    // stays visible when open — it dresses the doorway (see gen_door.py).
     this.anims.create({
       key: "door-open",
-      frames: this.anims.generateFrameNumbers("door", { start: 0, end: 3 }),
+      frames: this.anims.generateFrameNumbers("door", { start: 0, end: 2 }),
       frameRate: 8,
       repeat: 0,
     });
     this.anims.create({
       key: "door-close",
       frames: [
-        { key: "door", frame: 3 },
         { key: "door", frame: 2 },
         { key: "door", frame: 1 },
         { key: "door", frame: 0 },
@@ -245,12 +245,16 @@ export default class WorldScene extends Phaser.Scene {
       const rect = rectOf(o);
       this.doors.push({ roomId, name: o.name || `Room ${roomId}`, rect });
 
-      // Animated door sprite — scales to match the door gap width
-      const scale = rect.width / 48;
+      // Animated door sprite, bottom-anchored IN the doorway gap so the leaf
+      // fills the opening and the lintel rises above the wall row (PRD 12
+      // bug: the old 48×96 cell centered on the gap floated beside it).
+      // Depth = the doorway's bottom edge: the player y-sorts against it and
+      // walks visually *through* the open frame.
       const sprite = this.add
-        .sprite(rect.centerX, rect.centerY, "door", 0)
-        .setScale(scale)
-        .setDepth(3500);
+        .sprite(rect.centerX, rect.bottom, "door", 0)
+        .setOrigin(0.5, 1)
+        .setScale(rect.width / 32)
+        .setDepth(rect.bottom);
       this.doorSprites.set(roomId, sprite);
     }
     const seatObjs = map.getObjectLayer("seats")?.objects ?? [];

@@ -44,14 +44,42 @@ export interface TerrainInfo {
  * dark-HUD friendly. Ground GIDs come from scripts/gen_campus.py.
  */
 export const TERRAIN_COLORS: Readonly<Record<number, string>> = {
-  // exterior.png family (firstgid 163)
-  366: "#41653a", // grass base
-  269: "#7e7f88", // stone path / plaza
-  301: "#4d7141", // park accent green
-  303: "#8a6f52", // cafe warm accent
+  // exterior.png family (firstgid 163) — grass base + tuft/sprout variants
+  366: "#41653a",
+  269: "#41653a",
+  270: "#41653a",
+  271: "#41653a",
+  1915: "#41653a",
+  301: "#4d7141",
+  303: "#4d7141",
+  // stone plaza/paths: fill + edge/corner trims
+  1946: "#7e7f88",
+  1912: "#7e7f88",
+  1913: "#7e7f88",
+  1914: "#7e7f88",
+  1945: "#7e7f88",
+  1947: "#7e7f88",
+  1978: "#7e7f88",
+  1979: "#7e7f88",
+  1980: "#7e7f88",
+  // grass clearings set into the plaza stone
+  1948: "#5c7a4a",
+  1949: "#5c7a4a",
+  1981: "#5c7a4a",
+  1982: "#5c7a4a",
+  // tree trunks (solid, on the walls layer)
+  1021: "#6b4a2f",
+  1022: "#6b4a2f",
+  1023: "#6b4a2f",
+  1024: "#6b4a2f",
+  1025: "#6b4a2f",
+  1026: "#6b4a2f",
+  1027: "#6b4a2f",
   // floors_walls.png family (firstgid 1)
-  116: "#a5824f", // indoor light wood plank
-  48: "#8a6a41", // indoor tan plank accent
+  116: "#a5824f", // indoor light wood plank (HQ)
+  48: "#8a6a41", // tan plank (coworking deck)
+  92: "#96693f", // herringbone (auditorium)
+  39: "#7c8050", // olive checker (meeting-room carpet)
   69: "#67403a", // brick wall
 };
 

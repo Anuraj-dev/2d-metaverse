@@ -143,16 +143,21 @@ describe("tileset integrity (JSON ↔ image on disk)", () => {
     }
   });
 
-  it("campus walls use a solid floors_walls tile, not the broken trim strip (PRD 12 bug #1)", () => {
+  it("campus walls use solid tiles: floors_walls brick (never the broken trim strip, PRD 12 bug #1) or tree trunks", () => {
     const json = loadMap("campus");
     const walls = json.layers.find((l) => l.name === "walls");
     if (!walls?.data) throw new Error("campus walls layer missing");
     const fw = json.tilesets.find((t) => t.name === "floors_walls");
     if (!fw) throw new Error("floors_walls tileset missing");
+    // Tree-trunk tiles (exterior.png gids 1021-1027) also live on the walls
+    // layer — trunks are solid — and are the ONLY exterior tiles allowed
+    // there (see gen_campus.py TRUNK_GIDS).
+    const TRUNK_GIDS = new Set([1021, 1022, 1023, 1024, 1025, 1026, 1027]);
     const used = new Set(walls.data.filter((g) => g !== 0));
     expect(used.size).toBeGreaterThan(0);
     for (const gid of used) {
-      // resolves within the floors_walls tileset
+      if (TRUNK_GIDS.has(gid)) continue;
+      // otherwise resolves within the floors_walls tileset
       expect(gid).toBeGreaterThanOrEqual(fw.firstgid);
       expect(gid).toBeLessThan(fw.firstgid + fw.tilecount);
       // never the top-row trim strip (local idx 0-17 → GIDs 1-18) that rendered

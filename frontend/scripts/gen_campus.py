@@ -18,6 +18,9 @@ Run:  python3 scripts/gen_campus.py
 
 import json
 import os
+import random
+
+rng = random.Random(12)  # deterministic scatter — regeneration is reproducible
 
 W, H, TS = 120, 90, 16   # cols × rows × px per tile  →  1920×1440 px
 
@@ -25,27 +28,57 @@ W, H, TS = 120, 90, 16   # cols × rows × px per tile  →  1920×1440 px
 # floors_walls.png (firstgid=1)
 FLOOR      = 116   # light wood plank — indoor base
 FLOOR_ACC  = 48    # tan plank        — indoor accent
+FLOOR_HERR = 92    # brown herringbone plank (idx 91) — auditorium floor
+FLOOR_MOSS = 39    # olive checkered floor (idx 38)   — meeting-room carpet
 WALL       = 69    # brick wall (floors_walls idx 68) — collision.
                    # NB: idx 8 (old GID 9) was a thin trim strip that rendered
                    # as broken brown stripes — see PRD 12 bug #1.
 
-# exterior.png (firstgid=163)
-# Indices derived from existing campus.json tracer-bullet and visual inspection:
-#   exterior tile 0-based idx = gid - 163
-GRASS      = 366   # gid 366 = ext idx 203 (row 6, col 5)  — base outdoor ground
-STONE      = 269   # gid 269 = ext idx 106 (row 3, col 10) — stone path / plaza
-PARK_ACC   = 301   # gid 301 = ext idx 138 (row 4, col 6)  — park accent
-CAFE_ACC   = 303   # gid 303 = ext idx 140 (row 4, col 8)  — warm accent tile
+# exterior.png (firstgid=163); exterior tile 0-based idx = gid - 163.
+# Every index below was verified with single-tile crops (PRD 12 fix round 1):
+# the OLD "STONE"/accent gids (269/301/303) are actually grass-variant tiles —
+# which is why the whole campus rendered as one monotonous green field.
+GRASS      = 366   # idx 203 — plain base grass
+GRASS_T1   = 269   # idx 106 — grass, light tuft sprinkle
+GRASS_T2   = 270   # idx 107 — grass, denser tuft cluster
+GRASS_T3   = 271   # idx 108 — grass, scattered tufts
+GRASS_T4   = 1915  # idx 1752 — grass, fourth tuft pattern
+GRASS_SPR1 = 301   # idx 138 — grass with a tiny orange sprout
+GRASS_SPR2 = 303   # idx 140 — grass with a thin stem
+
+# Real stone plaza/path family (rows 53-55 of exterior.png): a seamless
+# cracked-stone fill plus edge/corner trims that carry the grass transition.
+STONE      = 1946  # idx 1783 — solid cracked-stone fill
+ST_NW, ST_N, ST_NE = 1912, 1913, 1914   # idx 1749-1751 top corners/edge
+ST_W,          ST_E = 1945,       1947  # idx 1782 / 1784 side edges
+ST_SW, ST_S, ST_SE = 1978, 1979, 1980   # idx 1815-1817 bottom corners/edge
+# inverse 2×2 patch: a grass clearing set into stone (plaza texture breaks)
+CLR_NW, CLR_NE, CLR_SW, CLR_SE = 1948, 1949, 1981, 1982  # idx 1785/1786/1818/1819
+
+# Transparent flower overlays for the ground_decor layer
+FLOWER_RED    = 204  # idx 41 — orange/red diamond flower
+FLOWER_BLUE   = 205  # idx 42 — blue/green flower
+FLOWER_PALE   = 237  # idx 74 — pale-blue diamond flower
+FLOWER_SMALL  = 172  # idx 9  — small orange blossom
+
+# Trees (canopy → decor_above, trunk → walls for collision, shadow → ground_decor)
+# Small tree: 3 cols × 4 rows, top-left idx 792. Big tree: 4 cols × 4 rows, idx 795.
+TREE_SMALL = [[955, 956, 957], [988, 989, 990], [1021, 1022, 1023], [1054, 1055, 1056]]
+TREE_BIG   = [[958, 959, 960, 961], [991, 992, 993, 994],
+              [1024, 1025, 1026, 1027], [1057, 1058, 1059, 1060]]
+# trunk gids (row 2 of each block) — the walls-layer guard test allows exactly these
+TRUNK_GIDS = sorted(TREE_SMALL[2] + TREE_BIG[2])
 
 
 def idx(x, y):
     return y * W + x
 
 
-# Two tile layers (data as flat gid arrays, 0 = empty/transparent)
-ground      = [GRASS] * (W * H)
-walls_data  = [0]     * (W * H)
-decor_above = [0]     * (W * H)    # renders over the player
+# Tile layers (data as flat gid arrays, 0 = empty/transparent)
+ground       = [GRASS] * (W * H)
+ground_decor = [0]     * (W * H)   # overlays under the player (flowers, shadows)
+walls_data   = [0]     * (W * H)
+decor_above  = [0]     * (W * H)   # renders over the player (tree canopies)
 
 
 def fill(layer, x0, y0, x1, y1, tile):
@@ -78,12 +111,7 @@ for y in range(H):
     walls_data[idx(0, y)]     = WALL
     walls_data[idx(W - 1, y)] = WALL
 
-# ── PARK (NW) ────────────────────────────────────────────────────────────
-# Grass is already the default; add a subtle accent strip along the east edge
-for y in range(1, 56):
-    ground[idx(28, y)] = PARK_ACC
-
-# ── CENTRAL PLAZA ────────────────────────────────────────────────────────
+# ── CENTRAL PLAZA (real stone now — the old gid was a grass tile) ────────
 fill(ground, 12, 26, 107, 60, STONE)
 
 # ── Main path arteries ───────────────────────────────────────────────────
@@ -103,15 +131,17 @@ door_gap(49, 24, width=2)                  # south entrance left gap
 door_gap(58, 24, width=2)                  # south entrance right gap
 
 # ── AUDITORIUM (NE) ──────────────────────────────────────────────────────
-fill(ground, 82, 2, 117, 43, CAFE_ACC)    # interior accent floor
+fill(ground, 82, 2, 117, 43, FLOOR_ACC)   # tan plank hall floor
+fill(ground, 90, 2, 110, 15, FLOOR_HERR)  # herringbone stage apron (presenter zone)
 wall_rect(81, 1, 118, 44)                  # perimeter walls
 door_gap(98, 44, width=2)                  # south entrance
 
 # ── CAFE / LOUNGE (SW) ───────────────────────────────────────────────────
-fill(ground, 1, 62, 55, 88, PARK_ACC)     # warm accent ground
+# A stone terrace under the table grid, grass margins with flowers around it.
+fill(ground, 5, 63, 47, 80, STONE)
 
 # ── COWORKING (SE) ───────────────────────────────────────────────────────
-fill(ground, 57, 62, 118, 88, FLOOR_ACC)  # indoor accent ground
+fill(ground, 57, 62, 118, 88, FLOOR_ACC)  # open-air wood deck
 
 # ── PRIVATE MEETING ROOMS IN HQ ──────────────────────────────────────────────
 # 3 keyed rooms (IDs 4, 5, 6) along the north interior wall of the HQ building.
@@ -124,6 +154,9 @@ seats_objs  = []
 def make_room(room_id, x0, y0, x1, y1, door_x):
     wall_rect(x0, y0, x1, y1)
     door_gap(door_x, y1, width=2)
+    # a center rug under the meeting table, not a full-room slab
+    rcx, rcy = (x0 + x1) // 2, (y0 + y1) // 2
+    fill(ground, rcx - 2, rcy - 1, rcx + 2, rcy + 1, FLOOR_MOSS)
 
     cx = (x0 + x1) // 2   # tile centre x
     cy = (y0 + y1) // 2   # tile centre y
@@ -164,6 +197,125 @@ def make_room(room_id, x0, y0, x1, y1, door_x):
 make_room(4, x0=31, y0=2, x1=43, y1=11, door_x=36)  # Room D
 make_room(5, x0=44, y0=2, x1=57, y1=11, door_x=49)  # Room E
 make_room(6, x0=58, y0=2, x1=71, y1=11, door_x=63)  # Room F
+
+# ── GROUND DETAIL PASSES (PRD 12 fix round 1: ground variety) ────────────────
+GRASS_FAMILY = {GRASS, GRASS_T1, GRASS_T2, GRASS_T3, GRASS_T4, GRASS_SPR1, GRASS_SPR2}
+
+
+def is_grass(x, y):
+    if x < 0 or y < 0 or x >= W or y >= H:
+        return False
+    return ground[idx(x, y)] in GRASS_FAMILY
+
+
+# 1) Grass variety: deterministic scatter of tuft/sprout variants over base grass.
+for y in range(H):
+    for x in range(W):
+        if ground[idx(x, y)] != GRASS:
+            continue
+        r = rng.random()
+        if r < 0.05:
+            ground[idx(x, y)] = GRASS_T1
+        elif r < 0.10:
+            ground[idx(x, y)] = GRASS_T2
+        elif r < 0.15:
+            ground[idx(x, y)] = GRASS_T3
+        elif r < 0.18:
+            ground[idx(x, y)] = GRASS_T4
+        elif r < 0.20:
+            ground[idx(x, y)] = GRASS_SPR1 if r < 0.19 else GRASS_SPR2
+
+# 2) Grass clearings set into the plaza stone (2×2 inverse patches) — breaks
+#    up the large stone expanse. Kept off the arteries and the spawn area.
+for cx, cy in [(20, 30), (38, 33), (48, 55), (70, 52), (88, 32), (100, 56),
+               (16, 50), (30, 57), (96, 48), (10, 68), (24, 74), (40, 70)]:
+    if all(ground[idx(cx + dx, cy + dy)] == STONE for dx in (0, 1) for dy in (0, 1)):
+        ground[idx(cx, cy)] = CLR_NW
+        ground[idx(cx + 1, cy)] = CLR_NE
+        ground[idx(cx, cy + 1)] = CLR_SW
+        ground[idx(cx + 1, cy + 1)] = CLR_SE
+
+# 3) Stone edge trims: every stone cell bordering grass takes the matching
+#    edge/corner tile (grass side baked into the trim). Inner corners fall
+#    back to plain fill — the tileset has no inner-corner tiles.
+edge_pick = []
+for y in range(H):
+    for x in range(W):
+        if ground[idx(x, y)] != STONE:
+            continue
+        n, s = is_grass(x, y - 1), is_grass(x, y + 1)
+        wg, e = is_grass(x - 1, y), is_grass(x + 1, y)
+        t = None
+        if n and wg:
+            t = ST_NW
+        elif n and e:
+            t = ST_NE
+        elif s and wg:
+            t = ST_SW
+        elif s and e:
+            t = ST_SE
+        elif n:
+            t = ST_N
+        elif s:
+            t = ST_S
+        elif wg:
+            t = ST_W
+        elif e:
+            t = ST_E
+        if t is not None:
+            edge_pick.append((x, y, t))
+for x, y, t in edge_pick:
+    ground[idx(x, y)] = t
+
+# 4) Flowers on the ground_decor overlay: park + cafe margins, denser along
+#    path edges so walkways read tended.
+FLOWERS = [FLOWER_RED, FLOWER_BLUE, FLOWER_PALE, FLOWER_SMALL]
+for y in range(1, H - 1):
+    for x in range(1, W - 1):
+        if not is_grass(x, y):
+            continue
+        near_stone = any(
+            ground[idx(x + dx, y + dy)] == STONE or ground[idx(x + dx, y + dy)] in
+            (ST_NW, ST_N, ST_NE, ST_W, ST_E, ST_SW, ST_S, ST_SE)
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+        )
+        in_park = x <= 28 and y <= 55
+        in_cafe = x <= 55 and y >= 62
+        p = 0.10 if near_stone else (0.05 if (in_park or in_cafe) else 0.015)
+        if rng.random() < p:
+            ground_decor[idx(x, y)] = rng.choice(FLOWERS)
+
+# 5) Trees (park + cafe east margin): canopy rows render over the player
+#    (decor_above), the trunk row is solid (walls layer → collision), and the
+#    ground shadow row sits under the player (ground_decor). Positions avoid
+#    every E2E waypoint corridor (all inside HQ/plaza) and the path arteries.
+TREES_BIG = [(3, 2), (12, 3), (20, 2), (6, 12), (16, 11), (23, 13),
+             (3, 20), (13, 20), (22, 21), (8, 27), (18, 27),
+             (3, 36), (12, 35), (21, 36), (6, 47), (15, 47), (23, 47),
+             (49, 63), (49, 71)]
+TREES_SMALL = [(9, 6), (25, 7), (11, 15), (2, 28), (25, 30), (9, 39),
+               (19, 39), (2, 51), (19, 51), (26, 51)]
+tree_cells = set()
+
+
+def plant_tree(block, tx, ty):
+    rows = len(block)
+    for ry, row in enumerate(block):
+        for rx, gid in enumerate(row):
+            x, y = tx + rx, ty + ry
+            tree_cells.add((x, y))
+            if ry < rows - 2:
+                decor_above[idx(x, y)] = gid      # canopy
+            elif ry == rows - 2:
+                walls_data[idx(x, y)] = gid        # trunk (solid)
+            else:
+                ground_decor[idx(x, y)] = gid      # shadow
+
+
+for tx, ty in TREES_BIG:
+    plant_tree(TREE_BIG, tx, ty)
+for tx, ty in TREES_SMALL:
+    plant_tree(TREE_SMALL, tx, ty)
 
 # ── INTERACTABLES ─────────────────────────────────────────────────────────────
 # Each object is a 32×32 px zone (2×2 tiles) at the tile's top-left corner.
@@ -279,17 +431,18 @@ def furn(key, tx, ty, solid):
     })
 
 
-# Park — trees and plants scattered across the green zone
-for tx, ty in [(4,4),(8,8),(12,4),(16,8),(20,4),(24,9),
-               (6,14),(11,18),(16,14),(22,18),(5,23),
-               (10,28),(15,23),(20,28),(25,23),
-               (3,33),(8,38),(13,33),(18,38),(25,38),
-               (3,47),(10,47),(17,47),(24,47)]:
-    furn("f_plant_big", tx, ty, True)
+# Park — the tile trees above carry the canopy now; sprinkle swaying shrubs
+# between them (skipping any spot a tree footprint occupies).
+for tx, ty in [(8, 8), (16, 8), (24, 9), (11, 18), (22, 18),
+               (5, 23), (15, 23), (20, 28), (25, 23),
+               (8, 38), (18, 38), (25, 38), (10, 47), (24, 47)]:
+    if (tx, ty) not in tree_cells:
+        furn("f_plant_big", tx, ty, True)
 for tx, ty in [(6,6),(14,11),(21,6),(9,20),(18,24),
                (6,30),(14,35),(22,30),(7,40),(20,42),
                (5,50),(12,52),(19,50)]:
-    furn("f_plant_small", tx, ty, False)
+    if (tx, ty) not in tree_cells:
+        furn("f_plant_small", tx, ty, False)
 
 # Plaza — welcome desk, water cooler, landmark plants, clock
 furn("f_desk",  16, 38, True)
@@ -382,6 +535,8 @@ tilemap = {
     "layers": [
         {"id": 1,  "name": "ground",      "type": "tilelayer",  "visible": True,
          "opacity": 1, "x": 0, "y": 0, "width": W, "height": H, "data": ground},
+        {"id": 12, "name": "ground_decor", "type": "tilelayer", "visible": True,
+         "opacity": 1, "x": 0, "y": 0, "width": W, "height": H, "data": ground_decor},
         {"id": 2,  "name": "walls",       "type": "tilelayer",  "visible": True,
          "opacity": 1, "x": 0, "y": 0, "width": W, "height": H, "data": walls_data},
         {"id": 9,  "name": "decor_above", "type": "tilelayer",  "visible": True,
