@@ -16,6 +16,7 @@ import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
 import { positionsEmitDue, moveSendDue } from "../throttle";
 import { tintForHour } from "../dayNight";
+import { terrainFromTiledMap, type TiledMapLike } from "../../ui/minimapTerrain";
 
 const ZOOM = 2.2;
 // Portal Phase A (PRD 10): camera punch-in toward the table over ~350ms. The
@@ -469,8 +470,15 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("do-interact", () => (this.interactQueued = true));
   }
 
-  /** One-time snapshot of map size + room footprints for the minimap. */
+  /** One-time snapshot of map size, terrain + room footprints for the minimap.
+   *  Terrain rasterizes the raw Tiled JSON (tilemap cache) through the pure
+   *  ui/minimapTerrain module, so the overview shows the actual authored
+   *  world — ground, paths, buildings — not an empty box (PRD 12 bug #3). */
   private emitWorldInfo(map: Phaser.Tilemaps.Tilemap) {
+    const raw = (
+      this.cache.tilemap.get(activeMap().key) as { data?: TiledMapLike } | undefined
+    )?.data;
+    const terrain = raw ? terrainFromTiledMap(raw) : null;
     const byRoom = new Map<string, Seat[]>();
     for (const s of this.seats) {
       const group = byRoom.get(s.roomId) ?? [];
@@ -489,6 +497,7 @@ export default class WorldScene extends Phaser.Scene {
       width: map.widthInPixels,
       height: map.heightInPixels,
       rooms,
+      terrain,
     });
   }
 
