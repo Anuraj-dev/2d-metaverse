@@ -1,45 +1,20 @@
 import { test, expect } from "@playwright/test";
 import { signUpAndJoin, walkTo } from "./helpers";
 
-// The Snake cabinet sits at campus tile (70,50); its interactable zone spans the
-// cabinet tile plus the two open tiles below it (rows 51-52). Row 52 (py≈840) is
-// fully clear of every solid cabinet body, so we stage in open plaza south-west
-// of the cabinets and steer east along that row until the zone fires — robust to
-// the exact pixel where we settle.
+// The Snake cabinet sits at campus tile (70,50); its interactable zone covers
+// the cabinet tile plus the three open tiles below it (rows 50-53, py 800-864).
+// The 32px solid cabinet body ends at py 832, so row 53 (py≈856) is a
+// collision-free approach strip INSIDE the zone: the player's physics body can
+// never catch the cabinet's corner there (the round-1 flake), and both
+// waypoints sit on verified-open plaza floor.
 test("arcade: walk to a cabinet, open, play, and close", async ({ page }) => {
   await signUpAndJoin(page, { map: "campus" });
   await page.locator(".game-canvas canvas").click();
 
-  // Stage in open plaza (tile ~65,52), south-west of and below the cabinets.
-  await walkTo(page, 1050, 840, { tolerance: 20 });
-
-  // Steer east along the clear row until we enter the Snake cabinet's zone.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const hook = window.__testHook;
-        if (!hook) throw new Error("E2E test hook missing (build with VITE_E2E_HOOK=1)");
-        const stop = () => hook.emit("move-axis", { x: 0, y: 0 });
-        const timer = setTimeout(() => {
-          off();
-          stop();
-          reject(new Error("never reached the Snake cabinet zone"));
-        }, 15000);
-        const off = hook.on("positions", () => {
-          const near = hook.state.last["near-interactable"] as
-            | { type?: string; payload?: { game?: string } }
-            | undefined;
-          if (near?.type === "arcade" && near.payload?.game === "snake") {
-            clearTimeout(timer);
-            off();
-            stop();
-            resolve();
-            return;
-          }
-          hook.emit("move-axis", { x: 0.6, y: 0 });
-        });
-      }),
-  );
+  // Stage in open plaza below the cabinets, then move east along row 53 to
+  // just under the Snake cabinet — inside its zone, clear of its solid body.
+  await walkTo(page, 1050, 856, { tolerance: 12 });
+  await walkTo(page, 1140, 856, { tolerance: 10 });
 
   // Near the Snake cabinet specifically.
   await page.waitForFunction(() => {
@@ -72,5 +47,5 @@ test("arcade: walk to a cabinet, open, play, and close", async ({ page }) => {
 
   // And the world actually resumed (the scene woke): the player can move
   // again — walkTo rides the positions ticks, which only flow while awake.
-  await walkTo(page, 1100, 840, { tolerance: 20 });
+  await walkTo(page, 1080, 856, { tolerance: 12 });
 });

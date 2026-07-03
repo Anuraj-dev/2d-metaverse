@@ -372,12 +372,13 @@ interactables_objs = [
              )},
         ],
     },
-    # ── Arcade cabinets (PRD 11) — each zone sits on its cabinet's tile so a
-    # player standing on an adjacent walkable tile is within the 2x2 findNear
-    # rect and can press E to open the game overlay. `game` selects the module.
+    # ── Arcade cabinets (PRD 11) — each zone covers its cabinet tile plus the
+    # three open tiles below it (rows 50-53): the 32px solid cabinet body ends
+    # at row-51's top (py 832), so rows 52-53 give a collision-free approach
+    # strip that is still inside the findNear rect. `game` selects the module.
     {
         "id": 40010, "name": "arcade_snake",
-        "x": 70 * TS, "y": 50 * TS, "width": 2 * TS, "height": 3 * TS,
+        "x": 70 * TS, "y": 50 * TS, "width": 2 * TS, "height": 4 * TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [
             {"name": "interactType", "type": "string", "value": "arcade"},
@@ -387,7 +388,7 @@ interactables_objs = [
     },
     {
         "id": 40011, "name": "arcade_flappy",
-        "x": 73 * TS, "y": 50 * TS, "width": 2 * TS, "height": 3 * TS,
+        "x": 73 * TS, "y": 50 * TS, "width": 2 * TS, "height": 4 * TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [
             {"name": "interactType", "type": "string", "value": "arcade"},
@@ -397,7 +398,7 @@ interactables_objs = [
     },
     {
         "id": 40012, "name": "arcade_2048",
-        "x": 76 * TS, "y": 50 * TS, "width": 2 * TS, "height": 3 * TS,
+        "x": 76 * TS, "y": 50 * TS, "width": 2 * TS, "height": 4 * TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [
             {"name": "interactType", "type": "string", "value": "arcade"},
