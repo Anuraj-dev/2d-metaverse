@@ -167,11 +167,10 @@ describe("connect4 wins — all four directions", () => {
       [2, 3], // (3,3) filler
       [1, 3], // (2,3) D — win
     ]);
-    expect(state.result.status).toBe("won");
-    expect(state.result).toMatchObject({ winner: 1 });
-    if (state.result.status === "won") {
-      expect(new Set(state.result.line)).toEqual(new Set([at(2, 3), at(3, 2), at(4, 1), at(5, 0)]));
-    }
+    const result = state.result;
+    if (result.status !== "won") throw new Error(`expected a win, got ${result.status}`);
+    expect(result.winner).toBe(1);
+    expect(new Set(result.line)).toEqual(new Set([at(2, 3), at(3, 2), at(4, 1), at(5, 0)]));
   });
 
   it("descending diagonal ↘ (player 1)", () => {
@@ -190,11 +189,10 @@ describe("connect4 wins — all four directions", () => {
       [2, 0], // (3,0) filler
       [1, 0], // (2,0) D — win
     ]);
-    expect(state.result.status).toBe("won");
-    expect(state.result).toMatchObject({ winner: 1 });
-    if (state.result.status === "won") {
-      expect(new Set(state.result.line)).toEqual(new Set([at(2, 0), at(3, 1), at(4, 2), at(5, 3)]));
-    }
+    const result = state.result;
+    if (result.status !== "won") throw new Error(`expected a win, got ${result.status}`);
+    expect(result.winner).toBe(1);
+    expect(new Set(result.line)).toEqual(new Set([at(2, 0), at(3, 1), at(4, 2), at(5, 3)]));
   });
 
   it("edge: vertical win in the last column (col 6, player 1)", () => {
@@ -227,11 +225,10 @@ describe("connect4 wins — all four directions", () => {
       [2, 5],
       [1, 2], // fills the gap — win
     ]);
-    expect(state.result.status).toBe("won");
-    expect(state.result).toMatchObject({ winner: 1 });
-    if (state.result.status === "won") {
-      expect(new Set(state.result.line)).toEqual(new Set([at(5, 0), at(5, 1), at(5, 2), at(5, 3)]));
-    }
+    const result = state.result;
+    if (result.status !== "won") throw new Error(`expected a win, got ${result.status}`);
+    expect(result.winner).toBe(1);
+    expect(new Set(result.line)).toEqual(new Set([at(5, 0), at(5, 1), at(5, 2), at(5, 3)]));
   });
 });
 
