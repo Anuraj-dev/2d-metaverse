@@ -77,6 +77,62 @@ export function anyVoiceActive(
   return false;
 }
 
+// ── Loop lifecycle (where the world loops are allowed to sound) ──────────────
+
+/**
+ * World-state inputs that gate the persistent loops — lifecycle, not settings.
+ * `outdoors` is derived from the local player's audio zone (OUTDOOR_ZONE vs a
+ * room id); `meeting` spans portal-in → portal-out.
+ */
+export interface LoopWorld {
+  outdoors: boolean;
+  meeting: boolean;
+  voiceActive: boolean;
+}
+
+/**
+ * Target gains for the two persistent loops given settings + world state:
+ * the outdoor ambience only sounds outdoors (rooms are aurally private — no
+ * birdsong through walls), and both world loops fall silent for the duration
+ * of a meeting. The playback glue FADES toward these targets (see fadeStep);
+ * it never hard-cuts.
+ */
+export function loopTargets(
+  v: MixerVolumes,
+  world: LoopWorld
+): { music: number; ambient: number } {
+  return {
+    music: world.meeting ? 0 : channelGain(v, "music"),
+    ambient:
+      world.meeting || !world.outdoors
+        ? 0
+        : channelGain(v, "ambient", { voiceActive: world.voiceActive }),
+  };
+}
+
+/** Full-scale loop fade duration: long enough to feel like a scene change, not a cut. */
+export const LOOP_FADE_MS = 700;
+
+/**
+ * One linear fade step toward a target gain. Moves at most `dtMs / fadeMs` of
+ * full scale per call and lands exactly on the target (no overshoot, no
+ * asymptotic crawl), so a fade completes in `fadeMs` regardless of tick rate.
+ */
+export function fadeStep(
+  current: number,
+  target: number,
+  dtMs: number,
+  fadeMs = LOOP_FADE_MS
+): number {
+  const from = clamp01(current);
+  const to = clamp01(target);
+  if (fadeMs <= 0) return to;
+  const maxDelta = Math.max(0, dtMs) / fadeMs;
+  const delta = to - from;
+  if (Math.abs(delta) <= maxDelta) return to;
+  return clamp01(from + Math.sign(delta) * maxDelta);
+}
+
 /** A one-shot sound triggered by a bus/net event. */
 export interface SoundCue {
   clip: string;
