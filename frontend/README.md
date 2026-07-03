@@ -154,6 +154,7 @@ into the modules).
 | `game/arcade/snake.ts` | Snake tick/turn/eat/collision rules |
 | `game/arcade/flappy.ts` | Flappy gravity/flap/pipe/collision rules |
 | `game/arcade/game2048.ts` | 2048 slide+merge semantics (incl. no-move detection) |
+| `game/boardTable.ts` | board-table view model: snapshot + selfId → grid/whose-turn/offer/spectator/status + click→move (rules themselves live in `@metaverse/shared`) |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
 locked-room position rollback (`keepLockedRoomsClosed`), portal payload validation
@@ -385,6 +386,47 @@ by editing `scripts/gen_campus.py` (a solid `furn(...)` sprite + an
 `interactType="arcade"` interactable carrying a `game` payload) and regenerate
 the map — never hand-edit `campus.json`. Add a cabinet sprite via
 `scripts/gen_arcade_sprites.py` (+ BootScene key + an ATTRIBUTIONS row).
+
+### Board-game tables (two-player, server-authoritative, PRD 11 phase 2)
+
+Two board-game tables (tic-tac-toe, Connect-4) sit in the SW campus plaza. Each
+has two opposite seats: walk up to a seat and press **E** to sit down. Once both
+seats are taken, each player gets a **match offer** — click *Accept match* in the
+HUD panel; when both accept, the match starts. Click a cell (tic-tac-toe) or a
+column (Connect-4) on your turn to play. Standing up (or disconnecting) forfeits
+a live match to the opponent. Passers-by who walk up to a table in progress see
+the same board panel read-only (spectating). The world does **not** sleep — you
+stay seated in-world while the panel floats over the HUD.
+
+Unlike the arcade cabinets, board tables are **two-player and server-authoritative**:
+
+- **Rules are ONE pure implementation in `@metaverse/shared`** (`games/board.ts`,
+  `ticTacToe.ts`, `connect4.ts`, `rules.ts`) — imported by both the backend
+  (validation) and this frontend (rendering + click→move). Plain values in/out,
+  deterministic, no deps. The backend is authoritative; the client is never
+  trusted for the board.
+- **The match lifecycle** is a pure state machine on the backend
+  (`backend/src/boardMatch.ts`) + a side-effect shell (`board-manager.ts`), modeled
+  on the meeting machine. The server broadcasts an authoritative `board-update`
+  snapshot on every change and rejects illegal/out-of-turn moves with a typed
+  `board-error`.
+- **Seats reuse the sit mechanics but are their own map layer** (`board_seats`) and
+  `WorldScene.boardSeats` array — public plaza seats, ungated by room entry, so they
+  never trigger meetings or the minimap room list. The scene emits `near-board-seat`
+  / `board-sat` / `board-stood` on the bus; `App.tsx` keeps the per-table snapshots
+  and renders the lazy `ui/BoardTablePanel.tsx`.
+- **Client-side decisions** (view model, whose turn, offer prompt, spectator display,
+  grid click → move index) live in the pure `game/boardTable.ts` (+ vitest). Sounds
+  go through the `soundMixer` event→clip table (`board-sat`/`board-move`/`board-win`).
+
+**To add a new board-game table:** (1) add the pure rules in `shared/src/games/`
+(`create`/`applyMove`/win/draw + exhaustive `*.test.ts`), register the game id in
+`BOARD_GAMES` and wire it into `rulesFor`; (2) add the table to the `BOARD_TABLES`
+registry in `shared/src/constants.ts` (id + game) and to the `board-update` grid
+sizing in `game/boardTable.ts`; (3) author its two opposite seats + solid table
+sprite in `scripts/gen_campus.py` (`board_table(...)`), regenerate the map, and
+extend the board-tables assertions in `game/maps.test.ts`; (4) the socket events,
+manager, and panel are game-agnostic — no changes needed there.
 
 ### Tests
 
