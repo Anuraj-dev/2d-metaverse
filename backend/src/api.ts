@@ -87,8 +87,16 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
   } else if (roomName.startsWith("room:")) {
     const roomId = roomName.slice("room:".length);
     const room = await getRoom(roomId);
+    // A private room's media token requires BOTH the seat lock AND the same
+    // room-access grant the key flow establishes (`room-enter`). The seat lock
+    // alone is not proof of access: the seat-claim Lua never records access, and
+    // a seat lock can outlive its access grant (access is revoked on room-leave/
+    // disconnect while the seat's TTL persists). Gating on access too keeps the
+    // token consistent with seat-sit and room-chat — a client that never
+    // presented the key can never obtain the room's audio/video.
     const occupiedSeat = await redis.get(`player-seat:${user.id}`);
-    if (!room || !occupiedSeat?.startsWith(`seat:${roomId}:`)) {
+    const hasAccess = await redis.exists(`room-access:${user.id}:${roomId}`);
+    if (!room || !hasAccess || !occupiedSeat?.startsWith(`seat:${roomId}:`)) {
       response.status(403).json({ error: "seat-required" });
       return;
     }

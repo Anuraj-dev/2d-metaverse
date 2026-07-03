@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sitPlayer, standPlayer } from "../../src/seat-store.js";
+import { redis } from "../../src/redis.js";
 import { api, createUser, startServer, teardown, uniqueName, TEST_PASSWORD, type TestServer } from "./helpers.js";
 
 let server: TestServer;
@@ -115,7 +116,7 @@ describe("livekit token", () => {
     expect((await api(base, "/api/v1/livekit/token", { token, body: { roomName: "world:nope" } })).status).toBe(404);
   });
 
-  it("denies a room token when not seated and grants it when seated", async () => {
+  it("denies a room token when not seated and grants it to a seated player with room access", async () => {
     const { token } = await createUser(base, "lk3");
     const userId = (jwt.decode(token) as jwt.JwtPayload).sub!;
 
@@ -123,8 +124,11 @@ describe("livekit token", () => {
     expect(denied.status).toBe(403);
     expect(denied.json.error).toBe("seat-required");
 
+    // Mirror the real flow: the key check (`room-enter`) records access, then
+    // seat-sit claims the seat. Both must be present for a room media token.
     const seated = await sitPlayer(userId, "1", 0);
     expect(seated.ok).toBe(true);
+    await redis.set(`room-access:${userId}:1`, "1", { EX: 3600 });
     try {
       const granted = await api(base, "/api/v1/livekit/token", { token, body: { roomName: "room:1" } });
       expect(granted.status).toBe(200);
@@ -135,6 +139,25 @@ describe("livekit token", () => {
 
       // A seat in room 1 must not unlock room 2.
       expect((await api(base, "/api/v1/livekit/token", { token, body: { roomName: "room:2" } })).status).toBe(403);
+    } finally {
+      await standPlayer(userId);
+      await redis.del(`room-access:${userId}:1`);
+    }
+  });
+
+  it("denies a room token to a seated player who never established room access", async () => {
+    // The vulnerability: the seat-claim Lua records only the seat lock, never a
+    // room-access grant, and the grant can be revoked while the seat persists.
+    // A seat lock without a matching access grant must NOT mint a room token.
+    const { token } = await createUser(base, "lk7");
+    const userId = (jwt.decode(token) as jwt.JwtPayload).sub!;
+
+    const seated = await sitPlayer(userId, "1", 1);
+    expect(seated.ok).toBe(true);
+    try {
+      const denied = await api(base, "/api/v1/livekit/token", { token, body: { roomName: "room:1" } });
+      expect(denied.status).toBe(403);
+      expect(denied.json.error).toBe("seat-required");
     } finally {
       await standPlayer(userId);
     }
