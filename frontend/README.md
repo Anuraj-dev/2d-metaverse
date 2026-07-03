@@ -419,6 +419,15 @@ Unlike the arcade cabinets, board tables are **two-player and server-authoritati
   grid click → move index) live in the pure `game/boardTable.ts` (+ vitest). Sounds
   go through the `soundMixer` event→clip table (`board-sat`/`board-move`/`board-win`).
 
+**Test coverage.** Board rules are covered exhaustively by the shared-package unit
+tests (`shared/src/games/*.test.ts`) and the match lifecycle by the backend socket-seam
+integration tests. There is **no board-table Playwright E2E**: the phase-2 scenario
+drove two avatars from the shared spawn to opposite plaza seats, and that in-world
+navigation was persistently CI-flaky (damped `walkTo` stalling short of the tight seat
+rects under two-Phaser-loop CPU contention) with no reliable no-sleep wait — so it was
+dropped rather than papered over with sleeps/retries. Re-add it only with a robust,
+event-driven seat approach.
+
 **To add a new board-game table:** (1) add the pure rules in `shared/src/games/`
 (`create`/`applyMove`/win/draw + exhaustive `*.test.ts`), register the game id in
 `BOARD_GAMES` and wire it into `rulesFor`; (2) add the table to the `BOARD_TABLES`
