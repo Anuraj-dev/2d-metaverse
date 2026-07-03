@@ -245,9 +245,10 @@ before reaching for new art.
 1. **Curate, don't bulk-import.** Extract source packs to a scratch dir, pick
    only the sheets/clips you use, and reject anything off-style.
 2. **Optimize.** Sprites: pack/trim, keep PNGs small. Audio: transcode to Ogg
-   Vorbis (`scripts/gen_audio.py` regenerates the whole soundscape; SFX are
-   peak-normalized, the music bed is transcoded from the source pack). Keep loops
-   short and seamless.
+   Vorbis (`scripts/curate_audio.py` regenerates the whole soundscape from the
+   owner-supplied Cozy pack — every event SFX is cut from real recorded
+   material at documented timestamps, layered/filtered, peak-normalized; no
+   synthesis). Keep loops short and seamless.
 3. **Register attribution.** Add a row to **`ATTRIBUTIONS.md`** (asset → source →
    author → license). This is **required** — an unattributed asset must not ship.
 4. **Wire it.** Tilesets go through the `maps.ts` registry (and are auto-checked

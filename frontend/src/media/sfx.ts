@@ -5,7 +5,7 @@
  * the browser autoplay-unlock (audio stays silent until the first user gesture,
  * with play() rejections swallowed so telemetry/gameplay never break).
  *
- * Assets are Ogg Vorbis under public/assets/audio (see scripts/gen_audio.py and
+ * Assets are Ogg Vorbis under public/assets/audio (see scripts/curate_audio.py and
  * ATTRIBUTIONS.md). Pure decision logic → soundMixer.ts; wiring → SoundBridge.
  */
 import { getSettings, subscribeSettings } from "../ui/settings";
