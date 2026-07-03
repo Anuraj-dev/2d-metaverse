@@ -30,3 +30,18 @@ export type CharKey = (typeof CHARS)[number];
 export function isCharKey(v: string): v is CharKey {
   return (CHARS as readonly string[]).includes(v);
 }
+
+function hash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/**
+ * Deterministic avatar for a remote player. The single mapping shared by the
+ * Phaser scene (world sprites) and the React meeting grid (camera-off tiles),
+ * so "that character became this tile" always holds.
+ */
+export function charForPlayer(playerId: string): CharKey {
+  return CHARS[hash(playerId) % CHARS.length] ?? CHARS[0];
+}

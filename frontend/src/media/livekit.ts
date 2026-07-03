@@ -178,9 +178,31 @@ export interface RoomTrack {
 class RoomVideo {
   private room: LKRoom | null = null;
   private listeners = new Set<(tracks: RoomTrack[]) => void>();
+  private roomListeners = new Set<() => void>();
   private tracks = new Map<string, MediaStreamTrack>();
   private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
+
+  /**
+   * The underlying LiveKit Room, surfaced for the meeting grid
+   * (@livekit/components-react needs the Room object, not raw tracks).
+   * Null while not seated / media unavailable — the grid then falls back to
+   * roster-only tiles.
+   */
+  get lkRoom(): LKRoom | null {
+    return this.room;
+  }
+
+  /** Subscribe to lkRoom changing (join/leave). useSyncExternalStore-shaped. */
+  onRoomChanged = (cb: () => void): (() => void) => {
+    this.roomListeners.add(cb);
+    return () => this.roomListeners.delete(cb);
+  };
+
+  private setRoom(room: LKRoom | null) {
+    this.room = room;
+    this.roomListeners.forEach((cb) => cb());
+  }
 
   onTracks(cb: (tracks: RoomTrack[]) => void) {
     this.listeners.add(cb);
@@ -212,7 +234,7 @@ class RoomVideo {
           autoGainControl: true,
         },
       });
-      this.room = room;
+      this.setRoom(room);
       wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
         surfaceVideo: (id, t) => {
           this.tracks.set(id, t);
@@ -262,7 +284,7 @@ class RoomVideo {
     this.audioEls.clear();
     this.emit();
     await this.room?.disconnect();
-    this.room = null;
+    this.setRoom(null);
   }
 }
 

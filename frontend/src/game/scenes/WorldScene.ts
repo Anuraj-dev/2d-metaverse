@@ -4,7 +4,7 @@ import type { Net } from "../../net/net";
 import { authToken } from "../../net/auth";
 import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
-import { CHARS, isCharKey } from "../chars";
+import { CHARS, charForPlayer, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
@@ -16,6 +16,17 @@ import { interactAction } from "../interaction";
 import { positionsEmitDue, moveSendDue } from "../throttle";
 
 const ZOOM = 2.2;
+// Portal Phase A (PRD 10): camera punch-in toward the table over ~350ms. The
+// factor multiplies the base zoom (the spec's "zoomTo ~2.4" would be a barely
+// visible 9% step from the base 2.2 as an absolute value).
+const PORTAL_ZOOM_FACTOR = 2.4;
+const PORTAL_MS = 350;
+// Fade runs slower than the zoom so the captured frame is dimmed, not black:
+// at the 350ms capture point a (PORTAL_MS * 3)-long fade sits at ~33%.
+const PORTAL_FADE_MS = PORTAL_MS * 3;
+// A renderer snapshot is asynchronous; if a driver quirk stalls it, the portal
+// must still hand off (with no backdrop image) rather than hang the sequencer.
+const SNAPSHOT_TIMEOUT_MS = 400;
 
 interface Remote {
   sprite: Phaser.GameObjects.Sprite;
@@ -373,6 +384,8 @@ export default class WorldScene extends Phaser.Scene {
     });
     bus.on("do-sit", () => this.trySit());
     bus.on("do-stand", () => this.stand());
+    bus.on("portal-enter", () => this.portalIn());
+    bus.on("portal-exit", () => this.portalOut());
     bus.on("locate", (p: { id: string }) => this.locate(p.id));
     bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p));
     bus.on("do-interact", () => (this.interactQueued = true));
@@ -476,9 +489,9 @@ export default class WorldScene extends Phaser.Scene {
 
   private addRemote(p: PlayerState) {
     if (this.remotes.has(p.id) || p.id === this.net.selfId) return;
-    // `% CHARS.length` is always in range, but the index signature widens the
-    // lookup to `| undefined`; CHARS[0] is a guaranteed default.
-    const char = CHARS[hash(p.id) % CHARS.length] ?? CHARS[0];
+    // Shared with the meeting grid's camera-off tiles (chars.charForPlayer),
+    // so the world sprite and the tile avatar can never diverge.
+    const char = charForPlayer(p.id);
     const sprite = this.add
       .sprite(p.x, p.y, char, idleFrame(p.dir))
       .setDepth(5);
@@ -740,6 +753,60 @@ export default class WorldScene extends Phaser.Scene {
     bus.emit("stood");
   }
 
+  /**
+   * Portal Phase A (PRD 10): camera punch-in + slow fade toward the table,
+   * then capture ONE frame at the portal peak for the meeting backdrop, emit
+   * `portal-phase-a-done` for the React handoff (game/portalHandoff.ts), and
+   * sleep the scene — the render loop stays off for the whole meeting, and
+   * with `update()` stopped, socket movement emission pauses with it (the
+   * Socket.IO transport's own heartbeat keeps the connection alive).
+   */
+  private portalIn() {
+    if (this.scene.isSleeping()) return;
+    const cam = this.cameras.main;
+    cam.stopFollow();
+    cam.pan(this.player.x, this.player.y, PORTAL_MS, "Sine.easeInOut");
+    cam.fadeOut(PORTAL_FADE_MS, 0, 0, 0);
+    cam.zoomTo(
+      ZOOM * PORTAL_ZOOM_FACTOR,
+      PORTAL_MS,
+      "Sine.easeIn",
+      false,
+      (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+        if (progress === 1) this.capturePortalFrame();
+      },
+    );
+  }
+
+  /** Snapshot the canvas at portal peak, hand off to React, then sleep. */
+  private capturePortalFrame() {
+    let done = false;
+    const finish = (image: string | null) => {
+      if (done || this.scene.isSleeping()) return;
+      done = true;
+      bus.emit("portal-phase-a-done", { image });
+      this.scene.sleep();
+    };
+    this.time.delayedCall(SNAPSHOT_TIMEOUT_MS, () => finish(null));
+    try {
+      this.game.renderer.snapshot((snap) => {
+        finish(snap instanceof HTMLImageElement ? snap.src : null);
+      });
+    } catch {
+      finish(null);
+    }
+  }
+
+  /** Portal-out: wake the render loop and restore the camera to world state. */
+  private portalOut() {
+    if (this.scene.isSleeping()) this.scene.wake();
+    const cam = this.cameras.main;
+    cam.resetFX();
+    cam.setZoom(ZOOM);
+    cam.startFollow(this.player, true, 0.12, 0.12);
+    cam.fadeIn(250, 0, 0, 0);
+  }
+
   private emitPositions(time: number) {
     if (!positionsEmitDue(time, this.lastTick)) return;
     this.lastTick = time;
@@ -792,12 +859,6 @@ function prop(o: Phaser.Types.Tilemaps.TiledObject, name: string): string | unde
     (x) => x.name === name
   );
   return p ? String(p.value) : undefined;
-}
-
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
 }
 
 /** True when a DOM text field (chat, key modal) is focused — game input pauses. */
