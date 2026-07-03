@@ -28,6 +28,9 @@ const TRACKED_EVENTS = [
   "near-interactable",
   "leave-interactable",
   "open-interactable",
+  // Arcade cabinets (PRD 11): overlay open/close milestones.
+  "open-arcade",
+  "close-arcade",
   "near-stage",
   "leave-stage",
   "audio-volumes",
