@@ -359,6 +359,53 @@ describe("App shell", () => {
     offExit();
   });
 
+  it("holds the media queue for Phase A and cancels it when self leaves mid-cinematic (no late reveal)", async () => {
+    render(<App />);
+    await enterAndInit();
+    const busEvents: string[] = [];
+    const offEnter = bus.on("portal-enter", () => busEvents.push("portal-enter"));
+    const offExit = bus.on("portal-exit", () => busEvents.push("portal-exit"));
+    const offVisible = bus.on("meeting-grid-visible", () => busEvents.push("grid-visible"));
+
+    await emit(() =>
+      netMock.net.emit("meeting-started", {
+        roomId: "D",
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+        ],
+      })
+    );
+    await screen.findByTestId("meeting-overlay");
+    await waitFor(() => expect(busEvents).toContain("portal-enter"));
+
+    // Phase A is still running (no portal-phase-a-done): the portal-in op must
+    // HOLD the queue — an op enqueued behind it may not start.
+    await emit(() => bus.emit("near-stage"));
+    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+
+    // Self leaves mid-cinematic: cancellation settles the pending Phase A, the
+    // queue drains in order (portal-exit runs, then the stage join), and the
+    // overlay is gone.
+    await emit(() =>
+      netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: SELF })
+    );
+    await waitFor(() => expect(busEvents).toContain("portal-exit"));
+    await waitFor(() => expect(media.stageVideo.joinAsAudience).toHaveBeenCalled());
+    expect(busEvents.indexOf("portal-enter")).toBeLessThan(busEvents.indexOf("portal-exit"));
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+
+    // The abandoned cinematic completing late must be inert: no overlay
+    // resurrection, no reveal. (Scene-side, the portal generation guard makes
+    // the same late callback skip its snapshot/sleep entirely.)
+    await emit(() => bus.emit("portal-phase-a-done", { image: "data:late" }));
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+    expect(busEvents).not.toContain("grid-visible");
+    offEnter();
+    offExit();
+    offVisible();
+  });
+
   it("a latecomer portals in on their own participant-joined", async () => {
     render(<App />);
     await enterAndInit();

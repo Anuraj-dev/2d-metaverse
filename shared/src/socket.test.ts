@@ -162,4 +162,45 @@ describe("meeting lifecycle shapes (server → client)", () => {
     expect(meetingParticipantLeftSchema.safeParse({ roomId: "1", playerId: "p1" }).success).toBe(true);
     expect(meetingParticipantLeftSchema.safeParse({ roomId: "1" }).success).toBe(false);
   });
+
+  it("rejects unknown top-level keys on every meeting schema (strict contract)", () => {
+    expect(
+      meetingCountdownSchema.safeParse({
+        roomId: "1",
+        durationMs: 3000,
+        participants: [alice],
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      meetingCountdownCanceledSchema.safeParse({ roomId: "1", reason: "stand", extra: true }).success,
+    ).toBe(false);
+    expect(
+      meetingStartedSchema.safeParse({ roomId: "1", participants: [alice], extra: true }).success,
+    ).toBe(false);
+    expect(meetingEndedSchema.safeParse({ roomId: "1", extra: true }).success).toBe(false);
+    expect(
+      meetingParticipantJoinedSchema.safeParse({
+        roomId: "1",
+        participant: alice,
+        participants: [alice],
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      meetingParticipantLeftSchema.safeParse({ roomId: "1", playerId: "p1", extra: true }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown keys nested inside a participant", () => {
+    const sneaky = { id: "p1", name: "alice", role: "admin" };
+    expect(
+      meetingCountdownSchema.safeParse({ roomId: "1", durationMs: 3000, participants: [sneaky] }).success,
+    ).toBe(false);
+    expect(meetingStartedSchema.safeParse({ roomId: "1", participants: [sneaky] }).success).toBe(false);
+    expect(
+      meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: sneaky, participants: [alice] })
+        .success,
+    ).toBe(false);
+  });
 });

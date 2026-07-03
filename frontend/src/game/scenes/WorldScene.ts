@@ -97,6 +97,15 @@ export default class WorldScene extends Phaser.Scene {
   private dir: Dir = "down";
   private lastSent = 0;
   private lastTick = 0;
+  /**
+   * Portal transition generation. Incremented by every portalIn AND portalOut:
+   * Phase A's async callbacks (zoom completion, renderer snapshot, timeout)
+   * capture the generation they started under and become no-ops if it has
+   * moved on — a portal-out during the ~350ms cinematic must never be followed
+   * by a late snapshot/`scene.sleep()` (softlock: frozen world with movement
+   * emission stopped).
+   */
+  private portalGen = 0;
 
   constructor() {
     super("world");
@@ -763,6 +772,7 @@ export default class WorldScene extends Phaser.Scene {
    */
   private portalIn() {
     if (this.scene.isSleeping()) return;
+    const gen = ++this.portalGen;
     const cam = this.cameras.main;
     cam.stopFollow();
     cam.pan(this.player.x, this.player.y, PORTAL_MS, "Sine.easeInOut");
@@ -773,16 +783,18 @@ export default class WorldScene extends Phaser.Scene {
       "Sine.easeIn",
       false,
       (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-        if (progress === 1) this.capturePortalFrame();
+        if (progress === 1 && gen === this.portalGen) this.capturePortalFrame(gen);
       },
     );
   }
 
   /** Snapshot the canvas at portal peak, hand off to React, then sleep. */
-  private capturePortalFrame() {
+  private capturePortalFrame(gen: number) {
     let done = false;
     const finish = (image: string | null) => {
-      if (done || this.scene.isSleeping()) return;
+      // A portal-out (or a newer portal) invalidated this Phase A: the scene
+      // must finish AWAKE — never emit a stale a-done or sleep late.
+      if (done || gen !== this.portalGen) return;
       done = true;
       bus.emit("portal-phase-a-done", { image });
       this.scene.sleep();
@@ -797,8 +809,10 @@ export default class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** Portal-out: wake the render loop and restore the camera to world state. */
+  /** Portal-out: invalidate any in-flight Phase A, wake the render loop, and
+   *  restore the camera to world state. */
   private portalOut() {
+    this.portalGen++;
     if (this.scene.isSleeping()) this.scene.wake();
     const cam = this.cameras.main;
     cam.resetFX();

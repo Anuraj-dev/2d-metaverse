@@ -147,6 +147,11 @@ export default function App() {
     let meetingState: MeetingUiState = MEETING_NONE;
     let handoff: HandoffState = HANDOFF_IDLE;
     let lastSelfScreen: { sx: number; sy: number } | null = null;
+    // Settles the in-flight Phase A wait (see the portal-in transition below).
+    // Non-null exactly while Phaser's cinematic is pending; called by
+    // portal-phase-a-done (completion), by a portal-out (cancellation) and by
+    // unmount (so teardown can never hang on an abandoned cinematic).
+    let settlePhaseA: (() => void) | null = null;
     const offMeetingPositions = bus.on(
       "positions",
       (p: { players: { self: boolean; sx?: number; sy?: number }[] }) => {
@@ -169,6 +174,7 @@ export default function App() {
     const offPhaseADone = bus.on("portal-phase-a-done", (p: { image: string | null }) => {
       setPortal((prev) => (prev ? { ...prev, backdrop: p.image } : prev));
       feedHandoff("a-done");
+      settlePhaseA?.();
     });
     const applyMeetingEvent = (event: MeetingUiEvent) => {
       // Mirror onto the bus first: HUD/e2e observability regardless of outcome.
@@ -180,14 +186,29 @@ export default function App() {
         handoff = handoffStart();
         setPortal({ backdrop: null, revealed: false, seat: lastSelfScreen });
         // Serialized on the media queue so Phase A starts only after the
-        // pending seat-media transition (world stop → room join) settled.
-        transition(async () => {
-          bus.emit("portal-enter");
-        });
+        // pending seat-media transition (world stop → room join) settled —
+        // and the op holds the queue until Phaser's cinematic COMPLETES
+        // (portal-phase-a-done) or is CANCELED (portal-out / unmount below).
+        // Resolving early would let a queued portal-exit overtake the still-
+        // running zoom, whose late snapshot/sleep would then freeze the world.
+        transition(
+          () =>
+            new Promise<void>((resolve) => {
+              settlePhaseA = () => {
+                settlePhaseA = null;
+                resolve();
+              };
+              bus.emit("portal-enter");
+            }),
+        );
       } else if (action === "portal-out") {
         handoff = HANDOFF_IDLE;
         setPortal(null);
         bus.emit("meeting-grid-hidden");
+        // Cancel a still-pending Phase A so the queue advances to the exit op;
+        // the scene's portal-generation guard makes the abandoned cinematic's
+        // callbacks inert (no late snapshot, no late sleep).
+        settlePhaseA?.();
         transition(async () => {
           bus.emit("portal-exit");
         });
@@ -212,6 +233,8 @@ export default function App() {
       offMeetingPositions();
       offPhaseADone();
       offMeetingEvents.forEach((off) => off());
+      // Never let teardown wait on an abandoned cinematic.
+      settlePhaseA?.();
       burstCovered.current = () => {};
       void mediaTransition.finally(async () => {
         await roomVideo.leave();

@@ -237,7 +237,11 @@ sequencer:
   from the seat and covers the viewport, then cross-fades into the grid.
 - The pure handoff machine (`game/portalHandoff.ts`) reveals the grid exactly
   once, only when BOTH phases signalled — no gap and no double-flash whichever
-  side finishes first. The self seat morphs into the self tile via a motion
+  side finishes first. Phase A is an awaitable, cancelable sequencer operation:
+  the queued op holds the media queue until the cinematic completes or a
+  portal-out cancels it, and WorldScene's portal-generation guard makes an
+  abandoned cinematic's callbacks inert (never a late snapshot or a late
+  `scene.sleep()` after the player already left). The self seat morphs into the self tile via a motion
   `layoutId` for spatial continuity.
 
 **Meet surface** (`ui/MeetingGrid.tsx`): LiveKit's React components
