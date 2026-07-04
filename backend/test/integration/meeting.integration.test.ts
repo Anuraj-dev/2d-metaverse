@@ -45,12 +45,38 @@ interface Player {
   selfId: string;
 }
 
-async function playerInRoom(prefix: string, roomId: string, key: string): Promise<Player> {
+/** Knock and wait to be admitted (used once allow-all is open, or as admin). */
+async function knockInto(socket: ClientSocket, roomId: string): Promise<void> {
+  const approved = once<{ result: string }>(socket, "knock-result");
+  socket.emit("knock", { roomId });
+  expect((await approved).result).toBe("approved");
+}
+
+/**
+ * The first player into a room becomes its admin (PRD 14); it then opens the
+ * door (allow-all) so co-tenants can walk straight in. These meeting tests only
+ * need players co-located — knock/approve gating is covered in
+ * socket.integration.test.ts.
+ */
+async function adminInRoom(prefix: string, roomId: string): Promise<Player> {
   const user = await createPlayer(prefix);
   const { socket, selfId } = await joinAs(user.token);
-  const entered = once<{ ok: boolean }>(socket, "room-enter-result");
-  socket.emit("room-enter", { roomId, key });
-  expect((await entered).ok).toBe(true);
+  await knockInto(socket, roomId);
+  const opened = onceMatching<{ roomId: string; allowAll: boolean }>(
+    socket,
+    "room-open-state",
+    (payload) => payload.roomId === roomId && payload.allowAll,
+  );
+  socket.emit("toggle-allow-all", { roomId, allowAll: true });
+  await opened;
+  return { socket, selfId };
+}
+
+/** A co-tenant entering a room already opened by its admin (auto-admitted). */
+async function joinOpenRoom(prefix: string, roomId: string): Promise<Player> {
+  const user = await createPlayer(prefix);
+  const { socket, selfId } = await joinAs(user.token);
+  await knockInto(socket, roomId);
   return { socket, selfId };
 }
 
@@ -82,14 +108,14 @@ afterAll(async () => {
 
 describe("meeting trigger", () => {
   it("a solo sitter starts no countdown", async () => {
-    const a = await playerInRoom("ms", "1", process.env.ROOM_1_KEY ?? "1234");
+    const a = await adminInRoom("ms", "1");
     await sit(a, "1", 0);
     await expectSilence(a.socket, "meeting-countdown");
   });
 
   it("all seated (2 players) starts a countdown for both, then the meeting", async () => {
-    const a = await playerInRoom("m2a", "1", process.env.ROOM_1_KEY ?? "1234");
-    const b = await playerInRoom("m2b", "1", process.env.ROOM_1_KEY ?? "1234");
+    const a = await adminInRoom("m2a", "1");
+    const b = await joinOpenRoom("m2b", "1");
 
     await sit(a, "1", 0);
     const countdownA = once<{ roomId: string; durationMs: number; participants: { id: string; name: string }[] }>(
@@ -117,8 +143,8 @@ describe("meeting trigger", () => {
   it("meeting events are room-scoped: a player outside the room hears nothing", async () => {
     const outsider = await createPlayer("mout");
     const { socket: outsiderSocket } = await joinAs(outsider.token);
-    const a = await playerInRoom("mra", "2", process.env.ROOM_2_KEY ?? "4321");
-    const b = await playerInRoom("mrb", "2", process.env.ROOM_2_KEY ?? "4321");
+    const a = await adminInRoom("mra", "2");
+    const b = await joinOpenRoom("mrb", "2");
 
     await sit(a, "2", 0);
     const started = once(a.socket, "meeting-started");
@@ -129,8 +155,8 @@ describe("meeting trigger", () => {
   });
 
   it("standing during the countdown cancels it and no meeting starts", async () => {
-    const a = await playerInRoom("mca", "3", process.env.ROOM_3_KEY ?? "3333");
-    const b = await playerInRoom("mcb", "3", process.env.ROOM_3_KEY ?? "3333");
+    const a = await adminInRoom("mca", "3");
+    const b = await joinOpenRoom("mcb", "3");
 
     await sit(a, "3", 0);
     const countdown = once(b.socket, "meeting-countdown");
@@ -145,9 +171,9 @@ describe("meeting trigger", () => {
   });
 
   it("an unseated entry cancels the countdown; it re-arms when the entrant sits", async () => {
-    const a = await playerInRoom("mea", "4", process.env.ROOM_4_KEY ?? "4444");
-    const b = await playerInRoom("meb", "4", process.env.ROOM_4_KEY ?? "4444");
-    // Pre-connect the entrant: only the (fast) room-enter round trip may sit
+    const a = await adminInRoom("mea", "4");
+    const b = await joinOpenRoom("meb", "4");
+    // Pre-connect the entrant: only the (fast) knock round trip may sit
     // between the countdown arming and the cancellation, or the 300ms
     // countdown could elapse first and flake the test.
     const userC = await createPlayer("mec");
@@ -159,9 +185,8 @@ describe("meeting trigger", () => {
     await countdown;
 
     const canceled = once<{ reason: string }>(a.socket, "meeting-countdown-canceled");
-    const entered = once<{ ok: boolean }>(c.socket, "room-enter-result");
-    c.socket.emit("room-enter", { roomId: "4", key: process.env.ROOM_4_KEY ?? "4444" });
-    expect((await entered).ok).toBe(true);
+    // Room 4 is open (allow-all): c's knock auto-admits, an unseated entry.
+    await knockInto(c.socket, "4");
     expect((await canceled).reason).toBe("unseated-entry");
 
     const rearmed = once<{ participants: { id: string }[] }>(a.socket, "meeting-countdown");
@@ -174,8 +199,8 @@ describe("meeting trigger", () => {
   });
 
   it("a latecomer who sits mid-meeting joins in place with the full roster", async () => {
-    const a = await playerInRoom("mla", "5", process.env.ROOM_5_KEY ?? "5555");
-    const b = await playerInRoom("mlb", "5", process.env.ROOM_5_KEY ?? "5555");
+    const a = await adminInRoom("mla", "5");
+    const b = await joinOpenRoom("mlb", "5");
 
     await sit(a, "5", 0);
     const started = once(a.socket, "meeting-started");
@@ -184,7 +209,7 @@ describe("meeting trigger", () => {
 
     // Entering an active meeting room unseated cancels nothing (no countdown
     // is pending) and does not disturb the meeting.
-    const c = await playerInRoom("mlc", "5", process.env.ROOM_5_KEY ?? "5555");
+    const c = await joinOpenRoom("mlc", "5");
     await expectSilence(a.socket, "meeting-ended");
 
     const joinedSeenByA = once<{
@@ -207,8 +232,8 @@ describe("meeting trigger", () => {
   });
 
   it("a participant standing leaves alone; the last leaver ends the meeting", async () => {
-    const a = await playerInRoom("mfa", "6", process.env.ROOM_6_KEY ?? "6666");
-    const b = await playerInRoom("mfb", "6", process.env.ROOM_6_KEY ?? "6666");
+    const a = await adminInRoom("mfa", "6");
+    const b = await joinOpenRoom("mfb", "6");
 
     await sit(a, "6", 0);
     const started = once(a.socket, "meeting-started");
@@ -229,8 +254,8 @@ describe("meeting trigger", () => {
   });
 
   it("a disconnected participant leaves the meeting only after the grace window", async () => {
-    const a = await playerInRoom("mga", "1", process.env.ROOM_1_KEY ?? "1234");
-    const b = await playerInRoom("mgb", "1", process.env.ROOM_1_KEY ?? "1234");
+    const a = await adminInRoom("mga", "1");
+    const b = await joinOpenRoom("mgb", "1");
 
     await sit(a, "1", 0);
     const started = once(a.socket, "meeting-started");

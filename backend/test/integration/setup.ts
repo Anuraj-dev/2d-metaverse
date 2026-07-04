@@ -20,17 +20,14 @@ process.env.JWT_SECRET ??= "integration-test-jwt-secret-0123456789abcdef";
 process.env.LIVEKIT_URL ??= "ws://localhost:7880";
 process.env.LIVEKIT_API_KEY ??= "devkey";
 process.env.LIVEKIT_API_SECRET ??= "local-development-livekit-secret-change-me";
-process.env.ROOM_1_KEY ??= "1234";
-process.env.ROOM_2_KEY ??= "4321";
-process.env.ROOM_3_KEY ??= "3333";
-process.env.ROOM_4_KEY ??= "4444";
-process.env.ROOM_5_KEY ??= "5555";
-process.env.ROOM_6_KEY ??= "6666";
 process.env.STAGE_KEY ??= "stage-presenter-123";
 // Shrink socket timings so timeout/grace paths are testable in milliseconds.
 process.env.JOIN_TIMEOUT_MS ??= "500";
 process.env.LEAVE_GRACE_MS ??= "400";
 process.env.MEETING_COUNTDOWN_MS ??= "300";
+// Long enough that a knock→approve round trip never races the timeout, short
+// enough that the knock→timeout path resolves within a test's patience.
+process.env.KNOCK_TIMEOUT_MS ??= "1000";
 
 const failure = (service: string, url: string, hint: string) =>
   `Integration tests require ${service} at ${url} but it is unreachable. ` +

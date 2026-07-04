@@ -25,6 +25,19 @@ function once(socket, event, timeoutMs = 3000) {
   });
 }
 
+function onceMatching(socket, event, predicate, timeoutMs = 3000) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${event}`)), timeoutMs);
+    const handler = (payload) => {
+      if (!predicate(payload)) return;
+      clearTimeout(timeout);
+      socket.off(event, handler);
+      resolve(payload);
+    };
+    socket.on(event, handler);
+  });
+}
+
 async function createUser(username) {
   const password = "testing-password-123";
   assert.equal((await api("/api/v1/signup", { body: { username, password } })).status, 200);
@@ -82,15 +95,11 @@ try {
     .map((seat) => ({ roomId: room3.id, seatId: seat.id }))
     .find(({ roomId, seatId }) => !occupiedSeats.has(`${roomId}:${seatId}`));
   assert.ok(selected, "No free seat available for smoke test");
-  const roomKey = "3333";
 
-  const badEntry = once(socketA, "room-enter-result");
-  socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });
-  assert.deepEqual(await badEntry, { ok: false, roomId: selected.roomId, reason: "bad-key" });
-
-  const goodEntry = once(socketA, "room-enter-result");
-  socketA.emit("room-enter", { roomId: selected.roomId, key: roomKey });
-  assert.deepEqual(await goodEntry, { ok: true, roomId: selected.roomId });
+  // Room access (PRD 14): A is the first in → admin; B knocks and A approves.
+  const adminApproved = once(socketA, "knock-result");
+  socketA.emit("knock", { roomId: selected.roomId });
+  assert.deepEqual(await adminApproved, { roomId: selected.roomId, result: "approved" });
 
   let chatLeakedToWorld = false;
   socketB.once("chat", () => { chatLeakedToWorld = true; });
@@ -100,21 +109,17 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(chatLeakedToWorld, false, "private chat leaked to a world participant");
 
-  const entryB = once(socketB, "room-enter-result");
-  socketB.emit("room-enter", { roomId: selected.roomId, key: roomKey });
-  assert.deepEqual(await entryB, { ok: true, roomId: selected.roomId });
+  // B knocks; A (admin) sees the pending request and approves it.
+  const pendingSeenByA = onceMatching(socketA, "knock-pending", (p) => p.knocks.some((k) => k.id === b.selfId));
+  const guestApproved = once(socketB, "knock-result");
+  socketB.emit("knock", { roomId: selected.roomId });
+  await pendingSeenByA;
+  socketA.emit("approve-knock", { roomId: selected.roomId, playerId: b.selfId });
+  assert.deepEqual(await guestApproved, { roomId: selected.roomId, result: "approved" });
+
   const privateChatSeenByB = once(socketB, "chat");
   socketA.emit("chat", { text: "room peer smoke test" });
   assert.deepEqual(await privateChatSeenByB, { id: a.selfId, name: `smokea_${suffix}`, text: "room peer smoke test", scope: selected.roomId });
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const rejectedEntry = once(socketA, "room-enter-result");
-    socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });
-    assert.deepEqual(await rejectedEntry, { ok: false, roomId: selected.roomId, reason: "bad-key" });
-  }
-  const rateLimitedEntry = once(socketA, "room-enter-result");
-  socketA.emit("room-enter", { roomId: selected.roomId, key: "wrong" });
-  assert.deepEqual(await rateLimitedEntry, { ok: false, roomId: selected.roomId, reason: "rate-limited" });
 
   const seatSeenByB = once(socketB, "seat-update");
   socketA.emit("seat-sit", selected);

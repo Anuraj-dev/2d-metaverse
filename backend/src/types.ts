@@ -15,5 +15,7 @@ export interface SocketData {
   playerId?: string;
   spaceId?: string;
   currentRoomId?: string;
+  /** The room this socket last knocked at, for withdrawing a pending knock on disconnect. */
+  knockRoomId?: string;
   lastMoveAt?: number;
 }

@@ -3,7 +3,6 @@ import { pool } from "./db.js";
 export interface RoomRecord {
   id: string;
   spaceId: string;
-  keyHash: string;
   capacity: number;
 }
 
@@ -60,11 +59,10 @@ export async function getRoom(roomId: string): Promise<RoomRecord | null> {
   const result = await pool.query<{
     id: string;
     space_id: string;
-    key_hash: string;
     capacity: number;
-  }>("SELECT id, space_id, key_hash, capacity FROM rooms WHERE id = $1", [roomId]);
+  }>("SELECT id, space_id, capacity FROM rooms WHERE id = $1", [roomId]);
   const row = result.rows[0];
-  return row ? { id: row.id, spaceId: row.space_id, keyHash: row.key_hash, capacity: row.capacity } : null;
+  return row ? { id: row.id, spaceId: row.space_id, capacity: row.capacity } : null;
 }
 
 export async function seatExists(roomId: string, seatId: number): Promise<boolean> {

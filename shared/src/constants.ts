@@ -62,8 +62,21 @@ export const BOARD_MATCH_TTL_SECONDS = 8 * 60 * 60;
 /** Chat channel scopes a client may request. */
 export const CHAT_SCOPES = ["world", "room"] as const;
 
-/** Reasons a `room-enter` attempt can be rejected. */
-export const ROOM_ENTER_REASONS = ["bad-key", "full", "rate-limited"] as const;
+/**
+ * Terminal outcome of a knock, delivered to the knocker (PRD 14). `canceled` is
+ * client-initiated and never sent back, so it is not on the wire.
+ */
+export const KNOCK_RESULTS = ["approved", "denied", "timeout"] as const;
+
+/** How adminship was conferred, carried on `admin-changed` (PRD 14). */
+export const ADMIN_CHANGE_REASONS = ["initial", "succession"] as const;
+
+/**
+ * How long an unanswered knock waits before it auto-expires as denied (PRD 14).
+ * The backend may shrink it via config for tests; behaviour is asserted through
+ * the resulting `knock-result`, never this constant.
+ */
+export const KNOCK_TIMEOUT_MS = 30_000;
 
 /**
  * Reasons a meeting-start countdown can be canceled: a seated player stood up,
@@ -85,7 +98,11 @@ export const CLIENT_EVENTS = {
   move: "move",
   chat: "chat",
   whisper: "whisper",
-  roomEnter: "room-enter",
+  knock: "knock",
+  cancelKnock: "cancel-knock",
+  approveKnock: "approve-knock",
+  denyKnock: "deny-knock",
+  toggleAllowAll: "toggle-allow-all",
   roomLeave: "room-leave",
   seatSit: "seat-sit",
   seatStand: "seat-stand",
@@ -104,7 +121,11 @@ export const SERVER_EVENTS = {
   chat: "chat",
   whisper: "whisper",
   whisperFail: "whisper-fail",
-  roomEnterResult: "room-enter-result",
+  knockPending: "knock-pending",
+  knockResult: "knock-result",
+  adminChanged: "admin-changed",
+  roomOpenState: "room-open-state",
+  capacityAlert: "capacity-alert",
   seatUpdate: "seat-update",
   meetingCountdown: "meeting-countdown",
   meetingCountdownCanceled: "meeting-countdown-canceled",
@@ -129,7 +150,11 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.chat,
   SERVER_EVENTS.whisper,
   SERVER_EVENTS.whisperFail,
-  SERVER_EVENTS.roomEnterResult,
+  SERVER_EVENTS.knockPending,
+  SERVER_EVENTS.knockResult,
+  SERVER_EVENTS.adminChanged,
+  SERVER_EVENTS.roomOpenState,
+  SERVER_EVENTS.capacityAlert,
   SERVER_EVENTS.seatUpdate,
   SERVER_EVENTS.meetingCountdown,
   SERVER_EVENTS.meetingCountdownCanceled,
@@ -152,7 +177,6 @@ export const LIMITS = {
   roomIdMax: 64,
   /** Whisper target is a player id. */
   playerIdMax: 64,
-  roomKeyMax: 128,
   /** Chat / whisper message body. */
   chatTextMax: 500,
   whisperTextMax: 500,
@@ -194,9 +218,9 @@ export const RATE_LIMITS = {
   /** Whispers per player per window. */
   whisperLimit: 20,
   whisperWindowSeconds: 60,
-  /** Wrong room-key attempts per player+room per window. */
-  roomKeyAttemptLimit: 5,
-  roomKeyAttemptWindowSeconds: 5 * 60,
+  /** Knock attempts per player+room per window (anti-harassment; PRD 14). */
+  knockLimit: 5,
+  knockWindowSeconds: 60,
   /** Auth (signup/signin) REST limiter. */
   authWindowMs: 15 * 60_000,
   authLimit: 40,
