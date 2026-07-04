@@ -233,6 +233,7 @@ describe("meeting manager", () => {
       await startMeeting(manager, setSnapshot);
 
       manager.chat(ROOM, "a", "hello team");
+      await manager.settle();
 
       expect(sends).toEqual([
         { playerId: "a", event: "meeting-chat", payload: { roomId: ROOM, id: "a", name: "alice", text: "hello team" } },
@@ -246,6 +247,7 @@ describe("meeting manager", () => {
 
       // "c" is an unseated occupant (never joined the meeting) — no delivery.
       manager.chat(ROOM, "c", "let me in");
+      await manager.settle();
 
       expect(sends).toEqual([]);
     });
@@ -257,6 +259,7 @@ describe("meeting manager", () => {
       await manager.settle();
 
       manager.chat(ROOM, "a", "anyone here?");
+      await manager.settle();
 
       expect(sends).toEqual([]);
     });
@@ -272,8 +275,30 @@ describe("meeting manager", () => {
       await manager.settle();
 
       manager.chat(ROOM, "b", "wait");
+      await manager.settle();
 
       expect(sends).toEqual([]);
+    });
+
+    it("a chat racing a queued stand is gated on post-transition state, not the stale roster", async () => {
+      const { manager, sends, setSnapshot } = makeManager();
+      await startMeeting(manager, setSnapshot);
+
+      // Dispatch a's stand and — WITHOUT awaiting the queue drain — chat both
+      // from the departing player and from the remaining one. A chat gate that
+      // reads room state synchronously sees the stale [a, b] roster: a's line
+      // would deliver, and b's line would still reach a.
+      setSnapshot({ occupants: ["a", "b"], seated: ["b"] });
+      manager.dispatch(ROOM, { type: "stand", playerId: "a" });
+      manager.chat(ROOM, "a", "one last word");
+      manager.chat(ROOM, "b", "still here");
+      await manager.settle();
+
+      // Once the queue settles, the departed player neither delivers nor
+      // receives: a's line is dropped, b's line reaches only b.
+      expect(sends).toEqual([
+        { playerId: "b", event: "meeting-chat", payload: { roomId: ROOM, id: "b", name: "bob", text: "still here" } },
+      ]);
     });
   });
 });
