@@ -338,7 +338,20 @@ async function walkToDoor(page: Page, map: "campus", roomId: string): Promise<vo
   if (!room) throw new Error(`walkToDoor: unknown room "${roomId}" in map "${map}"`);
   const path = room.doorPath;
   for (const [i, [x, y]] of path.entries()) {
-    await walkTo(page, x, y, i === path.length - 1 ? { stopWhenKnocking: roomId } : {});
+    // Intermediate legs are wide-open steering corridors — they only need to be
+    // reached loosely before the next leg takes over. walkTo damps its axis to a
+    // near-stall inside the last ~48px of a target, so a tight (6px) tolerance on
+    // an approach the player enters at full speed can park it ~6-8px out and trip
+    // the no-progress stall detector (the flake seen on the shared x=944 artery
+    // waypoint). A 12px tolerance is crossed from full speed before the damping
+    // band bites — the same tolerance the arcade spec uses for its corridor legs.
+    // The final leg keeps the precise door target (resolved early by the knock).
+    await walkTo(
+      page,
+      x,
+      y,
+      i === path.length - 1 ? { stopWhenKnocking: roomId } : { tolerance: 12 },
+    );
   }
 }
 

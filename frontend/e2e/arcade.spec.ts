@@ -35,10 +35,13 @@ test("arcade: walk into the arcade room, open a cabinet, play, and close", async
   });
   await expect(page.locator(".arcade-overlay")).toBeVisible();
   await expect(page.locator(".arcade-leaderboard")).toBeVisible();
-  // The new overlay chrome: per-arcade sound control + fullscreen toggle.
+  // The new overlay chrome: per-arcade sound control + fullscreen toggle. The
+  // overlay auto-requests browser fullscreen on open, so the toggle reports
+  // "Exit fullscreen" when the request is granted (as in CI Chromium) and
+  // "Enter fullscreen" when it is denied — match either state.
   await expect(page.locator(".arcade-sound")).toBeVisible();
   await expect(page.getByLabel("Mute arcade sound")).toBeVisible();
-  await expect(page.getByLabel("Enter fullscreen")).toBeVisible();
+  await expect(page.getByLabel(/^(Enter|Exit) fullscreen$/)).toBeVisible();
 
   // Play a couple of inputs (slide the board); the overlay stays up.
   await page.keyboard.press("ArrowDown");
