@@ -53,13 +53,11 @@ export interface RoomRoute {
 }
 
 // Descent to the hostel forecourt, shared by every hostel room path. Players
-// spawn at (320,288) in the NW; (944,600) is the same proven-reachable plaza
-// waypoint the HQ-room paths use, so the first leg brushes past the park the
-// same way. From there we head west and drop down the central path to the
-// forecourt hub — every leg is a wall-free, solid-free straight segment.
+// spawn at the plaza centre (960,704) on the E-W artery; head west to the
+// central path and drop straight down to the forecourt hub — every leg is a
+// wall-free, solid-free straight segment.
 const HOSTEL_DESCENT: [number, number][] = [
-  [944, 600],
-  [560, 600],
+  [560, 704],
   [560, 1520],
 ];
 const HOSTEL_HUB: [number, number] = [560, 1520];
@@ -73,26 +71,28 @@ export const MAPS: Record<
     query: "",
     rooms: {
       "1": {
-        doorPath: [...HOSTEL_DESCENT, [736, 1520], [736, 1596]],
-        // Leave the north doorway straight DOWN into the room, then to seat 0.
+        doorPath: [...HOSTEL_DESCENT, [736, 1520], [736, 1604]],
+        // Leave the north doorway straight DOWN into the room, then across to
+        // the seat. Targets the seat's top edge so the foot point (y+8) lands
+        // inside the 16px seat rect (seat 0 rect top-left 704,1632).
         seatPath: [
-          [736, 1628],
-          [712, 1640],
+          [736, 1632],
+          [712, 1632],
         ],
-        // Mirror toward the neighbouring chair (seat 1 at 744,1640).
+        // Mirror toward the neighbouring chair (seat 1 rect top-left 736,1632).
         seat1Path: [
-          [736, 1628],
-          [744, 1640],
+          [736, 1632],
+          [744, 1632],
         ],
         exit: HOSTEL_HUB,
       },
       "2": {
-        doorPath: [...HOSTEL_DESCENT, [528, 1520], [528, 1596]],
+        doorPath: [...HOSTEL_DESCENT, [528, 1520], [528, 1604]],
         seatPath: [],
         exit: HOSTEL_HUB,
       },
       "3": {
-        doorPath: [...HOSTEL_DESCENT, [288, 1520], [288, 1596]],
+        doorPath: [...HOSTEL_DESCENT, [288, 1520], [288, 1604]],
         seatPath: [],
         exit: HOSTEL_HUB,
       },
