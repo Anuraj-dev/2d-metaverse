@@ -27,15 +27,15 @@ test("admin approves a knock and the visitor gets in", async ({ browser }) => {
   const guest = await openContext(browser);
   try {
     // The first arrival walks straight into the empty room as its admin.
-    await enterRoom(admin.page, "campus", "1");
+    await enterRoom(admin.page, "campus", "4");
     await expect(admin.page.locator(".admin-badge.is-you")).toBeVisible();
 
     // The visitor knocks and waits; the admin sees the request and approves.
-    await knockAtDoor(guest.page, "campus", "1");
+    await knockAtDoor(guest.page, "campus", "4");
     await respondToKnock(admin.page, "Approve");
 
     // The approved visitor is admitted (door opens for them).
-    await guest.page.waitForFunction(() => window.__testHook?.state.currentRoomId === "1");
+    await guest.page.waitForFunction(() => window.__testHook?.state.currentRoomId === "4");
     // The guest sees who the admin is; they are not the admin themselves.
     await expect(guest.page.locator(".admin-badge")).toContainText("Admin:");
   } finally {
@@ -48,8 +48,8 @@ test("admin denies a knock and the visitor stays out", async ({ browser }) => {
   const admin = await openContext(browser);
   const guest = await openContext(browser);
   try {
-    await enterRoom(admin.page, "campus", "2");
-    await knockAtDoor(guest.page, "campus", "2");
+    await enterRoom(admin.page, "campus", "5");
+    await knockAtDoor(guest.page, "campus", "5");
     await respondToKnock(admin.page, "Deny");
 
     // The knocking card clears and feedback shows; the guest never entered.
@@ -67,10 +67,10 @@ test("adminship passes to the next occupant when the admin leaves", async ({ bro
   const admin = await openContext(browser);
   const heir = await openContext(browser);
   try {
-    await enterRoom(admin.page, "campus", "3");
-    await knockAtDoor(heir.page, "campus", "3");
+    await enterRoom(admin.page, "campus", "6");
+    await knockAtDoor(heir.page, "campus", "6");
     await respondToKnock(admin.page, "Approve");
-    await heir.page.waitForFunction(() => window.__testHook?.state.currentRoomId === "3");
+    await heir.page.waitForFunction(() => window.__testHook?.state.currentRoomId === "6");
     // Before hand-off the heir is a plain occupant, not the admin.
     await expect(heir.page.locator(".admin-badge")).toContainText("Admin:");
 

@@ -103,12 +103,29 @@ export function createRoomAdminManager(deps: RoomAdminManagerDeps): RoomAdminMan
 
     for (const effect of effects) {
       switch (effect.type) {
-        case "admit":
+        case "admit": {
           // Side effects (join + grant) must land before the knocker is told to
           // enter, so the downstream seat/LiveKit checks see the grant.
           await deps.admit(roomId, effect.playerId, effect.asAdmin);
           deps.toPlayer(effect.playerId, "knock-result", { roomId, result: "approved" });
+          // The room-scoped admin-changed / room-open-state broadcasts fired
+          // before this player joined the channel, so seed their HUD directly
+          // with the room's current admin + door state (non-admins only — the
+          // fresh admin receives the admin-changed broadcast below).
+          if (!effect.asAdmin && state.admin !== null) {
+            deps.toPlayer(effect.playerId, "admin-changed", {
+              roomId,
+              admin: named(state.admin),
+              reason: "initial",
+            });
+          }
+          deps.toPlayer(effect.playerId, "room-open-state", {
+            roomId,
+            allowAll: state.allowAll,
+            atCapacity: state.occupants.length >= ctx.capacity,
+          });
           break;
+        }
         case "admin-changed":
           deps.toRoom(roomId, "admin-changed", {
             roomId,
