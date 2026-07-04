@@ -101,9 +101,14 @@ export const MAPS: Record<
         exit: [592, 250],
       },
       "5": {
+        // Spawn-rooted (mirrors room 4): up the x=944 artery to the wall-free
+        // y=360 forecourt corridor, across to the door column, then straight up
+        // through the door gap. Independent of any prior room so a freshly
+        // spawned player reaches it (room-access.spec knocks here from spawn).
         doorPath: [
-          [592, 250],
-          [800, 250],
+          [944, 600],
+          [944, 360],
+          [800, 360],
           [800, 174],
         ],
         seatPath: [],
@@ -111,8 +116,9 @@ export const MAPS: Record<
       },
       "6": {
         doorPath: [
-          [800, 250],
-          [1024, 250],
+          [944, 600],
+          [944, 360],
+          [1024, 360],
           [1024, 174],
         ],
         seatPath: [],
