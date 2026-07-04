@@ -382,7 +382,8 @@ swallow the game's keys via the scene's `isTyping` guard).
 
 **Per-arcade sound control:** the overlay header carries a mute toggle + volume
 slider bound to a dedicated **`arcade` mixer channel** (`arcadeVolume` /
-`muteArcade` in `ui/settings.ts`, also surfaced in the global Settings panel).
+`muteArcade` in `ui/settings.ts`). Kept in the (lazy-loaded) overlay rather than
+the core Settings panel so the entry bundle stays lean under the size budget.
 Arcade blips (`open-arcade`, `arcade-point`, `arcade-over`) route on that channel
 in the pure `soundMixer` `EVENT_SOUNDS` table, so a player can quiet a noisy game
 independently of world sfx. Scope is **arcade-wide**, not per-game: all three

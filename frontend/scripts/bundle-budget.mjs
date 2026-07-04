@@ -18,9 +18,17 @@ const ASSETS = join(DIST, "assets");
 // Budget for the entry chunk, gzipped. The real (configured-production) entry
 // is ~120.5 KB — earlier CI measured ~105 KB only because the build lacked
 // VITE_SERVER_URL and Vite tree-shook the app behind the misconfiguration
-// screen. 125 KB pins today's true baseline with small headroom; the budget
-// still catches regressions like Phaser/LiveKit leaking into the entry.
-const ENTRY_BUDGET_KB = 125;
+// screen. The budget still catches real regressions like Phaser/LiveKit leaking
+// into the entry.
+//
+// Raised 125 → 130 for PRD 16 (arcade zone): the entry had reached the old
+// 125 KB ceiling exactly (zero headroom on CI), and this feature adds a small,
+// unavoidable core-mixer bit — the `arcade` sound channel in soundMixer +
+// two settings fields, both consumed by the always-loaded SfxBridge. The arcade
+// overlay, game renderers and PRNG stay lazy-loaded in their own chunk (~5 KB,
+// out of the entry). 130 KB restores a few KB of headroom without letting the
+// heavy transitive deps back in.
+const ENTRY_BUDGET_KB = 130;
 
 const html = readFileSync(join(DIST, "index.html"), "utf8");
 const match = html.match(/src="([^"]*\/assets\/index-[^"]+\.js)"/);

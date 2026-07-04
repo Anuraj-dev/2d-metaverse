@@ -87,18 +87,6 @@ export default function Settings() {
             />
           </label>
           <label className="set-row">
-            <span>Arcade</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(s.arcadeVolume * 100)}
-              onChange={(e) =>
-                setSettings({ arcadeVolume: Number(e.target.value) / 100 })
-              }
-            />
-          </label>
-          <label className="set-row">
             <span>Mute all</span>
             <input
               type="checkbox"
