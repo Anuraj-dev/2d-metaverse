@@ -343,10 +343,12 @@ describe("disconnect grace", () => {
     a.socket.emit("seat-sit", { roomId: "6", seatId: 1 });
     expect(await sat).toEqual({ roomId: "6", seatId: 1, playerId: a.init.selfId });
 
+    // Wait for the FREE (null) specifically: on a slow runner a's own sit
+    // broadcast can still be in flight when this listener registers.
     const freed = onceMatching<{ roomId: string; seatId: number; playerId: string | null }>(
       b.socket,
       "seat-update",
-      (payload) => payload.roomId === "6" && payload.seatId === 1,
+      (payload) => payload.roomId === "6" && payload.seatId === 1 && payload.playerId === null,
       LEAVE_GRACE_MS * 6
     );
     a.socket.disconnect();
