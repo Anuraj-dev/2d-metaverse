@@ -79,7 +79,7 @@ describe("space listing", () => {
     expect(typeof result.json.mapJsonUrl).toBe("string");
     expect(result.json.rooms).toHaveLength(6);
     const room3 = result.json.rooms.find((room: { id: string }) => room.id === "3");
-    expect(room3.seats).toHaveLength(4);
+    expect(room3.seats).toHaveLength(12); // hostel Room 3 (PRD 13)
     expect(room3.doorZone).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
   });
 
