@@ -25,6 +25,25 @@ import { proximityVolume } from "./proximity";
 export const OUTDOOR_ZONE = "outdoor";
 
 /**
+ * Baseline audibility floor for two players who share an *enclosed room* zone.
+ *
+ * A room is one acoustic space: being inside it together must never fall to
+ * silence the way open-world proximity does. Without a floor, the open-world
+ * distance falloff (`AUDIO_CUTOFF` = 200px) silences same-room teammates once
+ * they are more than the cutoff apart — and every campus room's interior is
+ * *wider than the cutoff* (the PRD-13 hostel rooms reach a ~280px diagonal), so
+ * two players genuinely standing in the same room go mute purely by distance.
+ * That is the "sometimes in some rooms I can't hear my teammate" bug: the zone
+ * gate promises same-room audibility, but the falloff was quietly zeroing it.
+ *
+ * The floor guarantees a shared room is always audible while keeping the
+ * distance gradient (closer is still louder, up to full volume). The OUTDOOR
+ * zone is deliberately *not* floored — the open world keeps its true falloff to
+ * zero so you don't hear someone across the plaza.
+ */
+export const ROOM_AUDIO_FLOOR = 0.35;
+
+/**
  * The audio zone containing a point: the id of the first room whose rectangle
  * contains it, or `OUTDOOR_ZONE`. Built on `zones.findRoomArea` so room
  * membership for audio uses the exact same containment rule as door/room-exit
@@ -35,10 +54,16 @@ export function zoneAt(rooms: readonly RoomArea[], px: number, py: number): stri
 }
 
 /**
- * World-audio volume from one player to another: zero across different zones
- * (the "no voice through walls" rule), otherwise the existing distance falloff
- * within the shared zone. Same-zone behaviour is byte-for-byte the pre-PRD
- * proximity volume, so the outdoor zone is unchanged from today.
+ * World-audio volume from one player to another:
+ *  - zero across different zones (the "no voice through walls" rule);
+ *  - within the shared OUTDOOR zone, the open-world distance falloff, unchanged
+ *    (can reach 0 — you don't hear someone across the plaza);
+ *  - within a shared *room* zone, that same falloff but floored at
+ *    `ROOM_AUDIO_FLOOR`, so being in an enclosed room together is always
+ *    audible even when the room is wider than the cutoff.
+ *
+ * The floor keeps the in-room distance gradient (closer stays louder, up to full
+ * volume) while restoring the zone model's promise: share a room ⇒ you hear them.
  */
 export function zoneVolume(
   myZone: string,
@@ -47,7 +72,9 @@ export function zoneVolume(
   cutoff?: number
 ): number {
   if (myZone !== theirZone) return 0;
-  return proximityVolume(distance, cutoff);
+  const falloff = proximityVolume(distance, cutoff);
+  if (myZone === OUTDOOR_ZONE) return falloff;
+  return Math.max(ROOM_AUDIO_FLOOR, falloff);
 }
 
 /**

@@ -184,18 +184,24 @@ gains a call site. "Logic in the scene" is a review smell — put it in a pure m
 World voice is **proximity audio gated by zone** — you hear a nearby player only if
 you share an *audio zone*.
 
-- **Falloff** (`game/proximity.ts`): within a zone, volume scales linearly from `1`
-  (touching) to `0` at the `AUDIO_CUTOFF` (200px) distance. Unchanged from before.
+- **Falloff** (`game/proximity.ts`): volume scales linearly from `1` (touching) to `0`
+  at the `AUDIO_CUTOFF` (200px) distance. This is the raw open-world falloff.
 - **Zones** (`game/audioZones.ts`): each room interior is a named zone whose identity
   is the existing `roomId`; everything outside every room is the single `OUTDOOR_ZONE`.
   Zones are **derived at load time from the map's `roomBounds` rectangles**
   (`roomAreasFromObjects`) — the same rectangles the scene uses for room-entry
   detection, so there is *no second source of truth*: adding a room to a map's
   `roomBounds` layer auto-creates its audio zone.
-- **The rule** (`zoneVolume`): volume is `0` across different zones and the normal
-  falloff within a shared zone. It **composes with** the falloff — it gates, it does
-  not replace it. Doorways are a **binary, immediate cutover at the threshold**: no
-  muffling or attenuation-through-walls, so the world's audio feels physical.
+- **The rule** (`zoneVolume`): volume is `0` across different zones (no voice through
+  walls). Within the shared **outdoor** zone it is the raw distance falloff (reaches
+  `0` — you don't hear someone across the plaza). Within a shared **room** zone it is
+  that same falloff but **floored at `ROOM_AUDIO_FLOOR` (0.35)** so a shared enclosed
+  room is *always* audible: an enclosed room is one acoustic space, and every campus
+  room's interior is wider than the 200px cutoff (the hostel rooms reach a ~280px
+  diagonal), so without the floor two players standing in the *same* room went mute
+  purely by distance. The floor keeps the in-room distance gradient (closer stays
+  louder) while restoring the promise *share a room ⇒ you hear them*. Doorways stay a
+  **binary, immediate cutover at the threshold**: no muffling or attenuation-through-walls.
 - **Wiring**: each client derives its own and every remote's zone locally from the
   already-broadcast positions (the scene stamps a `zone` onto each player in the
   `positions` payload). `mediaLogic.computeVolumes` then prices each subscribed remote

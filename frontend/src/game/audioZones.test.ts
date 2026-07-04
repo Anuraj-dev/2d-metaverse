@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { describe, it, expect } from "vitest";
 import {
   OUTDOOR_ZONE,
+  ROOM_AUDIO_FLOOR,
   zoneAt,
   zoneVolume,
   roomAreasFromObjects,
@@ -18,14 +19,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 describe("zoneVolume — the isolation rule", () => {
   const CUT = 200;
 
-  // (myZone, theirZone, distance) → expected volume. Same zone keeps the
-  // linear falloff; different zones are always silent regardless of distance.
+  // (myZone, theirZone, distance) → expected volume. A shared room keeps the
+  // distance gradient but never falls below ROOM_AUDIO_FLOOR (an enclosed room
+  // is always audible); the outdoor zone keeps the true falloff to zero;
+  // different zones are always silent regardless of distance.
   const cases: Array<[string, string, string, number, number]> = [
-    // same-zone: unchanged distance falloff (touching / mid / cutoff / beyond)
-    ["same zone, touching", "roomA", "roomA", 0, 1],
-    ["same zone, mid-range", "roomA", "roomA", CUT / 2, 0.5],
-    ["same zone, at cutoff", "roomA", "roomA", CUT, 0],
-    ["same zone, far outdoor", OUTDOOR_ZONE, OUTDOOR_ZONE, 40, 0.8],
+    // same room: distance gradient above the floor is unchanged…
+    ["same room, touching", "roomA", "roomA", 0, 1],
+    ["same room, mid-range", "roomA", "roomA", CUT / 2, 0.5],
+    // …but a shared room never goes silent — floored at/beyond the cutoff.
+    ["same room, at cutoff (floored, not silent)", "roomA", "roomA", CUT, ROOM_AUDIO_FLOOR],
+    ["same room, far beyond cutoff (still floored)", "roomA", "roomA", CUT * 2, ROOM_AUDIO_FLOOR],
+    // outdoor is the open world: falloff all the way to zero.
+    ["outdoor, mid-range falloff", OUTDOOR_ZONE, OUTDOOR_ZONE, 40, 0.8],
+    ["outdoor, at cutoff (silent)", OUTDOOR_ZONE, OUTDOOR_ZONE, CUT, 0],
     // different zones: the doors-bug of audio — must be 0 even point-blank
     ["adjacent through a wall (point-blank)", "roomA", OUTDOOR_ZONE, 1, 0],
     ["adjacent through a wall (mid-range)", "roomA", OUTDOOR_ZONE, CUT / 2, 0],
@@ -38,13 +45,19 @@ describe("zoneVolume — the isolation rule", () => {
     expect(zoneVolume(mine, theirs, distance, CUT)).toBeCloseTo(expected);
   });
 
-  it("same-zone volume is byte-for-byte the pre-PRD proximity falloff", () => {
-    for (const d of [0, 25, 60, 137, 199, 200, 260]) {
-      expect(zoneVolume("z", "z", d, CUT)).toBe(proximityVolume(d, CUT));
+  it("a shared room is never silent — any distance is at least the floor", () => {
+    for (const d of [0, 50, 200, 400, 10_000]) {
+      expect(zoneVolume("roomA", "roomA", d, CUT)).toBeGreaterThanOrEqual(ROOM_AUDIO_FLOOR);
     }
   });
 
-  it("honours a custom cutoff within a shared zone", () => {
+  it("outdoor voice is byte-for-byte the pre-PRD proximity falloff (reaches 0)", () => {
+    for (const d of [0, 25, 60, 137, 199, 200, 260]) {
+      expect(zoneVolume(OUTDOOR_ZONE, OUTDOOR_ZONE, d, CUT)).toBe(proximityVolume(d, CUT));
+    }
+  });
+
+  it("honours a custom cutoff within a shared zone (above the floor)", () => {
     expect(zoneVolume("z", "z", 50, 100)).toBeCloseTo(0.5);
   });
 });
@@ -158,6 +171,24 @@ describe("zone derivation against the real map data", () => {
         const za = zoneAt(zones, a.rect.x + a.rect.width / 2, a.rect.y + a.rect.height / 2);
         const zb = zoneAt(zones, b.rect.x + b.rect.width / 2, b.rect.y + b.rect.height / 2);
         expect(zoneVolume(za, zb, 5)).toBe(0);
+      });
+
+      // Regression: every campus room is wider than AUDIO_CUTOFF (200px) — the
+      // largest hostel room spans a ~280px diagonal — so before the room floor
+      // two players at opposite corners of the *same* room were muted purely by
+      // distance. Assert the whole span of every room stays audible.
+      it("two players anywhere in the same room can always hear each other", () => {
+        for (const z of zones) {
+          const diagonal = Math.hypot(z.rect.width, z.rect.height);
+          expect(diagonal).toBeGreaterThan(200); // documents WHY the floor is needed
+          // Both corners resolve to this room (rect edges are inclusive), so the
+          // pair shares the zone and the room floor must keep them audible.
+          const near = zoneAt(zones, z.rect.x, z.rect.y);
+          const far = zoneAt(zones, z.rect.x + z.rect.width, z.rect.y + z.rect.height);
+          expect(near).toBe(z.roomId);
+          expect(far).toBe(z.roomId);
+          expect(zoneVolume(near, far, diagonal)).toBeGreaterThan(0);
+        }
       });
     });
   }
