@@ -244,16 +244,20 @@ make_room(2, x0=26, y0=100, x1=40, y1=109, door_x=32,
 make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
           seats=table_seats(10, 100, 26, 110, 12), door_wall="north")
 
-# ── ARCADE ROOM (S, east of the hostel) ──────────────────────────────────────
+# ── ARCADE HALL (S, east of the hostel) ──────────────────────────────────────
 # A dedicated, enclosed games hall well south of the plaza and FAR from the
-# auditorium (NE). It is a PUBLIC walk-in zone, not a meeting room: it has an
-# open north doorway (a wall gap, NO doorZone → no lock/knock/animated door) and
-# NO seats (so it never arms the all-seated meeting trigger). It DOES get a
-# `roomBounds` rect (roomId "arcade") purely for its own audio zone — voices stay
-# inside the hall — and a minimap footprint. The three cabinets line the north
-# wall; players approach each from the open floor to its south (same zone shape
-# as before). A stone spur off the full-height x=79-80 artery paves the walk from
-# spawn straight south to the door.
+# auditorium (NE). It is a PUBLIC walk-in building — walls + a wide open doorway,
+# authored exactly like the HQ shell: **no `roomBounds`, no `doorZone`, no
+# seats**. That is deliberate and load-bearing: the frontend's locked-room
+# rollback (`WorldScene.keepLockedRoomsClosed`) bounces the player out of ANY
+# `roomBounds` rect they have not been admitted to, so giving this hall a
+# roomBounds would make it unenterable (it has no knock/access path). Skipping
+# roomBounds keeps it freely walk-in (the trade-off is no private audio zone —
+# voices carry through the doorway, exactly as they did for the old open-plaza
+# cabinets). No seats also means it can never arm the all-seated meeting trigger.
+# The three cabinets line the north wall; players approach each from the open
+# floor to its south. A stone spur off the full-height x=79-80 artery paves the
+# walk from spawn straight south to the door.
 AX0, AY0, AX1, AY1 = 67, 94, 87, 108
 # Wide (4-tile) north entrance centred on the x=79-80 stone artery running down
 # from spawn — a generous games-hall doorway that players thread comfortably.
@@ -271,13 +275,6 @@ fill(ground, (AX0 + AX1) // 2 - 3, (AY0 + AY1) // 2,
 # already stone above y=88; this makes the door row read as a paved entrance).
 fill(ground, ARCADE_DOOR_X, AY0, ARCADE_DOOR_X + ARCADE_DOOR_W - 1, AY0, STONE)
 fill(ground, 79, 89, 80, 93, STONE)
-room_bounds.append({
-    "id": 11099, "name": "room_arcade_bounds",
-    "x": (AX0 + 1) * TS, "y": (AY0 + 1) * TS,
-    "width": (AX1 - AX0 - 1) * TS, "height": (AY1 - AY0 - 1) * TS,
-    "rotation": 0, "type": "", "visible": True,
-    "properties": [{"name": "roomId", "type": "string", "value": "arcade"}],
-})
 
 # ── GROUND DETAIL PASSES (PRD 12 fix round 1: ground variety) ────────────────
 GRASS_FAMILY = {GRASS, GRASS_T1, GRASS_T2, GRASS_T3, GRASS_T4, GRASS_SPR1, GRASS_SPR2}

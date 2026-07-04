@@ -202,7 +202,7 @@ describe("campus arcade cabinets (PRD 11)", () => {
   });
 });
 
-describe("campus arcade room (PRD 16)", () => {
+describe("campus arcade hall (PRD 16)", () => {
   interface TiledObject {
     name: string;
     x?: number;
@@ -222,37 +222,30 @@ describe("campus arcade room (PRD 16)", () => {
   function prop(o: TiledObject, name: string): unknown {
     return o.properties?.find((p) => p.name === name)?.value;
   }
-  const arcadeRoom = () =>
-    objects("roomBounds").find((o) => prop(o, "roomId") === "arcade");
 
-  it("authors a dedicated 'arcade' roomBounds for its own audio zone", () => {
-    const room = arcadeRoom();
-    expect(room, "missing arcade roomBounds").toBeDefined();
-    expect((room?.width ?? 0) > 0 && (room?.height ?? 0) > 0).toBe(true);
-  });
-
-  it("is a public walk-in zone: no doorZone and no seats reference it (never a meeting room)", () => {
-    // No door object → no lock/knock/animated door (open doorway only).
+  // The arcade hall is a public walk-in building: walls + open doorway, but NO
+  // roomBounds / doorZone / seats. This is load-bearing — the locked-room
+  // rollback bounces the player out of any roomBounds they aren't admitted to,
+  // so a roomBounds here would make the hall unenterable.
+  it("is a public, ungated hall: no roomBounds/doorZone/seats claim an 'arcade' room", () => {
+    expect(objects("roomBounds").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
     expect(objects("doorZones").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
-    // No seats → the all-seated meeting trigger can never arm here.
     expect(objects("seats").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
+    // And it does not accidentally reuse an existing private roomId's zone: the
+    // canonical rooms stay exactly 1-6 (asserted in audioZones.test.ts).
   });
 
-  it("places every arcade cabinet inside the arcade room bounds", () => {
-    const room = arcadeRoom();
-    if (!room) throw new Error("arcade room missing");
-    const rx = room.x ?? 0;
-    const ry = room.y ?? 0;
-    const rw = room.width ?? 0;
-    const rh = room.height ?? 0;
+  it("relocates the three cabinets together into the southern hall (well clear of the plaza)", () => {
     const cabinets = objects("furniture").filter((o) => o.name.startsWith("f_arcade_"));
     expect(cabinets.length).toBe(3);
     for (const c of cabinets) {
-      const cx = c.x ?? 0;
-      const cy = c.y ?? 0;
-      expect(cx >= rx && cx <= rx + rw, `${c.name} x inside room`).toBe(true);
-      expect(cy >= ry && cy <= ry + rh, `${c.name} y inside room`).toBe(true);
+      // Deep south of spawn (row 44 = 704px) — the cabinets moved out of the
+      // old plaza cluster (~row 50) into the far-south hall (row 96 = 1536px).
+      expect(c.y ?? 0, `${c.name} is in the south hall`).toBeGreaterThan(1400);
     }
+    // Clustered on one wall (all within a few tiles vertically).
+    const ys = cabinets.map((c) => c.y ?? 0);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(16);
   });
 });
 

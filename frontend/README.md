@@ -358,14 +358,17 @@ in the meeting — a blip never ejects you to the world.
 
 ### Arcade cabinets (mini-games, PRD 11 / PRD 16)
 
-Solid arcade cabinets line the north wall of a dedicated **Arcade Room** in the
+Solid arcade cabinets line the north wall of a dedicated **Arcade Hall** in the
 south campus (authored in `gen_campus.py`, far from the auditorium, reached by
-walking south from spawn down the x=79-80 stone artery). The room is a **public
-walk-in zone** — an open doorway (a wall gap, *no* `doorZone`, so no
-lock/knock/animated door) and **no seats** (so it never arms the all-seated
-meeting trigger). It still carries a `roomBounds` rect with `roomId "arcade"`
-purely to get its own **audio zone** (voices stay inside the hall) and a minimap
-footprint. Walking next to a cabinet shows the usual interact hint; pressing
+walking south from spawn down the x=79-80 stone artery). The hall is a **public
+walk-in building** — walls + a wide open doorway, authored like the HQ shell with
+**no `roomBounds`, no `doorZone`, no seats**. That is deliberate: the frontend's
+locked-room rollback (`WorldScene.keepLockedRoomsClosed`) bounces the player out
+of any `roomBounds` rect they have not been admitted to, so a roomBounds here
+would make the hall *unenterable* (it has no knock/access path). The trade-off is
+no private audio zone — voices carry through the doorway, exactly as they did for
+the old open-plaza cabinets. No seats also means it can never arm the all-seated
+meeting trigger. Walking next to a cabinet shows the usual interact hint; pressing
 **E** opens the overlay hosting the game.
 
 The overlay presents the game **fullscreen**: it requests the browser Fullscreen
