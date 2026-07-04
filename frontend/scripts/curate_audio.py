@@ -38,6 +38,13 @@ PACK = os.path.join(HERE, "..", "..", "Assets", "Cozy Game Sound Pack 1.zip")
 OUT_DIR = os.path.join(HERE, "..", "public", "assets", "audio")
 PREFIX = "Cozy Game Sound Pack 1/"
 
+# The meeting-portal transition clips (PRD 16) are curated from the owner's
+# personal CC0 sound-effects library (Freesound.org, CC0 per its README) rather
+# than the Cozy pack — a cozy foley pack has no cinematic whoosh/riser material.
+# Machine-specific path (like PACK above); the portal step is skipped with a
+# warning if the library is not mounted.
+DSLR_LIB = "/run/media/raja/New Volume/DSLR (The beast)/Sound Effects"
+
 STEMS = {
     "drums6": "6-G#-96 BPM/6-Drums Only.opus",
     "drums10": "10-C -65 BPM/10-FullLoop(Drums Only).opus",
@@ -123,6 +130,49 @@ def synth_arcade() -> None:
     encode(blip("arcade_point", (0.09, 880), (0.05, 1180), fade=0.14), "arcade_point")
     encode(blip("arcade_start", (0.08, 523), (0.08, 659), (0.12, 784), fade=0.28), "arcade_start")
     encode(blip("arcade_over", (0.14, 440), (0.14, 349), (0.22, 262), fade=0.5), "arcade_over")
+
+
+def curate_portal_transitions() -> None:
+    """Curate the meeting-portal whoosh clips from the CC0 DSLR library (PRD 16).
+
+    portal_in: a rising reversed-cymbal riser + a transition whoosh landing on a
+    soft sub-impact — a cinematic "entering a portal" swell. portal_out: a
+    softer, lighter descending swoosh with a long fade and NO impact layer, so
+    leaving reads gentler than entering. Both mono, peak-normalized, Ogg Vorbis.
+    """
+    if not os.path.isdir(DSLR_LIB):
+        print(f"  [skip] portal transitions — library not mounted at {DSLR_LIB}")
+        return
+
+    def mono(src: str, name: str) -> str:
+        out = os.path.join(TMP, f"{name}_mono.wav")
+        run(["ffmpeg", "-y", "-i", src, "-ac", "1", "-ar", "48000", out])
+        return out
+
+    lib = lambda *p: os.path.join(DSLR_LIB, *p)
+
+    # ── portal_in: riser → whoosh → soft impact ─────────────────────────────
+    cymbal = mono(lib("riser", "711683__leonseptavaux__cymbal_sound_fx_reverse_1.wav"), "cymbal")
+    whoosh = mono(lib("Woosh", "transition woosh", "427823__kinoton__whoosh-1.wav"), "whoosh")
+    impact = mono(lib("hit & impact", "394642__screamstudio__sub-impact.wav"), "impact")
+
+    riser_part = fx(cymbal, "riser_part", "trim", "3.47", "1.2", "fade", "h", "0.05", "1.2", "0.15")
+    whoosh_part = fx(whoosh, "whoosh_part", "fade", "h", "0.02", "0.8", "0.08")
+    impact_trim = fx(impact, "impact_trim", "trim", "0", "0.6", "fade", "h", "0.01", "0.6", "0.3")
+    impact_part = fx(impact_trim, "impact_part", "pad", "0.9", "0")
+    p_in_mix = os.path.join(TMP, "portal_in_mix.wav")
+    run(["sox", "-m", riser_part, whoosh_part, impact_part, p_in_mix])
+    p_in = fx(peak_normalize(p_in_mix, "portal_in_norm", -11), "portal_in_final",
+              "fade", "h", "0.01", "1.5", "0.2")
+    encode(p_in, "portal_in")
+
+    # ── portal_out: soft descending swoosh, no impact ───────────────────────
+    swoosh = mono(lib("Woosh", "transition woosh", "517877__the_real_not_important__swoosh_low.mp3"),
+                  "swooshlow")
+    p_out = fx(peak_normalize(
+        fx(swoosh, "portalout_trim", "trim", "0", "1.0", "fade", "h", "0.02", "1.0", "0.5"),
+        "portalout_norm", -13), "portalout_final", "fade", "h", "0.01", "1.0", "0.1")
+    encode(p_out, "portal_out")
 
 
 def main() -> None:
@@ -217,32 +267,11 @@ def main() -> None:
              (peak_normalize(fx(n_a4, "ml4", "trim", "0", "0.4"), "ml4_n", -15), 0.33))
     encode(peak_normalize(fx(ml, "ml_fx", "reverb", "24", "50", "50"), "ml_n", -15), "meeting_leave")
 
-    # ── Portals: reversed-shimmer swell into a deep boom (the "chill") ──────
-    swell = fx(shimmer, "swell",
-               "tempo", "-m", "0.35", "reverb", "60", "50", "80", "reverse",
-               "trim", "0", "1.0", "fade", "0.35", "1.0", "0.02")
-    p_boom = peak_normalize(
-        fx(boom, "p_boom", "pitch", "-300", "lowpass", "420", "fade", "0", "0.4", "0.25"),
-        "p_boom_n", -12)
-    p_note_in = peak_normalize(fx(n_a5, "p_note_in", "reverb", "50", "50", "70"), "p_note_in_n", -15)
-    portal_in = mix("portal_in_mix",
-                    (peak_normalize(swell, "swell_n", -14), 0.0),
-                    (p_boom, 0.92),
-                    (p_note_in, 0.95))
-    encode(peak_normalize(fx(portal_in, "portal_in_fx", "fade", "0", "2.0", "0.4"),
-                          "portal_in_n", -11), "portal_in")
-
-    # portal_out: the mirror — boom first, sparkle decays away downward.
-    sparkle = fx(shimmer, "sparkle",
-                 "tempo", "-m", "0.45", "reverb", "55", "50", "70",
-                 "trim", "0", "1.2", "fade", "0.01", "1.2", "0.6")
-    p_note_out = peak_normalize(fx(n_a4, "p_note_out", "reverb", "50", "50", "70"), "p_note_out_n", -15)
-    portal_out = mix("portal_out_mix",
-                     (p_boom, 0.0),
-                     (peak_normalize(sparkle, "sparkle_n", -15), 0.05),
-                     (p_note_out, 0.10))
-    encode(peak_normalize(fx(portal_out, "portal_out_fx", "fade", "0", "1.6", "0.4"),
-                          "portal_out_n", -12), "portal_out")
+    # ── Portals: cinematic whoosh in / softer whoosh out (PRD 16) ───────────
+    # Curated from the CC0 DSLR library (see curate_portal_transitions) — the
+    # Cozy pack has no cinematic riser/whoosh material. Skipped with a warning
+    # if that library is not mounted (the other clips above still regenerate).
+    curate_portal_transitions()
 
     # ── Outdoor ambience: the pack's sparsest pad, slowed into "air" ────────
     # 30s of the D# pad → 60s at half speed (an octave down, tonality blurred),
