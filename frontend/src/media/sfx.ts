@@ -11,6 +11,9 @@
 import { getSettings, subscribeSettings } from "../ui/settings";
 import {
   channelGain,
+  clamp01,
+  DUCK_FACTOR,
+  duckStep,
   fadeStep,
   loopTargets,
   volumesFromSettings,
@@ -53,9 +56,8 @@ function el(clip: string): HTMLAudioElement {
 }
 
 function gainFor(channel: Channel): number {
-  return channelGain(volumesFromSettings(getSettings()), channel, {
-    voiceActive,
-  });
+  // One-shot cues never duck (sfx untouched; the duck is a loop-only envelope).
+  return channelGain(volumesFromSettings(getSettings()), channel);
 }
 
 /** Preload every one-shot clip so the first play is instant. Idempotent. */
@@ -92,16 +94,25 @@ export function playSfx(name: SfxName, opts: { notify?: boolean } = {}): void {
 //
 // The loops are LIFECYCLE-AWARE: the outdoor ambience only sounds while the
 // local player is outdoors, and both world loops fall silent across a meeting
-// (portal-in → portal-out). Every gain change — duck, zone change, meeting,
-// slider — FADES toward the pure-mixer target (soundMixer.loopTargets /
-// fadeStep); nothing hard-cuts. A loop element is paused once its fade reaches
-// silence and resumed when its target rises again.
+// (portal-in → portal-out). Two independent smoothers drive each loop and are
+// multiplied to the applied volume:
+//   • a slow BASE fade (soundMixer.loopTargets / fadeStep, ~700ms) for scene-scale
+//     changes — zone crossings, meetings, slider/mute moves;
+//   • a shared speech DUCK envelope (soundMixer.duckStep) with a fast attack and a
+//     ~700ms release, dropping BOTH loops to DUCK_FACTOR while a peer/self speaks.
+// Nothing hard-cuts. A loop element is paused once its applied gain reaches
+// silence with a silent base target, and resumed when it becomes audible again.
 
 let voiceActive = false;
 let outdoors = true; // players spawn in the plaza (outdoor zone)
 let meeting = false;
 let musicLoop: HTMLAudioElement | null = null;
 let ambientLoop: HTMLAudioElement | null = null;
+// Smoother state: the un-ducked base gains (fade slowly) and the shared duck
+// envelope (1 = open, DUCK_FACTOR = fully ducked; fast attack / slow release).
+let musicBase = 0;
+let ambientBase = 0;
+let duckEnv = 1;
 let started = false;
 let unbindSettings: (() => void) | null = null;
 let fadeTimer: ReturnType<typeof setInterval> | null = null;
@@ -116,36 +127,38 @@ function makeLoop(clip: string): HTMLAudioElement {
   return a;
 }
 
-function currentTargets(): { music: number; ambient: number } {
-  return loopTargets(volumesFromSettings(getSettings()), {
-    outdoors,
-    meeting,
-    voiceActive,
-  });
+function baseTargets(): { music: number; ambient: number } {
+  return loopTargets(volumesFromSettings(getSettings()), { outdoors, meeting });
 }
 
-/** Step one loop toward its target gain; pause at silence, resume when audible. */
-function fadeLoopToward(loop: HTMLAudioElement, target: number, dt: number): boolean {
-  const next = fadeStep(loop.volume, target, dt);
-  loop.volume = next;
-  if (next <= 0 && target <= 0) {
+/** Apply an already-computed gain to a loop; pause at silence, resume when audible. */
+function applyLoopGain(loop: HTMLAudioElement, gain: number, baseTarget: number): void {
+  loop.volume = clamp01(gain);
+  if (loop.volume <= 0 && baseTarget <= 0) {
     if (!loop.paused) loop.pause();
   } else if (loop.paused) {
     void loop.play().catch(() => {
       /* autoplay blocked until first gesture — ignore */
     });
   }
-  return next === target;
 }
 
 function fadeTick(): void {
   const now = performance.now();
   const dt = now - lastFadeTick;
   lastFadeTick = now;
-  const t = currentTargets();
-  const musicDone = musicLoop ? fadeLoopToward(musicLoop, t.music, dt) : true;
-  const ambientDone = ambientLoop ? fadeLoopToward(ambientLoop, t.ambient, dt) : true;
-  if (musicDone && ambientDone && fadeTimer !== null) {
+  const t = baseTargets();
+  musicBase = fadeStep(musicBase, t.music, dt);
+  ambientBase = fadeStep(ambientBase, t.ambient, dt);
+  duckEnv = duckStep(duckEnv, voiceActive, dt);
+  if (musicLoop) applyLoopGain(musicLoop, musicBase * duckEnv, t.music);
+  if (ambientLoop) applyLoopGain(ambientLoop, ambientBase * duckEnv, t.ambient);
+  // Keep ticking until every smoother has settled on its target: the base fades
+  // reach their loop targets AND the duck envelope reaches its rest/ducked value.
+  const duckTarget = voiceActive ? DUCK_FACTOR : 1;
+  const settled =
+    musicBase === t.music && ambientBase === t.ambient && duckEnv === duckTarget;
+  if (settled && fadeTimer !== null) {
     clearInterval(fadeTimer);
     fadeTimer = null;
   }
@@ -158,7 +171,7 @@ function refreshLoops(): void {
   fadeTimer = setInterval(fadeTick, FADE_TICK_MS);
 }
 
-/** Update the duck state when nearby voice starts/stops, then re-fade ambient. */
+/** Update the speech-duck state when voice starts/stops, then re-run the envelope. */
 export function setVoiceActive(active: boolean): void {
   if (active === voiceActive) return;
   voiceActive = active;
@@ -192,6 +205,9 @@ export function startLoops(): void {
     ambientLoop = makeLoop("ambient_outdoor");
     musicLoop.volume = 0;
     ambientLoop.volume = 0;
+    musicBase = 0;
+    ambientBase = 0;
+    duckEnv = 1;
     unbindSettings = subscribeSettings(refreshLoops);
     void musicLoop.play().catch(() => {});
     void ambientLoop.play().catch(() => {});

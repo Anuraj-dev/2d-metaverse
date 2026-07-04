@@ -148,7 +148,8 @@ into the modules).
 | `game/portalHandoff.ts` | Phase A/B portal handoff (reveal exactly once, either completion order) |
 | `game/portalCinematic.ts` | Phase A generation guard + effect-injected sequence driver (`runPortalCinematic`): which async cinematic callbacks may still capture/finish/sleep, and the zoom→capture→finish wiring |
 | `media/mediaLogic.ts` | room-name builders, track attach/surface/detach routing, zone-aware proximity-volume map |
-| `media/soundMixer.ts` | channel gain math (master over music/sfx/ambient), master mute, ambient duck near voice, event→sound mapping, footstep cadence |
+| `media/soundMixer.ts` | channel gain math (master over music/sfx/ambient), master mute, speech-driven loop duck (`speechActive`/`duckStep`), event→sound mapping, footstep cadence |
+| `media/speakingState.ts` | reusable "who is speaking" transport seam (LiveKit active speakers → union set; consumed by the sfx duck now, PRD 17 stage next) |
 | `game/dayNight.ts` | hour-of-day → day/night tint colour + alpha (keyframed) |
 | `game/arcade/prng.ts` | seeded mulberry32 PRNG (deterministic, serializable seed) |
 | `game/arcade/snake.ts` | Snake tick/turn/eat/collision rules |
@@ -237,23 +238,38 @@ variants, flowers, stone plaza family, trees) and Top-Down Retro Interior
 
 **Sound architecture.** All gain/mute/duck/mapping *decisions* live in the pure
 `media/soundMixer.ts` (channels `master → music / sfx / ambient`, master mute,
-ambient ducking near voice, the event→sound table, footstep cadence) with
-`soundMixer.test.ts` exercising them, playback mocked. `media/sfx.ts` is the thin
-HTMLAudio glue: it plays one-shots at the mixer-computed gain, owns the music +
-ambient loops, and handles browser **autoplay-unlock** (silent until the first
-user gesture, `play()` rejections swallowed). `ui/SfxBridge.tsx` is headless
+speech-driven ducking of the world loops, the event→sound table, footstep
+cadence) with `soundMixer.test.ts` exercising them, playback mocked. `media/sfx.ts`
+is the thin HTMLAudio glue: it plays one-shots at the mixer-computed gain, owns the
+music + ambient loops, and handles browser **autoplay-unlock** (silent until the
+first user gesture, `play()` rejections swallowed). `ui/SfxBridge.tsx` is headless
 wiring: it maps net/bus events (presence, seat, door, portal, meeting) to clips
-via the pure table, derives footsteps from the `positions` tick, and ducks the
-ambient bed against LiveKit voice levels (`audio-volumes` is emitted on every
-positions tick in production, not just under the E2E hook). The world loops are
-**lifecycle-aware** (pure decisions in `loopTargets`): the outdoor ambience only
-sounds while the local player's audio zone is outdoor, both loops fall silent
-across a meeting (portal-in → portal-out), and every transition — duck, zone
-crossing, meeting, sliders — **fades** (`fadeStep`, ~700ms) rather than
-hard-cutting. Volumes persist through the existing
+via the pure table, derives footsteps from the `positions` tick, and drives the
+speech duck. The world loops are **lifecycle-aware** (pure decisions in
+`loopTargets`): the outdoor ambience only sounds while the local player's audio
+zone is outdoor, both loops fall silent across a meeting (portal-in → portal-out),
+and every scene-scale transition — zone crossing, meeting, sliders — **fades**
+(`fadeStep`, ~700ms) rather than hard-cutting. Volumes persist through the existing
 `ui/settings.ts` store; the Settings panel exposes master/music/effects/ambient
 sliders + mute. **Game logic stays audio-agnostic** — it emits domain events; the
 bridge decides what they sound like.
+
+**Speech-driven ducking (PRD 15).** The music + ambient beds duck hard (to
+`DUCK_FACTOR`, ~0.12) whenever conversation is actually happening — not on mere
+proximity — so nearby voices read clearly, then swell back in silence. LiveKit's
+active-speaker detection is surfaced by the transport as a plain "who is speaking"
+identity set on the reusable `media/speakingState.ts` seam (the world room feeds it
+now; PRD 17's stage room will feed the same seam, keyed by source). `SfxBridge`
+combines that set with the per-peer zone volumes (`audio-volumes`) and the local
+id and asks the pure `speechActive(speaking, volumes, selfId)`: voice is active
+when the local player speaks, or any *audible* peer (zone volume ≥
+`VOICE_THRESHOLD`) speaks. The duck is a shared envelope (`duckStep`) with a **fast
+attack** (~100ms) and a **smooth release** (~700ms after the last speech) that the
+glue multiplies onto both loops' faded base gains — so it never pumps or clicks and
+is independent of the slow scene fade. **Sfx never ducks**, and the existing
+indoor/meeting ambient-mute rules still win (a silent base × any duck = silence).
+Transport wiring (`livekit.ts`, `speakingState.ts`) stays untested beyond types;
+the duck math is fully covered in `soundMixer.test.ts`.
 
 **Engine-side ambience is code, not assets** (`game/dayNight.ts` + WorldScene):
 a camera-locked day/night tint driven by the local clock, drifting ambient motes
