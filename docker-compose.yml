@@ -25,7 +25,7 @@ x-backend-environment: &backend-environment
   ROOM_5_KEY: ${ROOM_5_KEY:-5555}
   ROOM_6_KEY: ${ROOM_6_KEY:-6666}
   STAGE_KEY: ${STAGE_KEY:-stage-presenter-123}
-  MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/space.json}
+  MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/campus.json}
   TRUST_PROXY: ${TRUST_PROXY:-false}
 
 services:

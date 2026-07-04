@@ -19,26 +19,23 @@ export interface MapDef {
   tilesets: TilesetRef[];
 }
 
-const SPACE_MAP: MapDef = {
-  key: "space",
-  tilesets: [{ key: "floors_walls", file: "floors_walls.png" }],
+const CAMPUS_MAP: MapDef = {
+  key: "campus",
+  tilesets: [
+    { key: "floors_walls", file: "floors_walls.png" },
+    { key: "exterior", file: "exterior.png" },
+  ],
 };
 
 export const MAPS: Record<string, MapDef> = {
-  space: SPACE_MAP,
-  campus: {
-    key: "campus",
-    tilesets: [
-      { key: "floors_walls", file: "floors_walls.png" },
-      { key: "exterior", file: "exterior.png" },
-    ],
-  },
+  campus: CAMPUS_MAP,
 };
 
 export const DEFAULT_MAP = "campus";
 
-/** Active map key. Campus is the live world; `?map=space` is the legacy escape
- * hatch to the original office map (`?map=<key>` selects any registered map). */
+/** Active map key. Campus is the single canonical world; an unknown `?map=`
+ * override falls through to the default (the legacy `space` escape hatch is
+ * gone). */
 export function activeMapKey(): string {
   if (typeof window !== "undefined") {
     const q = new URLSearchParams(window.location.search).get("map");
@@ -49,7 +46,7 @@ export function activeMapKey(): string {
 
 export function activeMap(): MapDef {
   // activeMapKey() only ever returns a key registered in MAPS, but the Record
-  // index signature widens the lookup to `| undefined`; SPACE_MAP is the
+  // index signature widens the lookup to `| undefined`; CAMPUS_MAP is the
   // guaranteed default, so fall back to it instead of asserting non-null.
-  return MAPS[activeMapKey()] ?? SPACE_MAP;
+  return MAPS[activeMapKey()] ?? CAMPUS_MAP;
 }

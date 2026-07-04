@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 import { enterRoom, selfPosition, sendChat, signUpAndJoin, sitAtSeat } from "./helpers";
 
 test("happy path: signup → join → move → door → key → sit → chat", async ({ page }) => {
-  const user = await signUpAndJoin(page, { map: "space" });
+  const user = await signUpAndJoin(page, { map: "campus" });
 
   // Keyboard movement: hold ArrowRight until the bus reports displacement.
   await page.locator(".game-canvas canvas").click();
@@ -23,12 +23,12 @@ test("happy path: signup → join → move → door → key → sit → chat", a
   }, start.x);
   await page.keyboard.up("ArrowRight");
 
-  // Approach the Meeting Room A door and enter with the correct key.
-  await enterRoom(page, "space", "1");
+  // Approach the hostel Room 1 door and enter with the correct key.
+  await enterRoom(page, "campus", "1");
   await expect(page.locator(".key-modal")).toBeHidden();
 
   // Walk to seat 0 and sit with E (held across the wait — see sitAtSeat).
-  await sitAtSeat(page, "space", "1");
+  await sitAtSeat(page, "campus", "1");
 
   // Chat while seated; own message renders in the transcript as "<name> text".
   const message = `hello from ${user.username}`;

@@ -41,7 +41,7 @@ const space = await api("/api/v1/space/1", { token: tokenA });
 assert.equal(space.status, 200);
 assert.equal(space.json.rooms.length, 6);
 const room3 = space.json.rooms.find((room) => room.id === "3");
-assert.equal(room3?.seats.length, 4);
+assert.equal(room3?.seats.length, 12);
 
 const worldToken = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "world:1" } });
 assert.equal(worldToken.status, 200);

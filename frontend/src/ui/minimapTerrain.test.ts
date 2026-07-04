@@ -108,10 +108,4 @@ describe("colorForGid fallbacks", () => {
     expect(neutral).toMatch(/^#/);
     expect(neutral).not.toBe(colorForGid(500, tilesets));
   });
-
-  it("the space map still rasterizes via fallbacks", () => {
-    const t = terrainFromTiledMap(loadMap("space"));
-    if (!t) throw new Error("expected space terrain");
-    expect(t.colors.some((c) => c !== null)).toBe(true);
-  });
 });

@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 import { backendSha, signUpAndJoin } from "./helpers";
 
 test("frontend build SHA matches backend /health/ready SHA", async ({ page }) => {
-  await signUpAndJoin(page, { map: "space" });
+  await signUpAndJoin(page, { map: "campus" });
 
   const frontendSha = await page.evaluate(() => {
     const hook = window.__testHook;
