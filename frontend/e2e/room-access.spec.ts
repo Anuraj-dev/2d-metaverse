@@ -1,6 +1,6 @@
 /**
  * Room access via knock/approve (PRD 14), across two browsers. Replaces the old
- * room-key security specs: there are no passwords — the first arrival is the
+ * password-based room-security specs: there are no join secrets — the first arrival is the
  * admin, later arrivals knock, and the admin approves/denies (Google-Meet
  * model). Admin departure hands off to the next occupant (succession).
  *

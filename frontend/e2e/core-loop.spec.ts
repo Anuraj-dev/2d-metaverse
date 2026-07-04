@@ -1,12 +1,13 @@
 /**
  * User story 2: the core game loop is provably playable — signup, join the
- * world, keyboard movement, approach a door, enter the room key, door opens,
- * sit, chat. Mirrors backend/test/smoke.mjs through the real UI.
+ * world, keyboard movement, approach a door, get admitted (first arrival is the
+ * room admin — no keys), door opens, sit, chat. Mirrors backend/test/smoke.mjs
+ * through the real UI.
  */
 import { test, expect } from "@playwright/test";
 import { enterRoom, selfPosition, sendChat, signUpAndJoin, sitAtSeat } from "./helpers";
 
-test("happy path: signup → join → move → door → key → sit → chat", async ({ page }) => {
+test("happy path: signup → join → move → door → enter → sit → chat", async ({ page }) => {
   const user = await signUpAndJoin(page, { map: "campus" });
 
   // Keyboard movement: hold ArrowRight until the bus reports displacement.

@@ -44,8 +44,8 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const onGameOver = useCallback((s: number) => setFinalScore(s), []);
 
   // Take and hold keyboard focus robustly: blur whatever had focus (e.g. a
-  // lingering room-key input, which otherwise swallows game keys via the
-  // scene's isTyping guard) and focus our own container.
+  // lingering HUD text input like the chat field, which otherwise swallows game
+  // keys via the scene's isTyping guard) and focus our own container.
   useEffect(() => {
     const active = document.activeElement;
     if (active instanceof HTMLElement) active.blur();
