@@ -106,6 +106,7 @@ export const CLIENT_EVENTS = {
   roomLeave: "room-leave",
   seatSit: "seat-sit",
   seatStand: "seat-stand",
+  meetingChat: "meeting-chat",
   boardSit: "board-sit",
   boardStand: "board-stand",
   boardAccept: "board-accept",
@@ -133,6 +134,7 @@ export const SERVER_EVENTS = {
   meetingEnded: "meeting-ended",
   meetingParticipantJoined: "meeting-participant-joined",
   meetingParticipantLeft: "meeting-participant-left",
+  meetingChat: "meeting-chat",
   boardUpdate: "board-update",
   boardError: "board-error",
 } as const;
@@ -162,6 +164,7 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.meetingEnded,
   SERVER_EVENTS.meetingParticipantJoined,
   SERVER_EVENTS.meetingParticipantLeft,
+  SERVER_EVENTS.meetingChat,
   SERVER_EVENTS.boardUpdate,
   SERVER_EVENTS.boardError,
 ] as const;
@@ -218,6 +221,9 @@ export const RATE_LIMITS = {
   /** Whispers per player per window. */
   whisperLimit: 20,
   whisperWindowSeconds: 60,
+  /** In-meeting chat messages per player per window (PRD 10). */
+  meetingChatLimit: 20,
+  meetingChatWindowSeconds: 60,
   /** Knock attempts per player+room per window (anti-harassment; PRD 14). */
   knockLimit: 5,
   knockWindowSeconds: 60,

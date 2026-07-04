@@ -26,17 +26,32 @@ type MeetingBroadcast = <E extends keyof ServerToClientEvents>(
   ...payload: Parameters<ServerToClientEvents[E]>
 ) => void;
 
+/** Deliver one event to a single participant's socket (per-player, not room-wide). */
+type MeetingSendToPlayer = <E extends keyof ServerToClientEvents>(
+  playerId: string,
+  event: E,
+  ...payload: Parameters<ServerToClientEvents[E]>
+) => void;
+
 export interface MeetingManagerDeps {
   countdownMs: number;
   getSnapshot: (roomId: string) => Promise<RoomMeetingSnapshot>;
   resolveName: (playerId: string) => string;
   broadcast: MeetingBroadcast;
+  /** Per-participant delivery, so in-meeting chat never leaks to spectators. */
+  sendToPlayer: MeetingSendToPlayer;
   log: Logger;
 }
 
 export interface MeetingManager {
   /** Feed a room-occupancy event; effects broadcast asynchronously. */
   dispatch: (roomId: string, event: MeetingEvent) => void;
+  /**
+   * Relay an in-meeting chat line (PRD 10). No-op unless the room's meeting is
+   * live AND the sender is a current participant; delivered per-socket to the
+   * participant set only (the sender included, so their own line echoes back).
+   */
+  chat: (roomId: string, senderId: string, text: string) => void;
   /** Await all in-flight dispatches (test synchronization only). */
   settle: () => Promise<void>;
 }
@@ -126,9 +141,20 @@ export function createMeetingManager(deps: MeetingManagerDeps): MeetingManager {
       });
   };
 
+  const chat = (roomId: string, senderId: string, text: string): void => {
+    const room = rooms.get(roomId);
+    // Gate on the authoritative live participant set: only a seated participant
+    // of a running meeting may speak, and only participants receive the line.
+    if (!room || room.state.phase !== "active" || !room.state.participants.includes(senderId)) return;
+    const message = { roomId, id: senderId, name: deps.resolveName(senderId), text };
+    for (const participantId of room.state.participants) {
+      deps.sendToPlayer(participantId, "meeting-chat", message);
+    }
+  };
+
   const settle = async (): Promise<void> => {
     await Promise.all([...rooms.values()].map((room) => room.queue));
   };
 
-  return { dispatch, settle };
+  return { dispatch, chat, settle };
 }

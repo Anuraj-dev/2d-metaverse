@@ -19,12 +19,21 @@ interface Broadcast {
   payload: unknown;
 }
 
+/** One per-participant delivery (meeting-chat fan-out). */
+interface Send {
+  playerId: string;
+  event: string;
+  payload: unknown;
+}
+
 function makeManager(names: Record<string, string> = { a: "alice", b: "bob", c: "carol" }): {
   manager: MeetingManager;
   broadcasts: Broadcast[];
+  sends: Send[];
   setSnapshot: (snapshot: RoomMeetingSnapshot) => void;
 } {
   const broadcasts: Broadcast[] = [];
+  const sends: Send[] = [];
   let snapshot: RoomMeetingSnapshot = { occupants: [], seated: [] };
   const manager = createMeetingManager({
     countdownMs: COUNTDOWN_MS,
@@ -34,11 +43,13 @@ function makeManager(names: Record<string, string> = { a: "alice", b: "bob", c: 
     },
     resolveName: (playerId) => names[playerId] ?? playerId,
     broadcast: (roomId, event, ...payload) => broadcasts.push({ roomId, event, payload: payload[0] }),
+    sendToPlayer: (playerId, event, ...payload) => sends.push({ playerId, event, payload: payload[0] }),
     log: pino({ level: "silent" }),
   });
   return {
     manager,
     broadcasts,
+    sends,
     setSnapshot: (next) => {
       snapshot = next;
     },
@@ -193,6 +204,7 @@ describe("meeting manager", () => {
       },
       resolveName: (playerId) => playerId,
       broadcast: (roomId, event, ...payload) => broadcasts.push({ roomId, event, payload: payload[0] }),
+      sendToPlayer: () => {},
       log: pino({ level: "silent" }),
     });
 
@@ -204,5 +216,64 @@ describe("meeting manager", () => {
       "meeting-countdown",
       "meeting-countdown-canceled",
     ]);
+  });
+
+  describe("in-meeting chat", () => {
+    /** Drive a room to a live meeting of [a, b]. */
+    async function startMeeting(manager: MeetingManager, setSnapshot: (s: RoomMeetingSnapshot) => void) {
+      setSnapshot({ occupants: ["a", "b"], seated: ["a", "b"] });
+      manager.dispatch(ROOM, { type: "sit", playerId: "b" });
+      await manager.settle();
+      await vi.advanceTimersByTimeAsync(COUNTDOWN_MS);
+      await manager.settle();
+    }
+
+    it("relays a participant's line to every participant (sender included), named", async () => {
+      const { manager, sends, setSnapshot } = makeManager();
+      await startMeeting(manager, setSnapshot);
+
+      manager.chat(ROOM, "a", "hello team");
+
+      expect(sends).toEqual([
+        { playerId: "a", event: "meeting-chat", payload: { roomId: ROOM, id: "a", name: "alice", text: "hello team" } },
+        { playerId: "b", event: "meeting-chat", payload: { roomId: ROOM, id: "a", name: "alice", text: "hello team" } },
+      ]);
+    });
+
+    it("drops a line from a non-participant even if they share the room zone", async () => {
+      const { manager, sends, setSnapshot } = makeManager();
+      await startMeeting(manager, setSnapshot);
+
+      // "c" is an unseated occupant (never joined the meeting) — no delivery.
+      manager.chat(ROOM, "c", "let me in");
+
+      expect(sends).toEqual([]);
+    });
+
+    it("drops a line when no meeting is live in the room", async () => {
+      const { manager, sends, setSnapshot } = makeManager();
+      setSnapshot({ occupants: ["a"], seated: ["a"] });
+      manager.dispatch(ROOM, { type: "sit", playerId: "a" });
+      await manager.settle();
+
+      manager.chat(ROOM, "a", "anyone here?");
+
+      expect(sends).toEqual([]);
+    });
+
+    it("stops relaying once the meeting has ended", async () => {
+      const { manager, sends, setSnapshot } = makeManager();
+      await startMeeting(manager, setSnapshot);
+
+      setSnapshot({ occupants: ["a", "b"], seated: ["b"] });
+      manager.dispatch(ROOM, { type: "stand", playerId: "a" });
+      setSnapshot({ occupants: ["a", "b"], seated: [] });
+      manager.dispatch(ROOM, { type: "stand", playerId: "b" });
+      await manager.settle();
+
+      manager.chat(ROOM, "b", "wait");
+
+      expect(sends).toEqual([]);
+    });
   });
 });

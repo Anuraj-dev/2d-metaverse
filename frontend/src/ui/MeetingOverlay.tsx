@@ -17,14 +17,20 @@ import { AnimatePresence, motion } from "motion/react";
 import "@livekit/components-styles";
 import type { MeetingParticipant } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
+import type { MeetingChatLine } from "../game/meetingChat";
 import { roomVideo } from "../media/livekit";
 import MeetingGrid from "./MeetingGrid";
+import MeetingChatPanel from "./MeetingChatPanel";
 
 export interface MeetingOverlayProps {
   backdrop: string | null;
   revealed: boolean;
   participants: MeetingParticipant[];
   selfId: string;
+  /** In-meeting chat transcript (participant-scoped; server-relayed). */
+  chat: readonly MeetingChatLine[];
+  /** Send a typed chat line to the meeting (app shell → net.meetingChat). */
+  onSendChat: (text: string) => void;
   /** Self screen position at portal start — the burst origin + morph ghost. */
   seat: { sx: number; sy: number } | null;
   onBurstCovered: () => void;
@@ -96,6 +102,8 @@ export default function MeetingOverlay({
   revealed,
   participants,
   selfId,
+  chat,
+  onSendChat,
   seat,
   onBurstCovered,
 }: MeetingOverlayProps) {
@@ -179,7 +187,10 @@ export default function MeetingOverlay({
               </button>
             </div>
           </header>
-          <MeetingGrid participants={participants} selfId={selfId} selfChar={selfChar} />
+          <div className="meeting-body">
+            <MeetingGrid participants={participants} selfId={selfId} selfChar={selfChar} />
+            <MeetingChatPanel lines={chat} onSend={onSendChat} />
+          </div>
         </motion.div>
       )}
     </div>

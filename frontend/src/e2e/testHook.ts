@@ -43,6 +43,7 @@ const TRACKED_EVENTS = [
   "meeting-ended",
   "meeting-participant-joined",
   "meeting-participant-left",
+  "meeting-chat",
   "portal-enter",
   "portal-exit",
   "portal-phase-a-done",

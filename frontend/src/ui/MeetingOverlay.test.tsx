@@ -31,6 +31,8 @@ function renderOverlay(revealed: boolean, backdrop: string | null = null) {
       revealed={revealed}
       participants={roster}
       selfId="me"
+      chat={[]}
+      onSendChat={() => {}}
       seat={{ sx: 100, sy: 120 }}
       onBurstCovered={() => {}}
     />
@@ -57,6 +59,15 @@ describe("MeetingOverlay", () => {
     expect(screen.getByTestId("grid-stub").getAttribute("data-count")).toBe("2");
     const backdrop = container.querySelector(".meeting-backdrop") as HTMLElement;
     expect(backdrop.style.backgroundImage).toContain("data:image/png;base64,abc");
+  });
+
+  it("mounts the in-meeting chat panel alongside the grid once revealed", () => {
+    renderOverlay(true);
+    expect(screen.getByTestId("meeting-chat")).toBeTruthy();
+    // …and not before the reveal (the burst still covers the viewport).
+    cleanup();
+    renderOverlay(false);
+    expect(screen.queryByTestId("meeting-chat")).toBeNull();
   });
 
   it("still renders a backdrop when the frame snapshot failed", () => {

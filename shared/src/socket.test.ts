@@ -7,6 +7,8 @@ import {
   boardUpdateSchema,
   chatSchema,
   joinSchema,
+  meetingChatMessageSchema,
+  meetingChatSchema,
   meetingCountdownCanceledSchema,
   meetingCountdownSchema,
   meetingEndedSchema,
@@ -240,6 +242,33 @@ describe("meeting lifecycle shapes (server → client)", () => {
     expect(meetingStartedSchema.safeParse({ roomId: "1", participants: [sneaky] }).success).toBe(false);
     expect(
       meetingParticipantJoinedSchema.safeParse({ roomId: "1", participant: sneaky, participants: [alice] })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("in-meeting chat (PRD 10)", () => {
+  it("accepts a client → server line carrying only text", () => {
+    expect(meetingChatSchema.safeParse({ text: "hello" }).success).toBe(true);
+  });
+  it("trims and rejects whitespace-only text", () => {
+    expect(meetingChatSchema.safeParse({ text: "   " }).success).toBe(false);
+  });
+  it("rejects text past the shared chat cap", () => {
+    expect(meetingChatSchema.safeParse({ text: "x".repeat(LIMITS.chatTextMax + 1) }).success).toBe(false);
+    expect(meetingChatSchema.safeParse({ text: "x".repeat(LIMITS.chatTextMax) }).success).toBe(true);
+  });
+  it("rejects a spoofed roomId or any extra key (strict contract)", () => {
+    expect(meetingChatSchema.safeParse({ text: "hi", roomId: "1" }).success).toBe(false);
+    expect(meetingChatSchema.safeParse({ text: "hi", extra: true }).success).toBe(false);
+  });
+  it("validates the server → client relayed line and rejects missing / extra fields", () => {
+    expect(
+      meetingChatMessageSchema.safeParse({ roomId: "1", id: "p1", name: "alice", text: "hi" }).success,
+    ).toBe(true);
+    expect(meetingChatMessageSchema.safeParse({ roomId: "1", id: "p1", name: "alice" }).success).toBe(false);
+    expect(
+      meetingChatMessageSchema.safeParse({ roomId: "1", id: "p1", name: "alice", text: "hi", extra: true })
         .success,
     ).toBe(false);
   });

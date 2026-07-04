@@ -14,7 +14,13 @@ import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
 import MeetingCountdown from "./ui/MeetingCountdown";
-import { ARCADE_GAMES, SERVER_EVENTS, type ArcadeGame, type BoardUpdatePayload } from "@metaverse/shared";
+import {
+  ARCADE_GAMES,
+  SERVER_EVENTS,
+  type ArcadeGame,
+  type BoardUpdatePayload,
+  type MeetingChatMessage,
+} from "@metaverse/shared";
 import { USE_MOCK } from "./net/auth";
 import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
@@ -26,6 +32,7 @@ import {
   type MeetingUiEvent,
   type MeetingUiState,
 } from "./game/meetingUi";
+import { EMPTY_MEETING_CHAT, appendMeetingChat } from "./game/meetingChat";
 import { HANDOFF_IDLE, handoffReduce, type HandoffState } from "./game/portalHandoff";
 import "./App.css";
 
@@ -77,6 +84,8 @@ export default function App() {
   const [selfId, setSelfId] = useState("");
   // Meeting lifecycle (PRD 10): reducer output for the HUD…
   const [meeting, setMeeting] = useState<MeetingUiState>(MEETING_NONE);
+  // …and the in-meeting chat transcript (participant-scoped; server-relayed).
+  const [meetingChat, setMeetingChat] = useState(EMPTY_MEETING_CHAT);
   // …and the portal/handoff visuals (backdrop snapshot, reveal flag, morph seat).
   const [portal, setPortal] = useState<PortalState | null>(null);
   // Arcade cabinet overlay (PRD 11): opened by a cabinet interact, null = closed.
@@ -121,6 +130,18 @@ export default function App() {
       if (isArcadeGame(p.game)) setArcade({ game: p.game, label: p.label });
     });
   }, [entered]);
+
+  // In-meeting chat (PRD 10): append each server-relayed line to the transcript
+  // and mirror it on the bus for e2e observability. The server owns scoping, so a
+  // line only arrives here if we are a participant. Re-subscribes when selfId
+  // lands so own-message styling is correct.
+  useEffect(() => {
+    if (!entered) return;
+    return sharedNet().on(SERVER_EVENTS.meetingChat, (m: MeetingChatMessage) => {
+      bus.emit(SERVER_EVENTS.meetingChat, m);
+      setMeetingChat((prev) => appendMeetingChat(prev, m, selfId));
+    });
+  }, [entered, selfId]);
 
   // Board tables (PRD 11 phase 2): keep authoritative snapshots, drive the sound
   // cues off state transitions, and track which table the panel should show.
@@ -305,6 +326,10 @@ export default function App() {
       const { state, action } = meetingUiReduce(meetingState, selfId, event);
       meetingState = state;
       setMeeting(state);
+      // Chat is ephemeral: reset the transcript on every portal boundary so a
+      // fresh meeting starts empty (latecomers get no backlog) and nothing
+      // lingers after leaving/ending — no history bleeds between meetings.
+      if (action === "portal-in" || action === "portal-out") setMeetingChat(EMPTY_MEETING_CHAT);
       if (action === "portal-in") applyHandoff("portal-in");
       else if (action === "portal-out") applyHandoff("portal-out");
     };
@@ -428,6 +453,8 @@ export default function App() {
               revealed={portal.revealed}
               participants={meeting.participants}
               selfId={selfId}
+              chat={meetingChat.lines}
+              onSendChat={(text) => sharedNet().meetingChat(text)}
               seat={portal.seat}
               onBurstCovered={() => burstCovered.current()}
             />

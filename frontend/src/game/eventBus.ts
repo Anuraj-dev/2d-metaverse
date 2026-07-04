@@ -25,6 +25,8 @@ class EventBus {
  *  'world-info'{width,height,rooms,terrain} |
  *  Board tables (PRD 11 p2): 'near-board-seat'{tableId,seat,game,label} | 'leave-board-seat' |
  *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-move' | 'board-win'
+ *  Meeting (PRD 10): the server meeting-lifecycle events are mirrored here by the
+ *  app shell, incl. 'meeting-chat'{roomId,id,name,text} (participant-scoped chat).
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' */
 export const bus = new EventBus();

@@ -347,6 +347,19 @@ semantics; with no media the grid falls back to roster-only tiles. The heavy
 meeting chunk (motion + LiveKit components) is lazy-loaded so the entry bundle
 stays inside its budget.
 
+**In-meeting chat** (`ui/MeetingChatPanel.tsx` + pure `game/meetingChat.ts`): a
+text panel beside the grid, scoped to the meeting's participants only. Scoping is
+server-authoritative — the backend meeting shell (`meeting-manager.ts`) fans each
+line out **per-participant socket** (never the room channel), so an unseated
+occupant sharing the room zone can't eavesdrop; the client only supplies `text`
+(no roomId to spoof) via `net.meetingChat`, and the sender's own line echoes back
+on the same path. The pure reducer just appends relayed lines (stamping a stable
+key + own-message flag) and caps history; the transcript is **ephemeral** — App
+clears it whenever it isn't in a meeting, so nothing bleeds between meetings (a
+latecomer gets no backlog). Length reuses `LIMITS.chatTextMax`; the server
+rate-limits per player (`RATE_LIMITS.meetingChat*`). Wire shapes live in
+`@metaverse/shared` (`meetingChatSchema` / `meetingChatMessageSchema`).
+
 **Resource policy**: the captured frame — blurred + darkened — IS the world
 for the meeting's duration; the Phaser scene is asleep (no render loop), so an
 hour-long meeting doesn't cook a laptop. With `update()` stopped, socket

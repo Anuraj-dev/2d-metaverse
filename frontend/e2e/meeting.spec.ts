@@ -97,6 +97,21 @@ test("two players sit → countdown → meeting grid for both; one stands → ba
     }
     await expect(pageA.getByTestId("meet-tile-avatar")).toHaveCount(2);
 
+    // In-meeting chat (PRD 10): a line typed by A is relayed to the meeting's
+    // participants only — B receives it on the participant-scoped channel, and A
+    // sees its own line echoed back. (Server fan-out is per-participant, never the
+    // room channel, so an unseated spectator would not receive it.)
+    const chatSeenByB = pageB.evaluate(() => {
+      const hook = window.__testHook;
+      if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+      return hook.waitForEvent("meeting-chat", (p) => (p as { text: string }).text === "hi from A");
+    });
+    await pageA.getByTestId("meeting-chat-input").fill("hi from A");
+    await pageA.getByTestId("meeting-chat-input").press("Enter");
+    await chatSeenByB;
+    await expect(pageB.getByTestId("meeting-chat-list")).toContainText("hi from A");
+    await expect(pageA.getByTestId("meeting-chat-list")).toContainText("hi from A");
+
     // B leaves via the meeting's Leave control (stand): a per-person portal
     // out. B lands back in the world with the game loop AWAKE; the meeting
     // continues for A alone.
