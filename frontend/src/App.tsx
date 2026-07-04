@@ -9,7 +9,6 @@ import BubbleLayer from "./ui/BubbleLayer";
 import MediaControls from "./ui/MediaControls";
 import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
-import StageScreen from "./ui/StageScreen";
 import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
@@ -42,6 +41,9 @@ const ArcadeOverlay = lazy(() => import("./ui/arcade/ArcadeOverlay"));
 const BoardTablePanel = lazy(() => import("./ui/BoardTablePanel"));
 // Room knock/admin HUD (PRD 14): lazy so its code stays out of the entry bundle.
 const RoomAccessLayer = lazy(() => import("./ui/RoomAccessLayer"));
+// The stage broadcast HUD (on-air prompt/indicator + video grid, PRD 17) is not
+// first-paint critical — lazy-load it so it stays out of the entry chunk.
+const StageScreen = lazy(() => import("./ui/StageScreen"));
 
 function isArcadeGame(value: string): value is ArcadeGame {
   return (ARCADE_GAMES as readonly string[]).includes(value);
@@ -406,7 +408,9 @@ export default function App() {
           <RoomAccessLayer />
         </Suspense>
         <InteractableModal />
-        <StageScreen />
+        <Suspense fallback={null}>
+          <StageScreen />
+        </Suspense>
         <ChatBox />
         <ChatToast />
         {meeting.status === "countdown" && <MeetingCountdown durationMs={meeting.durationMs} />}
