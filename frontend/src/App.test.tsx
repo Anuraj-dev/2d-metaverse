@@ -406,6 +406,52 @@ describe("App shell", () => {
     offVisible();
   });
 
+  it("leaving before the queued Phase A op starts never wedges: it skips the cinematic and exits", async () => {
+    // Regression for the meeting-Leave stuck bug. The portal-in media-queue op
+    // is queued BEHIND a still-pending seat transition, so it has not begun
+    // when the leave arrives (settlePhaseA is still null — the old short-circuit
+    // silently lost the release and the exit op stalled behind an entry that
+    // never resolved). The machine now cancels the not-yet-started entry.
+    render(<App />);
+    await enterAndInit();
+    const busEvents: string[] = [];
+    const offEnter = bus.on("portal-enter", () => busEvents.push("portal-enter"));
+    const offExit = bus.on("portal-exit", () => busEvents.push("portal-exit"));
+
+    // Gate op1 (seat-update) so the portal-in op cannot start behind it.
+    const gate = deferred();
+    media.worldAudio.stop.mockImplementationOnce(() => gate.promise);
+    await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
+    await waitFor(() => expect(media.worldAudio.stop).toHaveBeenCalledTimes(1));
+
+    // Meeting starts (portal-in op enqueued, NOT started — held behind the gate).
+    await emit(() =>
+      netMock.net.emit("meeting-started", {
+        roomId: "D",
+        participants: [
+          { id: SELF, name: "me" },
+          { id: "p2", name: "bob" },
+        ],
+      })
+    );
+    await screen.findByTestId("meeting-overlay");
+    expect(busEvents).not.toContain("portal-enter");
+
+    // Leave arrives before the entry op ran: portal-out enqueued behind it.
+    await emit(() =>
+      netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: SELF })
+    );
+    expect(screen.queryByTestId("meeting-overlay")).toBeNull();
+
+    // Drain the queue: the entry op self-cancels (no portal-enter into a world
+    // we already left), and the exit op wakes the world. Old code stalled here.
+    gate.resolve();
+    await waitFor(() => expect(busEvents).toContain("portal-exit"));
+    expect(busEvents).not.toContain("portal-enter");
+    offEnter();
+    offExit();
+  });
+
   it("a latecomer portals in on their own participant-joined", async () => {
     render(<App />);
     await enterAndInit();
