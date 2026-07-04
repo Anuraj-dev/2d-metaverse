@@ -4,18 +4,20 @@
  * (on-air lifecycle, audience subscription state) — never RTC internals. No sleeps:
  * every wait is a bus event or a hook-state condition.
  *
- * Waypoint path verified wall-free against campus.json (walls layer + solid
- * furniture): spawn → east along the plaza corridor (a wall band blocks the direct
- * diagonal) → north into the stage interior, standing at the stage centre.
+ * Waypoint path BFS-verified reachable against campus.json (walls layer + inflated
+ * solid furniture, sampled at the avatar's (x, y+8) collision point): spawn → east
+ * along the y≈712 corridor through the plaza→stage doorway → north into the stage
+ * interior. Straight segments each re-checked every 4px; standing point well inside
+ * the stage_zone rect (not on a boundary).
  */
 import { test, expect } from "@playwright/test";
 import { BACKEND_URL, signUpAndJoin, enterRoom, walkPath } from "./helpers";
 
 const STAGE_PATH: [number, number][] = [
   [960, 704],
-  [1288, 720],
-  [1576, 720],
-  [1600, 480], // stage_zone centre (rect 1312,256 + 576×448), confirmed walkable
+  [1296, 712],
+  [1568, 712],
+  [1584, 512], // inside stage_zone (rect 1312,256 + 576×448); sample (1584,520) walkable
 ];
 
 test("a performer standing still on the stage goes on air with a publish token", async ({
