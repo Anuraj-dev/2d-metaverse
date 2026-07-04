@@ -27,7 +27,7 @@ import {
   type MeetingUiEvent,
   type MeetingUiState,
 } from "./game/meetingUi";
-import { HANDOFF_IDLE, handoffEvent, handoffStart, type HandoffState } from "./game/portalHandoff";
+import { HANDOFF_IDLE, handoffReduce, type HandoffState } from "./game/portalHandoff";
 import "./App.css";
 
 // Phaser (and the whole game scene) is heavy — load it only after entering.
@@ -225,11 +225,15 @@ export default function App() {
     let meetingState: MeetingUiState = MEETING_NONE;
     let handoff: HandoffState = HANDOFF_IDLE;
     let lastSelfScreen: { sx: number; sy: number } | null = null;
-    // Settles the in-flight Phase A wait (see the portal-in transition below).
-    // Non-null exactly while Phaser's cinematic is pending; called by
-    // portal-phase-a-done (completion), by a portal-out (cancellation) and by
-    // unmount (so teardown can never hang on an abandoned cinematic).
+    // Settles the in-flight Phase A wait (see armPortalEnter below). Non-null
+    // exactly while Phaser's cinematic is pending its media-queue op; called on
+    // Phase A completion, on cancellation (portal-out) and on unmount, so the
+    // held queue op can never hang. `phaseACanceled` covers the race where a
+    // leave arrives BEFORE the queued enter op has even started: the op then
+    // resolves immediately and never emits portal-enter (no cinematic to a
+    // world we already left — the wedge this fix kills).
     let settlePhaseA: (() => void) | null = null;
+    let phaseACanceled = false;
     const offMeetingPositions = bus.on(
       "positions",
       (p: { players: { self: boolean; sx?: number; sy?: number }[] }) => {
@@ -243,16 +247,56 @@ export default function App() {
       setPortal((prev) => (prev ? { ...prev, revealed: true } : prev));
       bus.emit("meeting-grid-visible");
     };
-    const feedHandoff = (event: "a-done" | "b-ready") => {
-      const result = handoffEvent(handoff, event);
-      handoff = result.state;
-      if (result.reveal) reveal();
+    // Arm Phase A: serialized on the media queue so the cinematic starts only
+    // after the pending seat-media transition (world stop → room join) settled,
+    // and the op HOLDS the queue until Phase A COMPLETES (portal-phase-a-done)
+    // or is CANCELED. Resolving early would let a queued portal-exit overtake
+    // the still-running zoom, whose late snapshot/sleep would freeze the world.
+    // If a leave already fired before this op runs (phaseACanceled), it resolves
+    // at once and never emits portal-enter — no cinematic into a world we left.
+    const armPortalEnter = () => {
+      phaseACanceled = false;
+      setPortal({ backdrop: null, revealed: false, seat: lastSelfScreen });
+      transition(
+        () =>
+          new Promise<void>((resolve) => {
+            if (phaseACanceled) {
+              resolve();
+              return;
+            }
+            settlePhaseA = () => {
+              settlePhaseA = null;
+              resolve();
+            };
+            bus.emit("portal-enter");
+          }),
+      );
     };
-    burstCovered.current = () => feedHandoff("b-ready");
+    // Enact one pure handoff decision. `settle` both marks the entry canceled
+    // (so a not-yet-started enter op will skip) and releases a pending one.
+    const applyHandoff = (event: "portal-in" | "portal-out" | "a-done" | "b-ready" | "teardown") => {
+      const d = handoffReduce(handoff, event);
+      handoff = d.state;
+      if (d.enter) armPortalEnter();
+      if (d.settle) {
+        phaseACanceled = true;
+        settlePhaseA?.();
+      }
+      if (d.reveal) reveal();
+      if (d.exit) {
+        setPortal(null);
+        bus.emit("meeting-grid-hidden");
+        // The scene's portal-generation guard makes any abandoned cinematic's
+        // callbacks inert; the exit op wakes the render loop.
+        transition(async () => {
+          bus.emit("portal-exit");
+        });
+      }
+    };
+    burstCovered.current = () => applyHandoff("b-ready");
     const offPhaseADone = bus.on("portal-phase-a-done", (p: { image: string | null }) => {
       setPortal((prev) => (prev ? { ...prev, backdrop: p.image } : prev));
-      feedHandoff("a-done");
-      settlePhaseA?.();
+      applyHandoff("a-done");
     });
     const applyMeetingEvent = (event: MeetingUiEvent) => {
       // Mirror onto the bus first: HUD/e2e observability regardless of outcome.
@@ -260,37 +304,8 @@ export default function App() {
       const { state, action } = meetingUiReduce(meetingState, selfId, event);
       meetingState = state;
       setMeeting(state);
-      if (action === "portal-in") {
-        handoff = handoffStart();
-        setPortal({ backdrop: null, revealed: false, seat: lastSelfScreen });
-        // Serialized on the media queue so Phase A starts only after the
-        // pending seat-media transition (world stop → room join) settled —
-        // and the op holds the queue until Phaser's cinematic COMPLETES
-        // (portal-phase-a-done) or is CANCELED (portal-out / unmount below).
-        // Resolving early would let a queued portal-exit overtake the still-
-        // running zoom, whose late snapshot/sleep would then freeze the world.
-        transition(
-          () =>
-            new Promise<void>((resolve) => {
-              settlePhaseA = () => {
-                settlePhaseA = null;
-                resolve();
-              };
-              bus.emit("portal-enter");
-            }),
-        );
-      } else if (action === "portal-out") {
-        handoff = HANDOFF_IDLE;
-        setPortal(null);
-        bus.emit("meeting-grid-hidden");
-        // Cancel a still-pending Phase A so the queue advances to the exit op;
-        // the scene's portal-generation guard makes the abandoned cinematic's
-        // callbacks inert (no late snapshot, no late sleep).
-        settlePhaseA?.();
-        transition(async () => {
-          bus.emit("portal-exit");
-        });
-      }
+      if (action === "portal-in") applyHandoff("portal-in");
+      else if (action === "portal-out") applyHandoff("portal-out");
     };
     const offMeetingEvents = MEETING_EVENTS.map((type) =>
       net.on(type, (payload) =>
@@ -311,7 +326,9 @@ export default function App() {
       offMeetingPositions();
       offPhaseADone();
       offMeetingEvents.forEach((off) => off());
-      // Never let teardown wait on an abandoned cinematic.
+      // Never let teardown wait on an abandoned cinematic (releases the held
+      // Phase A op via the machine's `settle`).
+      applyHandoff("teardown");
       settlePhaseA?.();
       burstCovered.current = () => {};
       void mediaTransition.finally(async () => {
