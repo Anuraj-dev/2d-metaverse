@@ -136,8 +136,14 @@ export function loopTargets(
  * Advance the shared duck envelope one tick. The envelope glides in [DUCK_FACTOR,
  * 1] where 1 = no duck and DUCK_FACTOR = fully ducked. It moves toward DUCK_FACTOR
  * fast while voice is active (attack) and back toward 1 slowly once speech stops
- * (release), reusing fadeStep's exact-landing linear glide. The glue multiplies
- * this scalar onto both world loops' faded base gains.
+ * (release). The glue multiplies this scalar onto both world loops' faded base
+ * gains.
+ *
+ * Speed is measured across the *full duck span* (`1 - DUCK_FACTOR`), NOT the whole
+ * 0..1 range: a complete attack takes exactly `attackMs` and a complete release
+ * exactly `releaseMs`, independent of how deep DUCK_FACTOR is — so the documented
+ * ~100ms attack / ~700ms release is the real traverse time. Lands exactly on the
+ * target (no overshoot, no asymptotic crawl).
  */
 export function duckStep(
   current: number,
@@ -148,7 +154,13 @@ export function duckStep(
 ): number {
   const target = voiceActive ? DUCK_FACTOR : 1;
   const fadeMs = voiceActive ? attackMs : releaseMs;
-  return fadeStep(current, target, dtMs, fadeMs);
+  if (fadeMs <= 0) return target;
+  const span = 1 - DUCK_FACTOR; // full duck traverse, open (1) → ducked (DUCK_FACTOR)
+  const from = Number.isNaN(current) ? 1 : Math.min(1, Math.max(DUCK_FACTOR, current));
+  const maxDelta = (span * Math.max(0, dtMs)) / fadeMs;
+  const delta = target - from;
+  if (Math.abs(delta) <= maxDelta) return target;
+  return from + Math.sign(delta) * maxDelta;
 }
 
 /** Full-scale loop fade duration: long enough to feel like a scene change, not a cut. */

@@ -214,14 +214,20 @@ describe("loopTargets (base loop lifecycle: outdoors / meeting — un-ducked)", 
 });
 
 describe("duckStep (speech duck envelope: fast attack / slow release)", () => {
-  it("attack: glides toward DUCK_FACTOR while voice is active", () => {
-    // one 50ms tick over the 100ms attack moves half of full scale downward.
-    expect(duckStep(1, true, 50)).toBeCloseTo(0.5);
+  // Speed is normalized over the FULL duck span (1 - DUCK_FACTOR), so a fraction f
+  // of the attack/release window traverses exactly f of the span (intended contract).
+  const SPAN = 1 - DUCK_FACTOR;
+
+  it("attack: half the attack window traverses half the span downward", () => {
+    // 50ms of a 100ms attack ⇒ half the span down from open (1).
+    expect(duckStep(1, true, DUCK_ATTACK_MS / 2)).toBeCloseTo(1 - SPAN / 2);
   });
 
-  it("release: glides back toward 1 while voice is inactive", () => {
-    // one 70ms tick over the 700ms release moves 0.1 of full scale upward.
-    expect(duckStep(DUCK_FACTOR, false, 70)).toBeCloseTo(DUCK_FACTOR + 0.1);
+  it("release: a tenth of the release window traverses a tenth of the span upward", () => {
+    // 70ms of a 700ms release ⇒ 0.1 of the span up from the ducked floor.
+    expect(duckStep(DUCK_FACTOR, false, DUCK_RELEASE_MS / 10)).toBeCloseTo(
+      DUCK_FACTOR + SPAN / 10
+    );
   });
 
   it("attack is faster than release for the same dt (asymmetric envelope)", () => {
@@ -230,12 +236,15 @@ describe("duckStep (speech duck envelope: fast attack / slow release)", () => {
     expect(downMove).toBeGreaterThan(upMove);
   });
 
-  it("attack lands exactly on DUCK_FACTOR within one attack window", () => {
+  it("a complete attack takes exactly DUCK_ATTACK_MS (full-span traverse)", () => {
     expect(duckStep(1, true, DUCK_ATTACK_MS)).toBe(DUCK_FACTOR);
+    // …and just under a full window has NOT yet reached the floor.
+    expect(duckStep(1, true, DUCK_ATTACK_MS - 1)).toBeGreaterThan(DUCK_FACTOR);
   });
 
-  it("release lands exactly on 1 within one release window", () => {
+  it("a complete release takes exactly DUCK_RELEASE_MS (full-span traverse)", () => {
     expect(duckStep(DUCK_FACTOR, false, DUCK_RELEASE_MS)).toBe(1);
+    expect(duckStep(DUCK_FACTOR, false, DUCK_RELEASE_MS - 1)).toBeLessThan(1);
   });
 
   it("is stable once settled at either end", () => {
@@ -243,7 +252,13 @@ describe("duckStep (speech duck envelope: fast attack / slow release)", () => {
     expect(duckStep(1, false, 50)).toBe(1);
   });
 
-  it("a full release takes ~DUCK_RELEASE_MS in 50ms ticks", () => {
+  it("clamps a degenerate current into the duck range", () => {
+    expect(duckStep(5, false, 0)).toBe(1); // above range, zero dt ⇒ target(open)
+    expect(duckStep(-1, true, 0)).toBe(DUCK_FACTOR); // below range, zero dt ⇒ target(ducked)
+    expect(duckStep(NaN, false, 50)).toBe(1); // NaN treated as open, already at rest
+  });
+
+  it("a full release completes in ~DUCK_RELEASE_MS worth of 50ms ticks", () => {
     let v = DUCK_FACTOR;
     let ticks = 0;
     while (v < 1 && ticks < 100) {
@@ -251,8 +266,8 @@ describe("duckStep (speech duck envelope: fast attack / slow release)", () => {
       ticks++;
     }
     expect(v).toBe(1);
-    // (1 - DUCK_FACTOR) * 700ms of travel, in 50ms steps → ~13 ticks (≤ 1s).
-    expect(ticks).toBeLessThanOrEqual(Math.ceil(DUCK_RELEASE_MS / 50));
+    // Full span over 700ms in 50ms steps ⇒ 14 ticks; allow ±1 for float rounding.
+    expect(Math.abs(ticks - DUCK_RELEASE_MS / 50)).toBeLessThanOrEqual(1);
   });
 });
 
