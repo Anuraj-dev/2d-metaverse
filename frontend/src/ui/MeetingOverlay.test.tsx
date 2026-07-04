@@ -16,6 +16,10 @@ vi.mock("./MeetingGrid", () => ({
     <div data-testid="grid-stub" data-count={props.participants.length} />
   ),
 }));
+// The overlay owns its chat subscription now; stub the net so it mounts without
+// a live socket (the send/receive path is covered by MeetingChatPanel + e2e).
+const net = vi.hoisted(() => ({ on: vi.fn(() => () => {}), meetingChat: vi.fn() }));
+vi.mock("../net/shared", () => ({ sharedNet: () => net }));
 
 import MeetingOverlay from "./MeetingOverlay";
 
@@ -31,8 +35,6 @@ function renderOverlay(revealed: boolean, backdrop: string | null = null) {
       revealed={revealed}
       participants={roster}
       selfId="me"
-      chat={[]}
-      onSendChat={() => {}}
       seat={{ sx: 100, sy: 120 }}
       onBurstCovered={() => {}}
     />
