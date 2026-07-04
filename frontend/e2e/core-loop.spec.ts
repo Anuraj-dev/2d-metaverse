@@ -23,9 +23,9 @@ test("happy path: signup → join → move → door → key → sit → chat", a
   }, start.x);
   await page.keyboard.up("ArrowRight");
 
-  // Approach the hostel Room 1 door and enter with the correct key.
+  // Approach the hostel Room 1 door: the first arrival walks in as admin (no key).
   await enterRoom(page, "campus", "1");
-  await expect(page.locator(".key-modal")).toBeHidden();
+  await expect(page.locator(".knock-status")).toBeHidden();
 
   // Walk to seat 0 and sit with E (held across the wait — see sitAtSeat).
   await sitAtSeat(page, "campus", "1");

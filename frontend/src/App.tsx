@@ -5,7 +5,6 @@ import Settings from "./ui/Settings";
 import TouchControls from "./ui/TouchControls";
 import HelpOverlay from "./ui/HelpOverlay";
 import SfxBridge from "./ui/SfxBridge";
-import RoomKeyModal from "./ui/RoomKeyModal";
 import BubbleLayer from "./ui/BubbleLayer";
 import MediaControls from "./ui/MediaControls";
 import InteractionHint from "./ui/InteractionHint";
@@ -41,6 +40,8 @@ const ArcadeOverlay = lazy(() => import("./ui/arcade/ArcadeOverlay"));
 // The board-table panel + its board renderer load only when a player sits at (or
 // walks up to an active) board table, keeping it out of the entry chunk.
 const BoardTablePanel = lazy(() => import("./ui/BoardTablePanel"));
+// Room knock/admin HUD (PRD 14): lazy so its code stays out of the entry bundle.
+const RoomAccessLayer = lazy(() => import("./ui/RoomAccessLayer"));
 
 function isArcadeGame(value: string): value is ArcadeGame {
   return (ARCADE_GAMES as readonly string[]).includes(value);
@@ -381,7 +382,9 @@ export default function App() {
         <HelpOverlay />
         <TouchControls />
         <SfxBridge />
-        <RoomKeyModal />
+        <Suspense fallback={null}>
+          <RoomAccessLayer />
+        </Suspense>
         <InteractableModal />
         <StageScreen />
         <ChatBox />

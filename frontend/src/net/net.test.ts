@@ -34,18 +34,24 @@ describe("MockNet", () => {
     net.disconnect();
   });
 
-  it("accepts the correct room key and rejects a wrong one", () => {
+  it("admits a knock as admin and surfaces a later visitor's knock (PRD 14)", () => {
     const net: Net = new MockNet();
-    const results: { ok: boolean; roomId: string; reason?: string }[] = [];
-    net.on<{ ok: boolean; roomId: string; reason?: string }>(
-      "room-enter-result",
-      (r) => results.push(r)
-    );
+    const results: { roomId: string; result: string }[] = [];
+    const admins: { admin: { id: string } | null }[] = [];
+    const pending: { knocks: { id: string }[] }[] = [];
+    net.on<{ roomId: string; result: string }>("knock-result", (r) => results.push(r));
+    net.on<{ admin: { id: string } | null }>("admin-changed", (a) => admins.push(a));
+    net.on<{ knocks: { id: string }[] }>("knock-pending", (p) => pending.push(p));
     net.connect("tok", "1");
-    net.enterRoom("1", "1234");
-    net.enterRoom("1", "nope");
-    expect(results[0]).toMatchObject({ ok: true, roomId: "1" });
-    expect(results[1]).toMatchObject({ ok: false, reason: "bad-key" });
+    net.knock("1");
+    // Immediate: you walk in as admin.
+    expect(results[0]).toMatchObject({ roomId: "1", result: "approved" });
+    expect(admins[0]?.admin?.id).toBe(net.selfId);
+    // A demo visitor knocks after a beat; approving clears the queue.
+    vi.advanceTimersByTime(2600);
+    expect(pending.at(-1)?.knocks.length).toBe(1);
+    net.approveKnock("1", "npc1");
+    expect(pending.at(-1)?.knocks.length).toBe(0);
     net.disconnect();
   });
 

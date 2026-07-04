@@ -33,7 +33,11 @@ export interface Net {
   move(x: number, y: number, dir: Dir): void;
   chat(text: string, scope?: "world" | "room"): void;
   whisper(to: string, text: string): void;
-  enterRoom(roomId: string, key: string): void;
+  knock(roomId: string): void;
+  cancelKnock(roomId: string): void;
+  approveKnock(roomId: string, playerId: string): void;
+  denyKnock(roomId: string, playerId: string): void;
+  toggleAllowAll(roomId: string, allowAll: boolean): void;
   leaveRoom(): void;
   sit(roomId: string, seatId: number): void;
   stand(): void;
@@ -109,8 +113,20 @@ export class RealNet implements Net {
   whisper(to: string, text: string) {
     this.socket.emit(CLIENT_EVENTS.whisper, { to, text });
   }
-  enterRoom(roomId: string, key: string) {
-    this.socket.emit(CLIENT_EVENTS.roomEnter, { roomId, key });
+  knock(roomId: string) {
+    this.socket.emit(CLIENT_EVENTS.knock, { roomId });
+  }
+  cancelKnock(roomId: string) {
+    this.socket.emit(CLIENT_EVENTS.cancelKnock, { roomId });
+  }
+  approveKnock(roomId: string, playerId: string) {
+    this.socket.emit(CLIENT_EVENTS.approveKnock, { roomId, playerId });
+  }
+  denyKnock(roomId: string, playerId: string) {
+    this.socket.emit(CLIENT_EVENTS.denyKnock, { roomId, playerId });
+  }
+  toggleAllowAll(roomId: string, allowAll: boolean) {
+    this.socket.emit(CLIENT_EVENTS.toggleAllowAll, { roomId, allowAll });
   }
   leaveRoom() {
     this.socket.emit(CLIENT_EVENTS.roomLeave);
@@ -140,7 +156,6 @@ export class RealNet implements Net {
 
 /* ----------------------- Mock (standalone, dev only) ----------------------- */
 const NAMES = ["Aanya", "Rohan", "Mei", "Diego"] as const;
-const ROOM_KEYS: Record<string, string> = { "1": "1234", "2": "4321", "3": "3333" };
 
 export class MockNet implements Net {
   private bus = new Emitter();
@@ -148,6 +163,8 @@ export class MockNet implements Net {
   private npcs: PlayerState[] = [];
   private timer?: number;
   private name = "You";
+  /** Pending demo-knock timer, so leaving a room clears it. */
+  private knockDemoTimer?: number;
 
   connect() {
     // a few wandering NPCs around the plaza
@@ -229,16 +246,36 @@ export class MockNet implements Net {
         900
       );
   }
-  enterRoom(roomId: string, key: string) {
-    const ok = ROOM_KEYS[roomId] === key;
-    this.bus.emit(SERVER_EVENTS.roomEnterResult, {
-      ok,
+  knock(roomId: string) {
+    // Dev sandbox: you are always the first in, so you walk in as admin.
+    this.bus.emit(SERVER_EVENTS.adminChanged, {
       roomId,
-      reason: ok ? undefined : "bad-key",
+      admin: { id: this.selfId, name: this.name },
+      reason: "initial",
     });
+    this.bus.emit(SERVER_EVENTS.roomOpenState, { roomId, allowAll: false, atCapacity: false });
+    this.bus.emit(SERVER_EVENTS.knockResult, { roomId, result: "approved" });
+    // Fake a visitor knocking shortly after, so the approve/deny toast is testable.
+    if (this.knockDemoTimer) clearTimeout(this.knockDemoTimer);
+    this.knockDemoTimer = window.setTimeout(() => {
+      this.bus.emit(SERVER_EVENTS.knockPending, { roomId, knocks: [{ id: "npc1", name: NAMES[0] }] });
+    }, 2500);
+  }
+  cancelKnock() {
+    /* you are the admin in the mock, never a pending knocker */
+  }
+  approveKnock(roomId: string, _playerId: string) {
+    this.bus.emit(SERVER_EVENTS.knockPending, { roomId, knocks: [] });
+  }
+  denyKnock(roomId: string, _playerId: string) {
+    this.bus.emit(SERVER_EVENTS.knockPending, { roomId, knocks: [] });
+  }
+  toggleAllowAll(roomId: string, allowAll: boolean) {
+    this.bus.emit(SERVER_EVENTS.roomOpenState, { roomId, allowAll, atCapacity: false });
   }
   leaveRoom() {
-    /* no server in mock; the scene owns local room state */
+    // no server in mock; the scene owns local room state
+    if (this.knockDemoTimer) clearTimeout(this.knockDemoTimer);
   }
   sit(roomId: string, seatId: number) {
     this.bus.emit(SERVER_EVENTS.seatUpdate, { roomId, seatId, playerId: this.selfId });
@@ -325,6 +362,3 @@ export function createNet(): Net {
   // Production / real mode: a backend URL is mandatory (throws if missing).
   return new RealNet(assertServerUrl());
 }
-
-/** Mock room keys, surfaced so the dev UI can hint them. */
-export const MOCK_ROOM_KEYS = ROOM_KEYS;

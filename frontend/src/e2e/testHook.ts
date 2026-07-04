@@ -15,8 +15,9 @@ declare const __APP_SHA__: string;
 
 /** Game -> UI events the hook mirrors into `state.last` / the event log. */
 const TRACKED_EVENTS = [
-  "near-door",
-  "leave-door",
+  // Room access (PRD 14): the requester's knock lifecycle.
+  "knocking",
+  "stop-knocking",
   "near-seat",
   "leave-seat",
   "sat",
@@ -65,8 +66,8 @@ interface HookState {
   last: Record<string, unknown>;
   /** Bounded log of tracked events, oldest first (positions excluded). */
   events: LoggedEvent[];
-  /** Door currently in range, from near-door / leave-door. */
-  nearDoor: { roomId: string; name: string } | null;
+  /** Outstanding knock at a door, from knocking / stop-knocking. */
+  knocking: { roomId: string; name: string } | null;
   /** Seat currently in range, from near-seat / leave-seat. */
   nearSeat: { roomId: string; seatId: number | string } | null;
   /** Room the player is inside, from room-entered / room-left. */
@@ -107,7 +108,7 @@ export function installTestHook(): void {
   const state: HookState = {
     last: {},
     events: [],
-    nearDoor: null,
+    knocking: null,
     nearSeat: null,
     currentRoomId: null,
     seated: null,
@@ -123,11 +124,11 @@ export function installTestHook(): void {
         if (state.events.length > EVENT_LOG_CAP) state.events.shift();
       }
       switch (event) {
-        case "near-door":
-          state.nearDoor = payload as HookState["nearDoor"];
+        case "knocking":
+          state.knocking = payload as HookState["knocking"];
           break;
-        case "leave-door":
-          state.nearDoor = null;
+        case "stop-knocking":
+          state.knocking = null;
           break;
         case "near-seat":
           state.nearSeat = payload as HookState["nearSeat"];

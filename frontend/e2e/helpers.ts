@@ -14,16 +14,6 @@ declare global {
 
 export const BACKEND_URL = process.env.E2E_BACKEND_URL ?? "http://localhost:3001";
 
-/** Room keys are the dev-default compose values (backend/.env.example). */
-export const ROOM_KEYS: Record<string, string> = {
-  "1": "1234",
-  "2": "4321",
-  "3": "3333",
-  "4": "4444",
-  "5": "5555",
-  "6": "6666",
-};
-
 /**
  * Map geometry (16px tiles), derived from frontend/public/assets/maps/campus.json.
  * Campus is the single canonical map (PRD 13), loaded as DEFAULT_MAP with NO
@@ -259,10 +249,10 @@ export async function walkTo(
   page: Page,
   x: number,
   y: number,
-  opts: { timeoutMs?: number; tolerance?: number; stopAtDoor?: string } = {},
+  opts: { timeoutMs?: number; tolerance?: number; stopWhenKnocking?: string } = {},
 ): Promise<void> {
   await page.evaluate(
-    ({ x, y, timeoutMs, tolerance, stopAtDoor }) =>
+    ({ x, y, timeoutMs, tolerance, stopWhenKnocking }) =>
       new Promise<void>((resolve, reject) => {
         const hook = window.__testHook;
         if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
@@ -274,9 +264,9 @@ export async function walkTo(
           hook.emit("move-axis", { x: 0, y: 0 });
         };
         const off = hook.on("positions", (payload) => {
-          // Reaching the door zone opens the key modal, whose autofocused
-          // input freezes movement — stop steering the moment it triggers.
-          if (stopAtDoor && hook.state.nearDoor?.roomId === stopAtDoor) {
+          // A closed door holds the player at the threshold (rollback gate); stop
+          // steering the moment the knock starts, or walkTo would flag it stuck.
+          if (stopWhenKnocking && hook.state.knocking?.roomId === stopWhenKnocking) {
             finish();
             resolve();
             return;
@@ -326,7 +316,7 @@ export async function walkTo(
       y,
       timeoutMs: opts.timeoutMs ?? 30_000,
       tolerance: opts.tolerance ?? 6,
-      stopAtDoor: opts.stopAtDoor ?? "",
+      stopWhenKnocking: opts.stopWhenKnocking ?? "",
     },
   );
 }
@@ -336,46 +326,40 @@ export async function walkPath(page: Page, path: [number, number][]): Promise<vo
   for (const [x, y] of path) await walkTo(page, x, y);
 }
 
-/** Walk to a room's door and wait for the key modal to open. */
-export async function approachDoor(
-  page: Page,
-  map: "campus",
-  roomId: string,
-): Promise<void> {
+/** Walk a room's door path, stopping at the threshold once knocking begins. */
+async function walkToDoor(page: Page, map: "campus", roomId: string): Promise<void> {
   const room = MAPS[map].rooms[roomId];
-  if (!room) throw new Error(`approachDoor: unknown room "${roomId}" in map "${map}"`);
+  if (!room) throw new Error(`walkToDoor: unknown room "${roomId}" in map "${map}"`);
   const path = room.doorPath;
   for (const [i, [x, y]] of path.entries()) {
-    // On the final leg, stop steering as soon as the door zone triggers.
-    await walkTo(page, x, y, i === path.length - 1 ? { stopAtDoor: roomId } : {});
+    await walkTo(page, x, y, i === path.length - 1 ? { stopWhenKnocking: roomId } : {});
   }
-  await page.waitForFunction(
-    (id) => window.__testHook?.state.nearDoor?.roomId === id,
-    roomId,
-  );
-  await expect(page.locator(".key-modal")).toBeVisible();
 }
 
-/** Submit a key in the open door modal. */
-export async function submitRoomKey(page: Page, key: string): Promise<void> {
-  await page.getByPlaceholder("Room key").fill(key);
-  await page.locator(".key-modal").getByRole("button", { name: "Enter" }).click();
+/**
+ * Enter an EMPTY room: walk to the door and knock — the first arrival is admitted
+ * straight away as the room's admin (PRD 14). Waits for room-entered.
+ */
+export async function enterRoom(page: Page, map: "campus", roomId: string): Promise<void> {
+  await walkToDoor(page, map, roomId);
+  await page.waitForFunction((id) => window.__testHook?.state.currentRoomId === id, roomId);
 }
 
-/** Approach a door and enter with the correct key; waits for room-entered. */
-export async function enterRoom(
-  page: Page,
-  map: "campus",
-  roomId: string,
-): Promise<void> {
-  await approachDoor(page, map, roomId);
-  const key = ROOM_KEYS[roomId];
-  if (!key) throw new Error(`enterRoom: no key configured for room "${roomId}"`);
-  await submitRoomKey(page, key);
-  await page.waitForFunction(
-    (id) => window.__testHook?.state.currentRoomId === id,
-    roomId,
-  );
+/**
+ * Walk to an OCCUPIED room's door and knock, then wait in the "Knocking…" state
+ * (the admin must approve to let this player in). Asserts the knock card shows.
+ */
+export async function knockAtDoor(page: Page, map: "campus", roomId: string): Promise<void> {
+  await walkToDoor(page, map, roomId);
+  await page.waitForFunction((id) => window.__testHook?.state.knocking?.roomId === id, roomId);
+  await expect(page.locator(".knock-status")).toBeVisible();
+}
+
+/** On the admin's page, approve (or deny) the first pending knock request. */
+export async function respondToKnock(adminPage: Page, action: "Approve" | "Deny"): Promise<void> {
+  const request = adminPage.locator(".knock-request").first();
+  await expect(request).toBeVisible();
+  await request.getByRole("button", { name: action }).click();
 }
 
 /**
