@@ -52,10 +52,14 @@ export interface RoomRoute {
   exit: [number, number];
 }
 
-// Descent from the plaza (spawn is on the E-W artery at 960,704) down the
-// central path to the hostel forecourt hub, shared by every hostel room path.
+// Descent to the hostel forecourt, shared by every hostel room path. Players
+// spawn at (320,288) in the NW; (944,600) is the same proven-reachable plaza
+// waypoint the HQ-room paths use, so the first leg brushes past the park the
+// same way. From there we head west and drop down the central path to the
+// forecourt hub — every leg is a wall-free, solid-free straight segment.
 const HOSTEL_DESCENT: [number, number][] = [
-  [560, 704],
+  [944, 600],
+  [560, 600],
   [560, 1520],
 ];
 const HOSTEL_HUB: [number, number] = [560, 1520];
