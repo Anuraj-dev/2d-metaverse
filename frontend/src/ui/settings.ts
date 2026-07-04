@@ -8,8 +8,10 @@ export interface Settings {
   musicVolume: number; // 0..1, background music bed channel
   sfxVolume: number; // 0..1, event/gameplay sfx channel
   ambientVolume: number; // 0..1, outdoor ambient bed channel
+  arcadeVolume: number; // 0..1, arcade mini-game sfx channel (own control)
   muted: boolean; // master mute — silences everything, volumes preserved
   muteSfx: boolean; // silence gameplay sfx specifically (kept for back-compat)
+  muteArcade: boolean; // silence arcade mini-game sounds specifically
   notifySound: boolean; // play a chime on incoming chat
   tabFlash: boolean; // flash the tab title / Web Notification when unfocused
 }
@@ -21,8 +23,10 @@ const DEFAULTS: Settings = {
   musicVolume: 0.4,
   sfxVolume: 0.7,
   ambientVolume: 0.5,
+  arcadeVolume: 0.8,
   muted: false,
   muteSfx: false,
+  muteArcade: false,
   notifySound: true,
   tabFlash: true,
 };

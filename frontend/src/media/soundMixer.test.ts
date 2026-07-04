@@ -24,8 +24,10 @@ const base: MixerVolumes = {
   music: 1,
   sfx: 1,
   ambient: 1,
+  arcade: 1,
   muted: false,
   muteSfx: false,
+  muteArcade: false,
 };
 
 describe("clamp01", () => {
@@ -65,6 +67,24 @@ describe("channelGain", () => {
     expect(channelGain(v, "sfx")).toBe(0);
     expect(channelGain(v, "music")).toBe(1);
     expect(channelGain(v, "ambient")).toBe(1);
+    expect(channelGain(v, "arcade")).toBe(1);
+  });
+
+  it("scales the arcade channel by its own volume under the master", () => {
+    const v = { ...base, master: 0.5, arcade: 0.6 };
+    expect(channelGain(v, "arcade")).toBeCloseTo(0.3);
+  });
+
+  it("muteArcade silences only the arcade channel", () => {
+    const v = { ...base, muteArcade: true };
+    expect(channelGain(v, "arcade")).toBe(0);
+    expect(channelGain(v, "sfx")).toBe(1);
+    expect(channelGain(v, "music")).toBe(1);
+    expect(channelGain(v, "ambient")).toBe(1);
+  });
+
+  it("master mute also silences the arcade channel", () => {
+    expect(channelGain({ ...base, muted: true }, "arcade")).toBe(0);
   });
 
   it("returns the un-ducked base gain — ducking is a loop-only envelope, not here", () => {
@@ -83,10 +103,11 @@ describe("channelGain", () => {
 describe("volumesFromSettings (persistence round-trip)", () => {
   it("mirrors the persisted default settings shape", () => {
     const v = volumesFromSettings(getSettings());
-    // defaults: master .6, music .4, sfx .7, ambient .5
+    // defaults: master .6, music .4, sfx .7, ambient .5, arcade .8
     expect(channelGain(v, "music")).toBeCloseTo(0.6 * 0.4);
     expect(channelGain(v, "sfx")).toBeCloseTo(0.6 * 0.7);
     expect(channelGain(v, "ambient")).toBeCloseTo(0.6 * 0.5);
+    expect(channelGain(v, "arcade")).toBeCloseTo(0.6 * 0.8);
   });
 });
 
@@ -137,8 +158,8 @@ describe("cueForEvent", () => {
       clip: "meeting_join",
       channel: "sfx",
     });
-    expect(cueForEvent("arcade-point")).toEqual({ clip: "arcade_point", channel: "sfx" });
-    expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "sfx" });
+    expect(cueForEvent("arcade-point")).toEqual({ clip: "arcade_point", channel: "arcade" });
+    expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
   });
   it("returns null for unmapped events", () => {
     expect(cueForEvent("leave-door")).toBeNull();
@@ -146,7 +167,7 @@ describe("cueForEvent", () => {
   });
   it("every mapped cue names a real channel", () => {
     for (const cue of Object.values(EVENT_SOUNDS)) {
-      expect(["music", "sfx", "ambient"]).toContain(cue.channel);
+      expect(["music", "sfx", "ambient", "arcade"]).toContain(cue.channel);
     }
   });
 });

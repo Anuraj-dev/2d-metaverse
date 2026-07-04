@@ -35,6 +35,17 @@ describe("settings store", () => {
     expect(raw.muted).toBe(true);
   });
 
+  it("exposes an arcade volume + mute with sane defaults, round-tripped", () => {
+    const d = getSettings();
+    expect(d.arcadeVolume).toBeGreaterThanOrEqual(0);
+    expect(d.arcadeVolume).toBeLessThanOrEqual(1);
+    expect(d.muteArcade).toBe(false);
+    setSettings({ arcadeVolume: 0.33, muteArcade: true });
+    const s = getSettings();
+    expect(s.arcadeVolume).toBe(0.33);
+    expect(s.muteArcade).toBe(true);
+  });
+
   it("merges patches and persists to localStorage", () => {
     setSettings({ masterVolume: 0.25, muteSfx: true });
     const s = getSettings();

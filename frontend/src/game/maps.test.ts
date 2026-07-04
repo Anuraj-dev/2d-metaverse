@@ -202,6 +202,60 @@ describe("campus arcade cabinets (PRD 11)", () => {
   });
 });
 
+describe("campus arcade room (PRD 16)", () => {
+  interface TiledObject {
+    name: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    properties?: { name: string; value: unknown }[];
+  }
+  interface ObjectLayer {
+    name: string;
+    objects?: TiledObject[];
+  }
+  function objects(layerName: string): TiledObject[] {
+    const json = loadMap("campus") as unknown as { layers: ObjectLayer[] };
+    return json.layers.find((l) => l.name === layerName)?.objects ?? [];
+  }
+  function prop(o: TiledObject, name: string): unknown {
+    return o.properties?.find((p) => p.name === name)?.value;
+  }
+  const arcadeRoom = () =>
+    objects("roomBounds").find((o) => prop(o, "roomId") === "arcade");
+
+  it("authors a dedicated 'arcade' roomBounds for its own audio zone", () => {
+    const room = arcadeRoom();
+    expect(room, "missing arcade roomBounds").toBeDefined();
+    expect((room?.width ?? 0) > 0 && (room?.height ?? 0) > 0).toBe(true);
+  });
+
+  it("is a public walk-in zone: no doorZone and no seats reference it (never a meeting room)", () => {
+    // No door object → no lock/knock/animated door (open doorway only).
+    expect(objects("doorZones").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
+    // No seats → the all-seated meeting trigger can never arm here.
+    expect(objects("seats").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
+  });
+
+  it("places every arcade cabinet inside the arcade room bounds", () => {
+    const room = arcadeRoom();
+    if (!room) throw new Error("arcade room missing");
+    const rx = room.x ?? 0;
+    const ry = room.y ?? 0;
+    const rw = room.width ?? 0;
+    const rh = room.height ?? 0;
+    const cabinets = objects("furniture").filter((o) => o.name.startsWith("f_arcade_"));
+    expect(cabinets.length).toBe(3);
+    for (const c of cabinets) {
+      const cx = c.x ?? 0;
+      const cy = c.y ?? 0;
+      expect(cx >= rx && cx <= rx + rw, `${c.name} x inside room`).toBe(true);
+      expect(cy >= ry && cy <= ry + rh, `${c.name} y inside room`).toBe(true);
+    }
+  });
+});
+
 describe("campus board-game tables (PRD 11 phase 2)", () => {
   interface TiledObject {
     name: string;
