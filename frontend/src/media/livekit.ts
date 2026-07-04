@@ -19,6 +19,7 @@ import {
   stageRoomName,
   type RoomMode,
 } from "./mediaLogic";
+import { speakingState } from "./speakingState";
 
 async function fetchToken(
   roomName: string,
@@ -130,6 +131,15 @@ class WorldAudio {
         this.audioEls.get(p.identity)?.remove();
         this.audioEls.delete(p.identity);
       });
+      // Surface LiveKit's active-speaker set (remotes + local participant) on the
+      // shared speaking-state seam; the pure mixer decides the duck. Identity ===
+      // playerId, so it lines up 1:1 with the proximity-volume map.
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        speakingState.setSpeakers(
+          "world",
+          speakers.map((s) => s.identity)
+        );
+      });
       await room.connect(url, token);
       await room.localParticipant.setMicrophoneEnabled(true);
     } catch (e) {
@@ -161,6 +171,7 @@ class WorldAudio {
 
   async stop() {
     this.offPositions?.();
+    speakingState.clear("world");
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
     await this.room?.disconnect();

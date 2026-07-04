@@ -3,13 +3,16 @@ import {
   channelGain,
   clamp01,
   volumesFromSettings,
-  anyVoiceActive,
+  speechActive,
+  duckStep,
   cueForEvent,
   EVENT_SOUNDS,
   footstepDue,
   fadeStep,
   loopTargets,
   DUCK_FACTOR,
+  DUCK_ATTACK_MS,
+  DUCK_RELEASE_MS,
   LOOP_FADE_MS,
   VOICE_THRESHOLD,
   type MixerVolumes,
@@ -64,14 +67,11 @@ describe("channelGain", () => {
     expect(channelGain(v, "ambient")).toBe(1);
   });
 
-  it("ducks the ambient channel while voice is active, but not music/sfx", () => {
-    expect(channelGain(base, "ambient", { voiceActive: true })).toBeCloseTo(DUCK_FACTOR);
-    expect(channelGain(base, "music", { voiceActive: true })).toBe(1);
-    expect(channelGain(base, "sfx", { voiceActive: true })).toBe(1);
-  });
-
-  it("does not duck ambient when voice is inactive", () => {
-    expect(channelGain(base, "ambient", { voiceActive: false })).toBe(1);
+  it("returns the un-ducked base gain — ducking is a loop-only envelope, not here", () => {
+    // channelGain no longer applies any duck; every channel is its plain base.
+    expect(channelGain(base, "ambient")).toBe(1);
+    expect(channelGain(base, "music")).toBe(1);
+    expect(channelGain(base, "sfx")).toBe(1);
   });
 
   it("clamps out-of-range channel volumes", () => {
@@ -90,15 +90,42 @@ describe("volumesFromSettings (persistence round-trip)", () => {
   });
 });
 
-describe("anyVoiceActive", () => {
-  it("is false for an empty map", () => {
-    expect(anyVoiceActive({})).toBe(false);
+describe("speechActive (speech-driven duck trigger)", () => {
+  const set = (...ids: string[]): ReadonlySet<string> => new Set(ids);
+  const SELF = "me";
+
+  it("no peers audible and no one speaking → no duck", () => {
+    expect(speechActive(set(), {}, SELF)).toBe(false);
   });
-  it("is false when all speakers are below threshold", () => {
-    expect(anyVoiceActive({ a: 0.01, b: 0.0 })).toBe(false);
+
+  it("audible peer near but silent → no duck (mere proximity never ducks)", () => {
+    expect(speechActive(set(), { a: 0.9 }, SELF)).toBe(false);
   });
-  it("is true when any speaker is at or above threshold", () => {
-    expect(anyVoiceActive({ a: 0.01, b: VOICE_THRESHOLD })).toBe(true);
+
+  it("audible peer speaking → duck", () => {
+    expect(speechActive(set("a"), { a: 0.9 }, SELF)).toBe(true);
+  });
+
+  it("peer speaking but below the audible threshold (distant/walled-off) → no duck", () => {
+    expect(speechActive(set("a"), { a: VOICE_THRESHOLD - 0.001 }, SELF)).toBe(false);
+    // exactly at the threshold still counts as audible
+    expect(speechActive(set("a"), { a: VOICE_THRESHOLD }, SELF)).toBe(true);
+  });
+
+  it("peer speaking with no known volume (not in the map) → no duck", () => {
+    expect(speechActive(set("a"), {}, SELF)).toBe(false);
+  });
+
+  it("self speaking → duck even with no audible peers (self has no proximity volume)", () => {
+    expect(speechActive(set(SELF), {}, SELF)).toBe(true);
+  });
+
+  it("only a distant peer speaks while an audible peer stays silent → no duck", () => {
+    expect(speechActive(set("far"), { far: 0.01, near: 0.9 }, SELF)).toBe(false);
+  });
+
+  it("muted local player (not in the speaking set) with no audible speakers → no duck", () => {
+    expect(speechActive(set("far"), { far: 0.01 }, SELF)).toBe(false);
   });
 });
 
@@ -144,9 +171,9 @@ describe("footstepDue", () => {
   });
 });
 
-describe("loopTargets (loop lifecycle: outdoors / meeting)", () => {
+describe("loopTargets (base loop lifecycle: outdoors / meeting — un-ducked)", () => {
   const vols = { ...base, music: 0.8, ambient: 0.6 };
-  const world = { outdoors: true, meeting: false, voiceActive: false };
+  const world = { outdoors: true, meeting: false };
 
   it("outdoors, no meeting: both loops at their channel gains", () => {
     expect(loopTargets(vols, world)).toEqual({ music: 0.8, ambient: 0.6 });
@@ -166,16 +193,16 @@ describe("loopTargets (loop lifecycle: outdoors / meeting)", () => {
     });
   });
 
-  it("meeting wins even while outdoors with active voice", () => {
-    expect(
-      loopTargets(vols, { outdoors: true, meeting: true, voiceActive: true })
-    ).toEqual({ music: 0, ambient: 0 });
+  it("meeting wins even while outdoors", () => {
+    expect(loopTargets(vols, { outdoors: true, meeting: true })).toEqual({
+      music: 0,
+      ambient: 0,
+    });
   });
 
-  it("outdoors with voice ducks the ambient bed by DUCK_FACTOR", () => {
-    const t = loopTargets(vols, { ...world, voiceActive: true });
-    expect(t.music).toBe(0.8);
-    expect(t.ambient).toBeCloseTo(0.6 * DUCK_FACTOR);
+  it("does not apply any duck — the duck lives in the separate duckStep envelope", () => {
+    // Same inputs, regardless of speech: base targets never fold in DUCK_FACTOR.
+    expect(loopTargets(vols, world)).toEqual({ music: 0.8, ambient: 0.6 });
   });
 
   it("master mute forces both loop targets to zero", () => {
@@ -183,6 +210,49 @@ describe("loopTargets (loop lifecycle: outdoors / meeting)", () => {
       music: 0,
       ambient: 0,
     });
+  });
+});
+
+describe("duckStep (speech duck envelope: fast attack / slow release)", () => {
+  it("attack: glides toward DUCK_FACTOR while voice is active", () => {
+    // one 50ms tick over the 100ms attack moves half of full scale downward.
+    expect(duckStep(1, true, 50)).toBeCloseTo(0.5);
+  });
+
+  it("release: glides back toward 1 while voice is inactive", () => {
+    // one 70ms tick over the 700ms release moves 0.1 of full scale upward.
+    expect(duckStep(DUCK_FACTOR, false, 70)).toBeCloseTo(DUCK_FACTOR + 0.1);
+  });
+
+  it("attack is faster than release for the same dt (asymmetric envelope)", () => {
+    const downMove = 1 - duckStep(1, true, 30);
+    const upMove = duckStep(DUCK_FACTOR, false, 30) - DUCK_FACTOR;
+    expect(downMove).toBeGreaterThan(upMove);
+  });
+
+  it("attack lands exactly on DUCK_FACTOR within one attack window", () => {
+    expect(duckStep(1, true, DUCK_ATTACK_MS)).toBe(DUCK_FACTOR);
+  });
+
+  it("release lands exactly on 1 within one release window", () => {
+    expect(duckStep(DUCK_FACTOR, false, DUCK_RELEASE_MS)).toBe(1);
+  });
+
+  it("is stable once settled at either end", () => {
+    expect(duckStep(DUCK_FACTOR, true, 50)).toBe(DUCK_FACTOR);
+    expect(duckStep(1, false, 50)).toBe(1);
+  });
+
+  it("a full release takes ~DUCK_RELEASE_MS in 50ms ticks", () => {
+    let v = DUCK_FACTOR;
+    let ticks = 0;
+    while (v < 1 && ticks < 100) {
+      v = duckStep(v, false, 50);
+      ticks++;
+    }
+    expect(v).toBe(1);
+    // (1 - DUCK_FACTOR) * 700ms of travel, in 50ms steps → ~13 ticks (≤ 1s).
+    expect(ticks).toBeLessThanOrEqual(Math.ceil(DUCK_RELEASE_MS / 50));
   });
 });
 

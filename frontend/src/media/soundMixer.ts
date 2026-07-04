@@ -1,9 +1,10 @@
 /**
  * Pure sound-mixer logic — no DOM, no Phaser, no Howler. The single place that
  * owns channel volume math (master over music / sfx / ambient), master mute,
- * ambient ducking near voice, and the event→sound mapping. The playback glue
- * (`soundEngine.ts`) and the wiring bridge (`SoundBridge.tsx`) call into this so
- * every gain decision is testable in isolation with playback mocked.
+ * speech-driven ducking of the world loops (music + ambient), and the event→sound
+ * mapping. The playback glue (`sfx.ts`) and the wiring bridge (`SfxBridge.tsx`)
+ * call into this so every gain decision is testable in isolation with playback
+ * mocked.
  */
 import type { Settings } from "../ui/settings";
 
@@ -19,11 +20,28 @@ export interface MixerVolumes {
   muteSfx: boolean; // silence the sfx channel specifically
 }
 
-/** Ambient bed drops to this fraction of its gain while someone speaks nearby. */
-export const DUCK_FACTOR = 0.3;
+/**
+ * Speech-driven duck: the world loops (music + ambient) drop to this fraction of
+ * their gain while any audible peer — or the local player — is actually speaking.
+ * Hard duck so proximity voice reads clearly over the bed (tuned by ear).
+ */
+export const DUCK_FACTOR = 0.12;
 
-/** A speaker at or above this level (0..1) counts as active voice for ducking. */
+/**
+ * A remote peer must be at least this audible (0..1 zone/proximity volume) to
+ * count toward the duck when speaking — a distant/walled-off speaker never ducks
+ * your soundscape. The local player has no proximity volume; self-speech always
+ * counts (see `speechActive`).
+ */
 export const VOICE_THRESHOLD = 0.06;
+
+/**
+ * Duck envelope timing. Fast attack (glide down to DUCK_FACTOR the moment speech
+ * starts) and a slower, smooth release (recover to full over ~0.7s after the last
+ * speech stops) so the mix never pumps or clicks. See `duckStep`.
+ */
+export const DUCK_ATTACK_MS = 100;
+export const DUCK_RELEASE_MS = 700;
 
 export function clamp01(v: number): number {
   if (Number.isNaN(v)) return 0;
@@ -43,15 +61,12 @@ export function volumesFromSettings(s: Settings): MixerVolumes {
 }
 
 /**
- * Final linear gain (0..1) for a channel. Master mute forces 0; otherwise the
- * channel volume scales by the master. The ambient channel additionally ducks
- * to DUCK_FACTOR while voice is active.
+ * Final linear gain (0..1) for a channel — the un-ducked base. Master mute forces
+ * 0; otherwise the channel volume scales by the master. Ducking is NOT applied
+ * here: it is a smoothed, loop-only envelope (`duckStep`) that the glue multiplies
+ * onto the two world loops, so one-shot cues never duck.
  */
-export function channelGain(
-  v: MixerVolumes,
-  channel: Channel,
-  opts: { voiceActive?: boolean } = {}
-): number {
+export function channelGain(v: MixerVolumes, channel: Channel): number {
   if (v.muted) return 0;
   const master = clamp01(v.master);
   if (master <= 0) return 0;
@@ -61,18 +76,28 @@ export function channelGain(
     return clamp01(master * clamp01(v.sfx));
   }
   // ambient
-  let g = master * clamp01(v.ambient);
-  if (opts.voiceActive) g *= DUCK_FACTOR;
-  return clamp01(g);
+  return clamp01(master * clamp01(v.ambient));
 }
 
-/** True if any speaker in the per-peer volume map is above the voice threshold. */
-export function anyVoiceActive(
+/**
+ * Speech-driven duck trigger (pure). Voice is active — and the loops should duck —
+ * when the local player is speaking, OR any *audible* remote peer is speaking:
+ *   ∃ peer p: (zone/proximity volume(p) > threshold) ∧ p is speaking, OR self speaking.
+ * `speaking` is the transport's active-speaker identity set (self included when the
+ * local mic is active); `volumes` is the per-remote zone volume map (self excluded).
+ * A distant/walled-off speaker (volume below threshold) never ducks; a muted local
+ * player or no audible peers yields no duck.
+ */
+export function speechActive(
+  speaking: ReadonlySet<string>,
   volumes: Record<string, number>,
+  selfId: string,
   threshold = VOICE_THRESHOLD
 ): boolean {
-  for (const level of Object.values(volumes)) {
-    if (level >= threshold) return true;
+  if (speaking.has(selfId)) return true;
+  for (const id of speaking) {
+    if (id === selfId) continue;
+    if ((volumes[id] ?? 0) >= threshold) return true;
   }
   return false;
 }
@@ -87,15 +112,15 @@ export function anyVoiceActive(
 export interface LoopWorld {
   outdoors: boolean;
   meeting: boolean;
-  voiceActive: boolean;
 }
 
 /**
- * Target gains for the two persistent loops given settings + world state:
- * the outdoor ambience only sounds outdoors (rooms are aurally private — no
- * birdsong through walls), and both world loops fall silent for the duration
- * of a meeting. The playback glue FADES toward these targets (see fadeStep);
- * it never hard-cuts.
+ * Base (un-ducked) target gains for the two persistent loops given settings +
+ * world state: the outdoor ambience only sounds outdoors (rooms are aurally
+ * private — no birdsong through walls), and both world loops fall silent for the
+ * duration of a meeting. These are the "scene" targets the glue fades toward at
+ * LOOP_FADE_MS; the speech duck (`duckStep`) is a separate, faster envelope the
+ * glue multiplies on top of the faded base — it never hard-cuts either.
  */
 export function loopTargets(
   v: MixerVolumes,
@@ -103,11 +128,27 @@ export function loopTargets(
 ): { music: number; ambient: number } {
   return {
     music: world.meeting ? 0 : channelGain(v, "music"),
-    ambient:
-      world.meeting || !world.outdoors
-        ? 0
-        : channelGain(v, "ambient", { voiceActive: world.voiceActive }),
+    ambient: world.meeting || !world.outdoors ? 0 : channelGain(v, "ambient"),
   };
+}
+
+/**
+ * Advance the shared duck envelope one tick. The envelope glides in [DUCK_FACTOR,
+ * 1] where 1 = no duck and DUCK_FACTOR = fully ducked. It moves toward DUCK_FACTOR
+ * fast while voice is active (attack) and back toward 1 slowly once speech stops
+ * (release), reusing fadeStep's exact-landing linear glide. The glue multiplies
+ * this scalar onto both world loops' faded base gains.
+ */
+export function duckStep(
+  current: number,
+  voiceActive: boolean,
+  dtMs: number,
+  attackMs = DUCK_ATTACK_MS,
+  releaseMs = DUCK_RELEASE_MS
+): number {
+  const target = voiceActive ? DUCK_FACTOR : 1;
+  const fadeMs = voiceActive ? attackMs : releaseMs;
+  return fadeStep(current, target, dtMs, fadeMs);
 }
 
 /** Full-scale loop fade duration: long enough to feel like a scene change, not a cut. */
