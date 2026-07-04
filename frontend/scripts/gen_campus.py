@@ -415,7 +415,7 @@ interactables_objs = [
                  "12:00  Lunch break\n"
                  "14:00  Campus tour\n"
                  "16:00  All-hands meeting\n\n"
-                 "Room keys: ask your host"
+                 "Private rooms: knock and the admin lets you in"
              )},
         ],
     },

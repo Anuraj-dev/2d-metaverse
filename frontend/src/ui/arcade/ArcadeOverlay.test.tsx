@@ -45,7 +45,7 @@ describe("ArcadeOverlay", () => {
   });
 
   // Regression for the known focus trap: a lingering focused input (e.g. the
-  // room-key modal's field) must not keep keyboard focus once the arcade opens,
+  // chat field) must not keep keyboard focus once the arcade opens,
   // or it would swallow the game's keys via the scene's isTyping guard.
   it("takes keyboard focus away from a stale focused input on open", () => {
     const stale = document.createElement("input");

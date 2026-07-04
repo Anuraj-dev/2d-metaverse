@@ -114,7 +114,7 @@ src/
 ├── game/          Phaser scene (glue) + pure game-logic modules, avatar anims, event bus
 ├── net/           Socket.IO client + a standalone mock (VITE_USE_MOCK)
 ├── media/         LiveKit transport (livekit.ts) + pure media logic (mediaLogic.ts)
-└── ui/            React HUD: chat, room-key modal, video bubbles, media controls
+└── ui/            React HUD: chat, room admin/knock panel, video bubbles, media controls
 ```
 
 Wire types (`Dir`, `PlayerState`, `ChatMessage`, `SpaceInfo`, …) and event-name /
@@ -363,7 +363,7 @@ usual interact hint; pressing **E** opens a full-screen overlay hosting the
 game. The world scene **sleeps** underneath (the same pattern meetings use) and
 **Escape** closes instantly. The overlay pauses the game when the tab loses
 visibility or the window loses focus, and it takes keyboard focus robustly on
-open (blurring any lingering input — e.g. the room-key field — so its focus
+open (blurring any lingering input — e.g. the chat field — so its focus
 can't swallow the game's keys via the scene's `isTyping` guard).
 
 **Architecture — pure rules, thin renderers, audio-agnostic:**

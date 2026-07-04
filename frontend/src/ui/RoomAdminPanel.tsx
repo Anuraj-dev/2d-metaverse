@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlayerState } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
 import { sharedNet } from "../net/shared";
@@ -16,14 +16,24 @@ export default function RoomAdminPanel() {
   const [admin, setAdmin] = useState<AdminRef | null>(null);
   const [open, setOpen] = useState<RoomOpenState | undefined>(undefined);
   const [pending, setPending] = useState<Requester[]>([]);
+  // The panel is bound to exactly one room; `room-open-state` is a SPACE-WIDE
+  // broadcast (door visuals for every client), so events for other rooms must
+  // be ignored or a neighbouring room's toggle would corrupt this admin's
+  // controls. A ref (not the `roomId` state) is read inside the mount-once
+  // effect's handlers, which would otherwise close over a stale `null`.
+  const roomIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const net = sharedNet();
     const offInit = net.on("init", (p: { selfId: string; players: PlayerState[] }) => setSelfId(p.selfId));
 
     // Entering / leaving a room scopes the panel and clears stale state.
-    const offEntered = bus.on("room-entered", (p: { roomId: string }) => setRoomId(p.roomId));
+    const offEntered = bus.on("room-entered", (p: { roomId: string }) => {
+      roomIdRef.current = p.roomId;
+      setRoomId(p.roomId);
+    });
     const offLeft = bus.on("room-left", () => {
+      roomIdRef.current = null;
       setRoomId(null);
       setAdmin(null);
       setOpen(undefined);
@@ -33,6 +43,7 @@ export default function RoomAdminPanel() {
     const offAdmin = net.on(
       "admin-changed",
       (p: { roomId: string; admin: AdminRef | null; reason: "initial" | "succession" }) => {
+        if (p.roomId !== roomIdRef.current) return;
         setAdmin(p.admin);
         // "You are now the admin" cue on a hand-off (not the initial self-grant).
         if (p.reason === "succession" && p.admin && p.admin.id === net.selfId) bus.emit("admin-promoted");
@@ -40,12 +51,15 @@ export default function RoomAdminPanel() {
     );
     const offOpen = net.on(
       "room-open-state",
-      (p: { roomId: string; allowAll: boolean; atCapacity: boolean }) =>
-        setOpen({ allowAll: p.allowAll, atCapacity: p.atCapacity }),
+      (p: { roomId: string; allowAll: boolean; atCapacity: boolean }) => {
+        if (p.roomId !== roomIdRef.current) return;
+        setOpen({ allowAll: p.allowAll, atCapacity: p.atCapacity });
+      },
     );
     const offPending = net.on(
       "knock-pending",
       (p: { roomId: string; knocks: Requester[] }) => {
+        if (p.roomId !== roomIdRef.current) return;
         // A newly-arrived knocker rings the admin's incoming-knock cue.
         setPending((prev) => {
           if (p.knocks.length > prev.length) bus.emit("knock-received");

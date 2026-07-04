@@ -173,12 +173,14 @@ PR preview deployments from the Git integration remain enabled.
 # Incident playbook (prod hotfix runbook)
 
 Use this when production is stuck (e.g. the June 2026 incident: seed failed on
-missing room keys, leaving 3 rooms instead of 6, and the Vercel frontend never
-rebuilt after the campus map work). Steps:
+missing required env, leaving 3 rooms instead of 6, and the Vercel frontend never
+rebuilt after the campus map work). Rooms are no longer key-gated (PRD 14 replaced
+join keys with an admin/knock system), so there are no `ROOM_*_KEY` values to set.
+Steps:
 
-1. **Complete the prod env.** Add the missing keys to the production SSM env
-   parameter: `ROOM_4_KEY`, `ROOM_5_KEY`, `ROOM_6_KEY`, and `STAGE_KEY` (plus
-   `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if not already set).
+1. **Complete the prod env.** Set any missing required parameters in the production
+   SSM env: `STAGE_KEY` (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if not already
+   set).
 2. **Re-run the seed and check it.** On the EC2 host. Two things every manual
    compose command here needs: `--env-file .env` (compose does not read it
    implicitly for variable substitution in this file's `${VAR}` references),
