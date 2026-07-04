@@ -15,7 +15,7 @@
  * which is exactly what PRD 10 specifies for camera-less identity.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { enterRoom, selfId, signUpAndJoin, sitAtSeat, uniqueUser } from "./helpers";
+import { enterRoom, knockAtDoor, respondToKnock, selfId, signUpAndJoin, sitAtSeat, uniqueUser } from "./helpers";
 
 /** The client's current meeting hook state (mirrored server events). */
 async function meetingState(
@@ -60,10 +60,12 @@ test("two players sit → countdown → meeting grid for both; one stands → ba
     await sitAtSeat(pageA, "campus", "1");
     expect(await meetingState(pageA)).toBeNull();
 
-    // B enters (unseated entry over a solo sitter: still nothing) and sits on
-    // the other chair — now EVERY player in the room is seated and count = 2:
-    // the countdown fires on both clients, then the meeting starts.
-    await enterRoom(pageB, "campus", "1");
+    // B knocks; A (the room admin) approves. B's unseated entry over a solo
+    // sitter still starts nothing; then B sits — now EVERY player in the room is
+    // seated and count = 2: the countdown fires on both clients, meeting starts.
+    await knockAtDoor(pageB, "campus", "1");
+    await respondToKnock(pageA, "Approve");
+    await pageB.waitForFunction(() => window.__testHook?.state.currentRoomId === "1");
     expect(await meetingState(pageA)).toBeNull();
     const countdownSeenByA = pageA.evaluate(() => {
       const hook = window.__testHook;

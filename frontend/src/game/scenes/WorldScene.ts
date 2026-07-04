@@ -10,7 +10,8 @@ import { parseInteractables, findNear, arcadeOpenPayload, type InteractableDef }
 import { movementIntent, BASE_SPEED } from "../movement";
 import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, rectContains, type RoomArea } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
-import { seatTransition, doorTransition } from "../seatDoor";
+import { seatTransition } from "../seatDoor";
+import { doorPassable, shouldAnnounceKnock, type RoomOpenState } from "../roomAccess";
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
@@ -93,6 +94,8 @@ export default class WorldScene extends Phaser.Scene {
   private doors: DoorZone[] = [];
   private doorSprites = new Map<string, Phaser.GameObjects.Sprite>();
   private openDoors = new Set<string>();
+  /** Latest broadcast allow-all/capacity per room (PRD 14 door visibility). */
+  private roomOpenState = new Map<string, RoomOpenState>();
   private seats: Seat[] = [];
   private interactables: InteractableDef[] = [];
   private currentInteractable: InteractableDef | null = null;
@@ -493,15 +496,19 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("room-entered", (p: { roomId: string }) => {
       this.enteredRooms.add(p.roomId);
       this.currentRoom = p.roomId;
-      const t = doorTransition(this.openDoors.has(p.roomId) ? "open" : "closed", "enter");
-      if (t.effect === "open") {
-        this.openDoors.add(p.roomId);
-        const door = this.doorSprites.get(p.roomId);
-        if (door) {
-          bus.emit("door-open");
-          door.play("door-open").once("animationcomplete", () => door.setVisible(false));
-        }
-      }
+      bus.emit("stop-knocking");
+      this.refreshDoor(p.roomId);
+    });
+    // Server admitted this client (knock approved / walked into an open door):
+    // unlock the room. A denial/timeout just clears the knocking UI.
+    this.net.on("knock-result", (p: { roomId: string; result: "approved" | "denied" | "timeout" }) => {
+      if (p.result === "approved") bus.emit("room-entered", { roomId: p.roomId });
+      else bus.emit("stop-knocking");
+    });
+    // Door visibility follows the room's open state for everyone near it.
+    this.net.on("room-open-state", (p: { roomId: string; allowAll: boolean; atCapacity: boolean }) => {
+      this.roomOpenState.set(p.roomId, { allowAll: p.allowAll, atCapacity: p.atCapacity });
+      this.refreshDoor(p.roomId);
     });
     bus.on("do-sit", () => {
       if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
@@ -748,14 +755,16 @@ export default class WorldScene extends Phaser.Scene {
     const fx = this.player.x;
     const fy = this.player.y + 8;
 
-    // doors
+    // doors (PRD 14): approaching an un-entered room knocks — the server admits
+    // (empty room / open door) or queues for the admin. Walking away withdraws it.
     const inDoor = findDoor(this.doors, fx, fy);
     const doorId = inDoor ? inDoor.roomId : null;
     if (doorId !== this.currentDoor) {
+      const leaving = this.currentDoor;
       this.currentDoor = doorId;
-      if (inDoor && !this.enteredRooms.has(inDoor.roomId))
-        bus.emit("near-door", { roomId: inDoor.roomId, name: inDoor.name });
-      else bus.emit("leave-door");
+      if (inDoor && !this.enteredRooms.has(inDoor.roomId)) this.knockAt(inDoor);
+      else if (leaving) this.net.cancelKnock(leaving);
+      if (!inDoor || this.enteredRooms.has(inDoor.roomId)) bus.emit("stop-knocking");
     }
 
     // interactables
@@ -812,14 +821,24 @@ export default class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** Prevent walking through a door gap until the server has accepted its key. */
+  /** Knock at a room's door: ask the server to admit, and (in knock mode) show
+   *  the "Knocking…" UI. An open door admits silently. */
+  private knockAt(door: DoorZone) {
+    this.net.knock(door.roomId);
+    if (shouldAnnounceKnock(this.roomOpenState.get(door.roomId))) {
+      bus.emit("knocking", { roomId: door.roomId, name: door.name });
+    }
+  }
+
+  /** Hold the player at a door gap until admitted — unless the room is open to
+   *  all (allow-all under capacity), in which case they walk straight through. */
   private keepLockedRoomsClosed() {
     const room = findRoomArea(this.roomAreas, this.player.x, this.player.y + 8);
     if (!room) {
       this.lastPublicPosition.set(this.player.x, this.player.y);
       return;
     }
-    if (this.enteredRooms.has(room.roomId)) return;
+    if (doorPassable(this.enteredRooms.has(room.roomId), this.roomOpenState.get(room.roomId))) return;
 
     this.player.setPosition(this.lastPublicPosition.x, this.lastPublicPosition.y);
     this.player.setVelocity(0, 0);
@@ -848,15 +867,26 @@ export default class WorldScene extends Phaser.Scene {
     if (this.seated) this.stand();
     this.net.leaveRoom();
     bus.emit("room-left", { roomId });
-    const t = doorTransition(this.openDoors.has(roomId) ? "open" : "closed", "exit");
-    if (t.effect === "close") {
+    // The door reappears unless the room is still open to all.
+    this.refreshDoor(roomId);
+  }
+
+  /** Reconcile a door sprite with whether this client may currently pass it:
+   *  hidden when admitted (entered) or the room is open to all, shown otherwise. */
+  private refreshDoor(roomId: string) {
+    const door = this.doorSprites.get(roomId);
+    if (!door) return;
+    const shouldOpen = doorPassable(this.enteredRooms.has(roomId), this.roomOpenState.get(roomId));
+    const isOpen = this.openDoors.has(roomId);
+    if (shouldOpen && !isOpen) {
+      this.openDoors.add(roomId);
+      bus.emit("door-open");
+      door.play("door-open").once("animationcomplete", () => door.setVisible(false));
+    } else if (!shouldOpen && isOpen) {
       this.openDoors.delete(roomId);
-      const door = this.doorSprites.get(roomId);
-      if (door) {
-        bus.emit("door-close");
-        door.setVisible(true);
-        door.play("door-close");
-      }
+      bus.emit("door-close");
+      door.setVisible(true);
+      door.play("door-close");
     }
   }
 

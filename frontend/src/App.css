@@ -754,56 +754,101 @@ html, body, #root {
 }
 .mc-input input::placeholder { color: var(--muted); }
 
-/* ---------- Key modal ---------- */
-.modal-backdrop {
+/* ---------- Room access: knock + admin (PRD 14) ---------- */
+/* Requester's knocking card — bottom centre, above the touch controls. */
+.knock-status {
   position: absolute;
-  inset: 0;
-  background: rgba(5, 7, 12, 0.6);
-  display: grid;
-  place-items: center;
-  backdrop-filter: blur(3px);
-}
-.key-modal {
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(90vw, 380px);
+  padding: 12px 14px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 26px 28px;
-  width: 320px;
-  text-align: center;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
-.key-icon { font-size: 34px; }
-.key-modal h3 { margin: 8px 0 2px; }
-.key-modal p { color: var(--muted); margin: 0 0 16px; font-size: 13px; }
-.key-modal input {
-  width: 100%;
-  padding: 11px 13px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: #0b0d13;
-  color: var(--ink);
-  font-size: 15px;
-  text-align: center;
-  letter-spacing: 2px;
-}
-.key-error { color: #ff6b6b; font-size: 13px; margin-top: 10px; }
-.key-actions { display: flex; gap: 10px; margin-top: 16px; }
-.key-actions button {
-  flex: 1;
-  padding: 10px;
-  border-radius: 10px;
-  border: none;
+.knock-spinner { font-size: 22px; animation: knock-bob 0.9s ease-in-out infinite; }
+@keyframes knock-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.knock-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.knock-text span { color: var(--muted); font-size: 12px; }
+.knock-status button {
+  padding: 7px 12px;
+  border-radius: 9px;
   font-weight: 700;
+  font-size: 12px;
   cursor: pointer;
-  background: var(--accent);
-  color: #06122b;
-}
-.key-actions .ghost {
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--line);
 }
-.key-hint { margin-top: 14px; font-size: 11px; color: var(--muted); }
-.key-hint code { color: var(--accent2); }
+.knock-status-feedback { justify-content: center; }
+
+/* Admin panel — top centre: badge, allow-all toggle, approve/deny toasts. */
+.room-admin {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  max-width: min(92vw, 420px);
+}
+.room-admin-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+}
+.admin-badge { color: var(--muted); }
+.admin-badge.is-you { color: var(--accent2); font-weight: 700; }
+.allow-all { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); }
+.room-admin-note {
+  font-size: 12px;
+  color: #ffcf6b;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.knock-requests { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.knock-request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.knock-who { font-size: 13px; }
+.knock-request-actions { display: flex; gap: 8px; }
+.knock-request-actions button {
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: none;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--accent);
+  color: #06122b;
+}
+.knock-request-actions .ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
 
 /* ---------- Video bubbles ---------- */
 .bubble {

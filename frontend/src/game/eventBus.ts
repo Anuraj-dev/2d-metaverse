@@ -19,9 +19,10 @@ class EventBus {
   }
 }
 
-/** Game -> UI: 'near-door'{roomId,name} | 'leave-door' | 'near-seat'{...} |
+/** Game -> UI: 'knocking'{roomId,name} | 'stop-knocking' | 'near-seat'{...} |
  *  'leave-seat' | 'sat'{roomId,seatId} | 'stood' | 'positions'{...} | 'room-entered'{roomId} |
- *  'room-left'{roomId} | 'world-info'{width,height,rooms,terrain} |
+ *  'room-left'{roomId} | 'knock-approved' | 'knock-denied' | 'admin-promoted' |
+ *  'world-info'{width,height,rooms,terrain} |
  *  Board tables (PRD 11 p2): 'near-board-seat'{tableId,seat,game,label} | 'leave-board-seat' |
  *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-move' | 'board-win'
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'

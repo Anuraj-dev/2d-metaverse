@@ -163,6 +163,14 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "board-sat": { clip: "sit", channel: "sfx" },
   "board-move": { clip: "arcade_point", channel: "sfx" },
   "board-win": { clip: "arcade_over", channel: "sfx" },
+  // Room admin / knock (PRD 14): reuse existing clips — components emit these
+  // domain events, the mixer decides the blip. The admin's incoming-knock cue is
+  // notify-class so it obeys the notification toggle.
+  knocking: { clip: "message", channel: "sfx" },
+  "knock-received": { clip: "message", channel: "sfx", notify: true },
+  "knock-approved": { clip: "meeting_join", channel: "sfx" },
+  "knock-denied": { clip: "leave", channel: "sfx" },
+  "admin-promoted": { clip: "portal_in", channel: "sfx" },
 };
 
 export function cueForEvent(event: string): SoundCue | null {
