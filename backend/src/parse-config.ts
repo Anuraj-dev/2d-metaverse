@@ -26,7 +26,7 @@ const schema = z.object({
   ROOM_5_KEY: z.string().min(1).optional(),
   ROOM_6_KEY: z.string().min(1).optional(),
   STAGE_KEY: z.string().min(1).optional(),
-  MAP_JSON_URL: z.string().default("/assets/maps/space.json"),
+  MAP_JSON_URL: z.string().default("/assets/maps/campus.json"),
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
   GIT_SHA: z.string().default("dev"),
   // Socket timing knobs. Overridden only by tests (to exercise the join-timeout

@@ -14,7 +14,7 @@
  * token is refused in both contexts exactly as multiplayer.spec.ts does.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { enterRoom, selfId, signUpAndJoin, uniqueUser, walkTo } from "./helpers";
+import { enterRoom, selfId, signUpAndJoin, uniqueUser, walkPath, walkTo } from "./helpers";
 
 /** The world-audio volume `observer` currently assigns to `playerId` (or null). */
 async function volumeFor(observer: Page, playerId: string): Promise<number | null> {
@@ -71,24 +71,25 @@ test("a player entering a room goes silent to those outside it", async ({ browse
   try {
     const userA = uniqueUser();
     const userB = uniqueUser();
-    await signUpAndJoin(pageA, { map: "space", user: userA });
-    await signUpAndJoin(pageB, { map: "space", user: userB });
+    await signUpAndJoin(pageA, { map: "campus", user: userA });
+    await signUpAndJoin(pageB, { map: "campus", user: userB });
     const idB = await selfId(pageB);
     await selfId(pageA); // ensure A's socket init completed before asserting
 
-    // Both stand outdoors, side by side just below Room A's door — same
-    // (outdoor) zone, ~20px apart (well within the 200px cutoff). A sits off to
-    // the side (x=640) so it never blocks B's door approach up the x=592 line.
-    await walkTo(pageA, 640, 300);
-    await walkTo(pageB, 620, 300);
+    // Both walk down to the hostel forecourt and stand outdoors, ~84px apart in
+    // the same (outdoor) zone — well within the 200px cutoff. A stands off to
+    // the east (x=784) so it never blocks B's descent down the x=560 path.
+    await walkPath(pageA, [[560, 704], [560, 1520], [784, 1520]]);
+    await walkPath(pageB, [[560, 704], [560, 1520], [700, 1520]]);
 
     // A hears B: same zone + close ⇒ non-zero world-audio volume.
     await waitForVolume(pageA, idB, "audible");
 
-    // B walks through Room A's door and a little deeper inside. B is now in a
-    // different audio zone than A, but still ~150px away — inside the cutoff.
-    await enterRoom(pageB, "space", "1");
-    await walkTo(pageB, 592, 150);
+    // B enters hostel Room 1 (north door) and steps a little deeper inside. B is
+    // now in a different audio zone than A, but still only ~126px away — inside
+    // the cutoff.
+    await enterRoom(pageB, "campus", "1");
+    await walkTo(pageB, 736, 1636);
 
     // Zone isolation: A's volume for B is exactly zero despite the short
     // distance — the wall, not the falloff, silenced them.

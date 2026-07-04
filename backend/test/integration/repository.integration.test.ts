@@ -27,8 +27,10 @@ describe("spaces and rooms", () => {
     expect(space).not.toBeNull();
     expect(typeof space!.mapJsonUrl).toBe("string");
     expect(space!.rooms).toHaveLength(6);
+    // Hostel rooms 1-3 have capacities 5/8/12 (PRD 13); HQ rooms 4-6 keep four.
+    const expectedSeats: Record<string, number> = { "1": 5, "2": 8, "3": 12, "4": 4, "5": 4, "6": 4 };
     for (const room of space!.rooms) {
-      expect(room.seats).toHaveLength(4);
+      expect(room.seats).toHaveLength(expectedSeats[room.id] ?? 4);
       expect(room.doorZone).toMatchObject({
         x: expect.any(Number),
         y: expect.any(Number),
@@ -44,7 +46,7 @@ describe("spaces and rooms", () => {
 
   it("getRoom returns capacity and a key hash that verifies the room key", async () => {
     const room = await getRoom("3");
-    expect(room).toMatchObject({ id: "3", spaceId: "1", capacity: 4 });
+    expect(room).toMatchObject({ id: "3", spaceId: "1", capacity: 12 });
     expect(await verifySecret(process.env.ROOM_3_KEY!, room!.keyHash)).toBe(true);
     expect(await verifySecret("wrong-key", room!.keyHash)).toBe(false);
     expect(await getRoom("does-not-exist")).toBeNull();
@@ -54,7 +56,7 @@ describe("spaces and rooms", () => {
     expect(await seatExists("3", 0)).toBe(true);
     expect(await seatExists("3", 99)).toBe(false);
     expect(await seatExists("does-not-exist", 0)).toBe(false);
-    expect(await getSeatIds("3")).toEqual([0, 1, 2, 3]);
+    expect(await getSeatIds("3")).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     expect(await getSeatIds("does-not-exist")).toEqual([]);
   });
 });

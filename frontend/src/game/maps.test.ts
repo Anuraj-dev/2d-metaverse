@@ -57,13 +57,7 @@ describe("maps registry", () => {
     expect(activeMap()).toBe(MAPS.campus);
   });
 
-  it("honors the ?map=space legacy escape hatch", () => {
-    stubSearch("?map=space");
-    expect(activeMapKey()).toBe("space");
-    expect(activeMap()).toBe(MAPS.space);
-  });
-
-  it("ignores an unknown map override", () => {
+  it("ignores an unknown map override (no legacy escape hatch)", () => {
     stubSearch("?map=nope");
     expect(activeMapKey()).toBe(DEFAULT_MAP);
   });

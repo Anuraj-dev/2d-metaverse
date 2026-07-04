@@ -77,7 +77,7 @@ describe("arcade leaderboard response", () => {
 describe("space info response", () => {
   it("validates a space with a room and seats", () => {
     const space = {
-      mapJsonUrl: "/assets/maps/space.json",
+      mapJsonUrl: "/assets/maps/campus.json",
       rooms: [
         {
           id: "1",

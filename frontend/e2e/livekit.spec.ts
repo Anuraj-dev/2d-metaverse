@@ -18,7 +18,7 @@ test("livekit token fetched and connection attempted on world join", async ({ pa
     timeout: 30_000,
   });
 
-  await signUpAndJoin(page, { map: "space" });
+  await signUpAndJoin(page, { map: "campus" });
 
   // Token fetched...
   const response = await tokenResponse;

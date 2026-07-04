@@ -3,11 +3,13 @@
 
 Districts (tile coordinates, inclusive):
   PARK       (NW)  x=1-28,   y=1-55   — grass + trees
-  HQ         (N)   x=30-79,  y=1-24   — office shell (rooms added in #11)
+  HQ         (N)   x=30-79,  y=1-24   — office shell (rooms 4-6)
   AUDITORIUM (NE)  x=81-118, y=1-44   — stage area (broadcast added in #13)
   PLAZA     (CTR)  x=12-107, y=26-60  — open walkable, spawn at (60,44)
   CAFE       (SW)  x=1-55,   y=62-88  — lounge/social
   COWORKING  (SE)  x=57-118, y=62-88  — open desk pods
+  HOSTEL     (S)   x=10-52,  y=93-110 — residential wing, private rooms 1-3
+                                        (north facade + courtyard, PRD 13)
 
 Tilesets (matched to MAPS registry in maps.ts):
   floors_walls  firstgid=1   (288×144 px, 18 cols, 162 tiles)
@@ -22,7 +24,8 @@ import random
 
 rng = random.Random(12)  # deterministic scatter — regeneration is reproducible
 
-W, H, TS = 120, 90, 16   # cols × rows × px per tile  →  1920×1440 px
+W, H, TS = 120, 118, 16  # cols × rows × px per tile  →  1920×1888 px
+                         # (grown south of the plaza for the hostel wing, PRD 13)
 
 # ── Tile GIDs ────────────────────────────────────────────────────────────
 # floors_walls.png (firstgid=1)
@@ -151,19 +154,49 @@ room_bounds = []
 seats_objs  = []
 
 
-def make_room(room_id, x0, y0, x1, y1, door_x):
+def cross_seats(x0, y0, x1, y1):
+    """The classic four-seat cross around the room centre (rooms 4-6)."""
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    return [
+        (cx - 2, cy,     "right"),
+        (cx + 2, cy,     "left"),
+        (cx,     cy - 2, "down"),
+        (cx,     cy + 2, "up"),
+    ]
+
+
+def table_seats(x0, y0, x1, y1, count):
+    """`count` chairs in two facing rows (a conference table), symmetric about
+    the room centre so the auto-placed centre table stays centred. Seats sit two
+    tiles above/below the centre row with a two-tile horizontal pitch; the seat
+    ordering is top row left→right, then bottom row — so seats 0 and 1 are always
+    reachable side-by-side chairs. Sizes the hostel rooms to their capacities."""
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    top_n = (count + 1) // 2
+    bot_n = count // 2
+    seats = []
+    for i in range(top_n):
+        tx = cx + 2 * i - (top_n - 1)
+        seats.append((tx, cy - 2, "down"))
+    for i in range(bot_n):
+        tx = cx + 2 * i - (bot_n - 1)
+        seats.append((tx, cy + 2, "up"))
+    return seats
+
+
+def make_room(room_id, x0, y0, x1, y1, door_x, seats, door_wall="south"):
     wall_rect(x0, y0, x1, y1)
-    door_gap(door_x, y1, width=2)
-    # a center rug under the meeting table, not a full-room slab
+    door_y = y1 if door_wall == "south" else y0
+    door_gap(door_x, door_y, width=2)
+    # solid indoor floor (rooms 4-6 inherit the HQ slab; free-standing hostel
+    # rooms need their own) plus a centre rug under the meeting table.
+    fill(ground, x0 + 1, y0 + 1, x1 - 1, y1 - 1, FLOOR)
     rcx, rcy = (x0 + x1) // 2, (y0 + y1) // 2
     fill(ground, rcx - 2, rcy - 1, rcx + 2, rcy + 1, FLOOR_MOSS)
 
-    cx = (x0 + x1) // 2   # tile centre x
-    cy = (y0 + y1) // 2   # tile centre y
-
     door_zones.append({
         "id": 10000 + room_id, "name": f"room_{room_id}_door",
-        "x": door_x * TS, "y": y1 * TS,
+        "x": door_x * TS, "y": door_y * TS,
         "width": 2 * TS, "height": TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [{"name": "roomId", "type": "string", "value": str(room_id)}],
@@ -175,12 +208,7 @@ def make_room(room_id, x0, y0, x1, y1, door_x):
         "rotation": 0, "type": "", "visible": True,
         "properties": [{"name": "roomId", "type": "string", "value": str(room_id)}],
     })
-    for seat_id, (tx, ty, facing) in enumerate([
-        (cx - 2, cy,     "right"),
-        (cx + 2, cy,     "left"),
-        (cx,     cy - 2, "down"),
-        (cx,     cy + 2, "up"),
-    ]):
+    for seat_id, (tx, ty, facing) in enumerate(seats):
         seats_objs.append({
             "id": 12000 + room_id * 10 + seat_id, "name": f"room_{room_id}_seat_{seat_id}",
             "x": tx * TS, "y": ty * TS,
@@ -194,9 +222,27 @@ def make_room(room_id, x0, y0, x1, y1, door_x):
         })
 
 
-make_room(4, x0=31, y0=2, x1=43, y1=11, door_x=36)  # Room D
-make_room(5, x0=44, y0=2, x1=57, y1=11, door_x=49)  # Room E
-make_room(6, x0=58, y0=2, x1=71, y1=11, door_x=63)  # Room F
+# HQ meeting rooms D/E/F (IDs 4-6): four-seat rooms inside the HQ shell.
+make_room(4, x0=31, y0=2, x1=43, y1=11, door_x=36, seats=cross_seats(31, 2, 43, 11))
+make_room(5, x0=44, y0=2, x1=57, y1=11, door_x=49, seats=cross_seats(44, 2, 57, 11))
+make_room(6, x0=58, y0=2, x1=71, y1=11, door_x=63, seats=cross_seats(58, 2, 71, 11))
+
+# ── HOSTEL WING (S) ──────────────────────────────────────────────────────────
+# A residential building south of the plaza holding the three private rooms
+# 1-3 (capacities 5/8/12). The three rooms share side walls into one structure
+# with a common north facade at y=100; their north-wall doors open onto a stone
+# forecourt reached down the central path. roomBounds (roomId 1/2/3) alone give
+# each interior its private audio zone.
+HOSTEL_FACADE_Y = 100
+# forecourt north of the facade + the path linking it to the plaza artery
+fill(ground, 8, 93, 54, 99, STONE)
+fill(ground, 34, 46, 35, 92, STONE)
+make_room(1, x0=40, y0=100, x1=52, y1=109, door_x=45,
+          seats=table_seats(40, 100, 52, 109, 5),  door_wall="north")
+make_room(2, x0=26, y0=100, x1=40, y1=109, door_x=32,
+          seats=table_seats(26, 100, 40, 109, 8),  door_wall="north")
+make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
+          seats=table_seats(10, 100, 26, 110, 12), door_wall="north")
 
 # ── GROUND DETAIL PASSES (PRD 12 fix round 1: ground variety) ────────────────
 GRASS_FAMILY = {GRASS, GRASS_T1, GRASS_T2, GRASS_T3, GRASS_T4, GRASS_SPR1, GRASS_SPR2}
@@ -347,7 +393,8 @@ interactables_objs = [
                  "  Auditorium (NE)  — presentations & broadcast\n"
                  "  Plaza (center)   — open collaboration\n"
                  "  Cafe (SW)        — social lounge\n"
-                 "  Coworking (SE)   — open desk pods\n\n"
+                 "  Coworking (SE)   — open desk pods\n"
+                 "  Hostel (south)   — private rooms 1, 2, 3\n\n"
                  "Tip: use the portal in the park\n"
                  "to shortcut across campus!"
              )},
@@ -534,6 +581,14 @@ furn("f_plant_big",  32,  3, True)
 furn("f_plant_big",  77,  3, True)
 furn("f_bookshelf_tall", 32, 10, True)
 furn("f_bookshelf_tall", 77, 10, True)
+
+# Hostel forecourt — planters framing the residential facade (kept clear of the
+# door columns 17/32/45 and the central approach path at x=34-35).
+furn("f_plant_big",   11, 94, True)
+furn("f_plant_big",   51, 94, True)
+furn("f_plant_small", 21, 95, False)
+furn("f_plant_small", 43, 95, False)
+furn("f_sofa_small",  8, 97, True)
 
 # Arcade corner (plaza, SE of spawn) — solid cabinets; each pairs with an
 # arcade interactable zone at the same tile (see interactables_objs).

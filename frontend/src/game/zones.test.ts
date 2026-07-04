@@ -70,7 +70,7 @@ describe("findRoomArea", () => {
 });
 
 describe("locked-room entry gate invariant", () => {
-  // Mirrors space.json room "1": bounds x496-704 y16-192, door zone y192-208,
+  // Example private-room geometry: bounds x496-704 y16-192, door zone y192-208,
   // seat near (568,96). The collision gate (WorldScene.keepLockedRoomsClosed)
   // snaps the player back whenever findRoomArea reports the sampled feet point is
   // inside an un-entered room, and findSeat keeps the room's seats undetectable

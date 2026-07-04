@@ -25,17 +25,21 @@ export const ROOM_KEYS: Record<string, string> = {
 };
 
 /**
- * Map geometry (16px tiles), derived from frontend/public/assets/maps/*.json.
- * The six rooms are split across two maps: `campus` (the default; rooms 4-6)
- * and the legacy `space` map (?map=space; rooms 1-3). The campus entry
- * deliberately navigates with NO ?map query so the suite exercises
- * DEFAULT_MAP itself — if the default ever regresses to "space", the campus
+ * Map geometry (16px tiles), derived from frontend/public/assets/maps/campus.json.
+ * Campus is the single canonical map (PRD 13), loaded as DEFAULT_MAP with NO
+ * ?map query so the suite also guards the default — if it ever regresses, the
  * assertions fail instead of CI staying green (the original prod incident).
- * Waypoints are straight wall-free segments
- * verified against the walls layer + solid furniture of each map.
+ *
+ * The six rooms all live on campus: rooms 1-3 are the hostel wing (south,
+ * capacities 5/8/12) and rooms 4-6 the HQ meeting rooms (north). Waypoints are
+ * straight wall-free segments verified against the walls layer + solid
+ * furniture (including the runtime centre tables) of the campus map.
  *
  * Door targets put the player's door-sample point (x, y+8) inside the door
- * rect; seat targets put it inside the seat rect.
+ * rect; seat targets put it inside the seat rect. The hostel rooms open on
+ * their NORTH wall onto a shared forecourt hub at (560,1520); their door and
+ * exit paths descend the central path from the plaza and chain through that
+ * hub, so any entry order stays wall-free.
  */
 export interface RoomRoute {
   /** Waypoints from the map spawn point to just inside the door zone. */
@@ -48,55 +52,46 @@ export interface RoomRoute {
   exit: [number, number];
 }
 
+// Descent from the plaza (spawn is on the E-W artery at 960,704) down the
+// central path to the hostel forecourt hub, shared by every hostel room path.
+const HOSTEL_DESCENT: [number, number][] = [
+  [560, 704],
+  [560, 1520],
+];
+const HOSTEL_HUB: [number, number] = [560, 1520];
+
 export const MAPS: Record<
-  "space" | "campus",
+  "campus",
   { query: string; rooms: Record<string, RoomRoute> }
 > = {
-  space: {
-    query: "?map=space",
-    rooms: {
-      "1": {
-        doorPath: [
-          [592, 360],
-          [592, 190],
-        ],
-        seatPath: [
-          [592, 150],
-          [564, 150],
-          [568, 96],
-        ],
-        // Mirror of seatPath toward the right-hand chair (seat 1 at 632,104).
-        seat1Path: [
-          [592, 150],
-          [628, 150],
-          [632, 96],
-        ],
-        exit: [592, 260],
-      },
-      "2": {
-        doorPath: [
-          [592, 260],
-          [800, 260],
-          [800, 190],
-        ],
-        seatPath: [],
-        exit: [800, 260],
-      },
-      "3": {
-        doorPath: [
-          [800, 260],
-          [1008, 260],
-          [1008, 190],
-        ],
-        seatPath: [],
-        exit: [1008, 260],
-      },
-    },
-  },
   campus: {
     // Bare URL on purpose: campus must load as the DEFAULT map (no override).
     query: "",
     rooms: {
+      "1": {
+        doorPath: [...HOSTEL_DESCENT, [736, 1520], [736, 1596]],
+        // Leave the north doorway straight DOWN into the room, then to seat 0.
+        seatPath: [
+          [736, 1628],
+          [712, 1640],
+        ],
+        // Mirror toward the neighbouring chair (seat 1 at 744,1640).
+        seat1Path: [
+          [736, 1628],
+          [744, 1640],
+        ],
+        exit: HOSTEL_HUB,
+      },
+      "2": {
+        doorPath: [...HOSTEL_DESCENT, [528, 1520], [528, 1596]],
+        seatPath: [],
+        exit: HOSTEL_HUB,
+      },
+      "3": {
+        doorPath: [...HOSTEL_DESCENT, [288, 1520], [288, 1596]],
+        seatPath: [],
+        exit: HOSTEL_HUB,
+      },
       "4": {
         doorPath: [
           [944, 600],
@@ -152,9 +147,9 @@ export function uniqueUser(): { username: string; password: string } {
  */
 export async function signUpAndJoin(
   page: Page,
-  opts: { map?: "space" | "campus"; user?: { username: string; password: string } } = {},
+  opts: { map?: "campus"; user?: { username: string; password: string } } = {},
 ): Promise<{ username: string; password: string }> {
-  const map = opts.map ?? "space";
+  const map = opts.map ?? "campus";
   const user = opts.user ?? uniqueUser();
 
   await page.goto(`/${MAPS[map].query}`);
@@ -208,9 +203,9 @@ async function waitForWorld(page: Page): Promise<void> {
 export async function signInAndJoin(
   page: Page,
   user: { username: string; password: string },
-  opts: { map?: "space" | "campus" } = {},
+  opts: { map?: "campus" } = {},
 ): Promise<void> {
-  const map = opts.map ?? "space";
+  const map = opts.map ?? "campus";
   await page.goto(`/${MAPS[map].query}`);
   await page.getByPlaceholder("callsign").fill(user.username);
   await page.locator('input[type="password"]').fill(user.password);
@@ -340,7 +335,7 @@ export async function walkPath(page: Page, path: [number, number][]): Promise<vo
 /** Walk to a room's door and wait for the key modal to open. */
 export async function approachDoor(
   page: Page,
-  map: "space" | "campus",
+  map: "campus",
   roomId: string,
 ): Promise<void> {
   const room = MAPS[map].rooms[roomId];
@@ -366,7 +361,7 @@ export async function submitRoomKey(page: Page, key: string): Promise<void> {
 /** Approach a door and enter with the correct key; waits for room-entered. */
 export async function enterRoom(
   page: Page,
-  map: "space" | "campus",
+  map: "campus",
   roomId: string,
 ): Promise<void> {
   await approachDoor(page, map, roomId);
@@ -388,7 +383,7 @@ export async function enterRoom(
  */
 export async function sitAtSeat(
   page: Page,
-  map: "space" | "campus",
+  map: "campus",
   roomId: string,
   opts: { seat?: 0 | 1 } = {},
 ): Promise<void> {

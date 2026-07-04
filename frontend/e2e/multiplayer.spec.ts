@@ -79,8 +79,8 @@ test("two players see each other move and chat (both directions)", async ({ brow
   try {
     const userA = uniqueUser();
     const userB = uniqueUser();
-    await signUpAndJoin(pageA, { map: "space", user: userA });
-    await signUpAndJoin(pageB, { map: "space", user: userB });
+    await signUpAndJoin(pageA, { map: "campus", user: userA });
+    await signUpAndJoin(pageB, { map: "campus", user: userB });
     const idA = await selfId(pageA);
     const idB = await selfId(pageB);
 

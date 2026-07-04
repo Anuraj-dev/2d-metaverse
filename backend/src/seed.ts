@@ -8,28 +8,27 @@ import { hashSecret } from "./password.js";
 const log = childLogger({ module: "seed" });
 
 const rooms = [
+  // Hostel wing rooms (map: campus.json south, PRD 13). Capacities 5/8/12 — seat
+  // ids/coords mirror the seats objectgroup the generator authors for rooms 1-3.
   {
-    id: "1", name: "Meeting Room A", key: config.ROOM_1_KEY ?? "1234",
-    doorZone: { x: 576, y: 192, width: 32, height: 16 },
+    id: "1", name: "Hostel Room 1", key: config.ROOM_1_KEY ?? "1234",
+    doorZone: { x: 720, y: 1600, width: 32, height: 16 },
     seats: [
-      { id: 0, x: 568, y: 104, facing: "right" }, { id: 1, x: 632, y: 104, facing: "left" },
-      { id: 2, x: 600, y: 72, facing: "down" }, { id: 3, x: 600, y: 120, facing: "up" }
+      { id: 0, x: 712, y: 1640, facing: "down" }, { id: 1, x: 744, y: 1640, facing: "down" }, { id: 2, x: 776, y: 1640, facing: "down" }, { id: 3, x: 728, y: 1704, facing: "up" }, { id: 4, x: 760, y: 1704, facing: "up" }
     ]
   },
   {
-    id: "2", name: "Meeting Room B", key: config.ROOM_2_KEY ?? "4321",
-    doorZone: { x: 784, y: 192, width: 32, height: 16 },
+    id: "2", name: "Hostel Room 2", key: config.ROOM_2_KEY ?? "4321",
+    doorZone: { x: 512, y: 1600, width: 32, height: 16 },
     seats: [
-      { id: 0, x: 776, y: 104, facing: "right" }, { id: 1, x: 840, y: 104, facing: "left" },
-      { id: 2, x: 808, y: 72, facing: "down" }, { id: 3, x: 808, y: 120, facing: "up" }
+      { id: 0, x: 488, y: 1640, facing: "down" }, { id: 1, x: 520, y: 1640, facing: "down" }, { id: 2, x: 552, y: 1640, facing: "down" }, { id: 3, x: 584, y: 1640, facing: "down" }, { id: 4, x: 488, y: 1704, facing: "up" }, { id: 5, x: 520, y: 1704, facing: "up" }, { id: 6, x: 552, y: 1704, facing: "up" }, { id: 7, x: 584, y: 1704, facing: "up" }
     ]
   },
   {
-    id: "3", name: "Meeting Room C", key: config.ROOM_3_KEY ?? "3333",
-    doorZone: { x: 992, y: 192, width: 32, height: 16 },
+    id: "3", name: "Hostel Room 3", key: config.ROOM_3_KEY ?? "3333",
+    doorZone: { x: 272, y: 1600, width: 32, height: 16 },
     seats: [
-      { id: 0, x: 984, y: 104, facing: "right" }, { id: 1, x: 1048, y: 104, facing: "left" },
-      { id: 2, x: 1016, y: 72, facing: "down" }, { id: 3, x: 1016, y: 120, facing: "up" }
+      { id: 0, x: 216, y: 1656, facing: "down" }, { id: 1, x: 248, y: 1656, facing: "down" }, { id: 2, x: 280, y: 1656, facing: "down" }, { id: 3, x: 312, y: 1656, facing: "down" }, { id: 4, x: 344, y: 1656, facing: "down" }, { id: 5, x: 376, y: 1656, facing: "down" }, { id: 6, x: 216, y: 1720, facing: "up" }, { id: 7, x: 248, y: 1720, facing: "up" }, { id: 8, x: 280, y: 1720, facing: "up" }, { id: 9, x: 312, y: 1720, facing: "up" }, { id: 10, x: 344, y: 1720, facing: "up" }, { id: 11, x: 376, y: 1720, facing: "up" }
     ]
   },
   // Campus HQ rooms (map: campus.json, 120×90 tiles, 16px/tile)

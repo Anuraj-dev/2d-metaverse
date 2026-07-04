@@ -50,27 +50,27 @@ test("two players sit → countdown → meeting grid for both; one stands → ba
   try {
     const userA = uniqueUser();
     const userB = uniqueUser();
-    await signUpAndJoin(pageA, { map: "space", user: userA });
-    await signUpAndJoin(pageB, { map: "space", user: userB });
+    await signUpAndJoin(pageA, { map: "campus", user: userA });
+    await signUpAndJoin(pageB, { map: "campus", user: userB });
     const idB = await selfId(pageB);
     await selfId(pageA);
 
     // A enters Room A and sits alone: today's behavior — no countdown, no grid.
-    await enterRoom(pageA, "space", "1");
-    await sitAtSeat(pageA, "space", "1");
+    await enterRoom(pageA, "campus", "1");
+    await sitAtSeat(pageA, "campus", "1");
     expect(await meetingState(pageA)).toBeNull();
 
     // B enters (unseated entry over a solo sitter: still nothing) and sits on
     // the other chair — now EVERY player in the room is seated and count = 2:
     // the countdown fires on both clients, then the meeting starts.
-    await enterRoom(pageB, "space", "1");
+    await enterRoom(pageB, "campus", "1");
     expect(await meetingState(pageA)).toBeNull();
     const countdownSeenByA = pageA.evaluate(() => {
       const hook = window.__testHook;
       if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
       return hook.waitForEvent("meeting-countdown");
     });
-    await sitAtSeat(pageB, "space", "1", { seat: 1 });
+    await sitAtSeat(pageB, "campus", "1", { seat: 1 });
     const countdown = (await countdownSeenByA) as {
       roomId: string;
       durationMs: number;
