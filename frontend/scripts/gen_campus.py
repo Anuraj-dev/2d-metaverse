@@ -244,6 +244,38 @@ make_room(2, x0=26, y0=100, x1=40, y1=109, door_x=32,
 make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
           seats=table_seats(10, 100, 26, 110, 12), door_wall="north")
 
+# ── ARCADE HALL (S, east of the hostel) ──────────────────────────────────────
+# A dedicated, enclosed games hall well south of the plaza and FAR from the
+# auditorium (NE). It is a PUBLIC walk-in building — walls + a wide open doorway,
+# authored exactly like the HQ shell: **no `roomBounds`, no `doorZone`, no
+# seats**. That is deliberate and load-bearing: the frontend's locked-room
+# rollback (`WorldScene.keepLockedRoomsClosed`) bounces the player out of ANY
+# `roomBounds` rect they have not been admitted to, so giving this hall a
+# roomBounds would make it unenterable (it has no knock/access path). Skipping
+# roomBounds keeps it freely walk-in (the trade-off is no private audio zone —
+# voices carry through the doorway, exactly as they did for the old open-plaza
+# cabinets). No seats also means it can never arm the all-seated meeting trigger.
+# The three cabinets line the north wall; players approach each from the open
+# floor to its south. A stone spur off the full-height x=79-80 artery paves the
+# walk from spawn straight south to the door.
+AX0, AY0, AX1, AY1 = 67, 94, 87, 108
+# Wide (4-tile) north entrance centred on the x=79-80 stone artery running down
+# from spawn — a generous games-hall doorway that players thread comfortably.
+ARCADE_DOOR_X = 78
+ARCADE_DOOR_W = 4
+wall_rect(AX0, AY0, AX1, AY1)
+door_gap(ARCADE_DOOR_X, AY0, width=ARCADE_DOOR_W)
+# Interior: tan-plank hall with an olive-checker runner down the cabinet row and
+# a centre rug — cohesive with the existing indoor palette (no new tiles).
+fill(ground, AX0 + 1, AY0 + 1, AX1 - 1, AY1 - 1, FLOOR_ACC)
+fill(ground, AX0 + 2, AY0 + 2, AX1 - 2, AY0 + 2, FLOOR_MOSS)          # cabinet-row runner
+fill(ground, (AX0 + AX1) // 2 - 3, (AY0 + AY1) // 2,
+     (AX0 + AX1) // 2 + 3, (AY0 + AY1) // 2 + 1, FLOOR_MOSS)          # centre rug
+# Pave the threshold + the spur down from the coworking deck (the artery is
+# already stone above y=88; this makes the door row read as a paved entrance).
+fill(ground, ARCADE_DOOR_X, AY0, ARCADE_DOOR_X + ARCADE_DOOR_W - 1, AY0, STONE)
+fill(ground, 79, 89, 80, 93, STONE)
+
 # ── GROUND DETAIL PASSES (PRD 12 fix round 1: ground variety) ────────────────
 GRASS_FAMILY = {GRASS, GRASS_T1, GRASS_T2, GRASS_T3, GRASS_T4, GRASS_SPR1, GRASS_SPR2}
 
@@ -394,9 +426,10 @@ interactables_objs = [
                  "  Plaza (center)   — open collaboration\n"
                  "  Cafe (SW)        — social lounge\n"
                  "  Coworking (SE)   — open desk pods\n"
-                 "  Hostel (south)   — private rooms 1, 2, 3\n\n"
-                 "Tip: use the portal in the park\n"
-                 "to shortcut across campus!"
+                 "  Hostel (south)   — private rooms 1, 2, 3\n"
+                 "  Arcade (south)   — Snake, Flappy, 2048\n\n"
+                 "Tip: head south past coworking for\n"
+                 "the arcade — or portal across the park!"
              )},
         ],
     },
@@ -419,13 +452,15 @@ interactables_objs = [
              )},
         ],
     },
-    # ── Arcade cabinets (PRD 11) — each zone covers its cabinet tile plus the
-    # three open tiles below it (rows 50-53): the 32px solid cabinet body ends
-    # at row-51's top (py 832), so rows 52-53 give a collision-free approach
-    # strip that is still inside the findNear rect. `game` selects the module.
+    # ── Arcade cabinets (PRD 16) — now inside the dedicated Arcade Room (north
+    # wall, rows 96-99). Each zone covers its cabinet tile plus the three open
+    # tiles below it: the 32px solid cabinet body clears by row 98, so rows 98-99
+    # give a collision-free approach strip that is still inside the findNear rect.
+    # `game` selects the module. Snake/Flappy sit west of the north doorway
+    # (x=79-80); 2048 sits east of it.
     {
         "id": 40010, "name": "arcade_snake",
-        "x": 70 * TS, "y": 50 * TS, "width": 2 * TS, "height": 4 * TS,
+        "x": 71 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [
             {"name": "interactType", "type": "string", "value": "arcade"},
@@ -435,7 +470,7 @@ interactables_objs = [
     },
     {
         "id": 40011, "name": "arcade_flappy",
-        "x": 73 * TS, "y": 50 * TS, "width": 2 * TS, "height": 4 * TS,
+        "x": 76 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [
             {"name": "interactType", "type": "string", "value": "arcade"},
@@ -445,7 +480,7 @@ interactables_objs = [
     },
     {
         "id": 40012, "name": "arcade_2048",
-        "x": 76 * TS, "y": 50 * TS, "width": 2 * TS, "height": 4 * TS,
+        "x": 84 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
         "rotation": 0, "type": "", "visible": True,
         "properties": [
             {"name": "interactType", "type": "string", "value": "arcade"},
@@ -590,11 +625,17 @@ furn("f_plant_small", 21, 95, False)
 furn("f_plant_small", 43, 95, False)
 furn("f_sofa_small",  8, 97, True)
 
-# Arcade corner (plaza, SE of spawn) — solid cabinets; each pairs with an
-# arcade interactable zone at the same tile (see interactables_objs).
-furn("f_arcade_snake",  70, 50, True)
-furn("f_arcade_flappy", 73, 50, True)
-furn("f_arcade_2048",   76, 50, True)
+# Arcade Room (south) — solid cabinets lining the north wall; each pairs with an
+# arcade interactable zone at the same tile (see interactables_objs). Plus a
+# little themed dressing so the hall doesn't read empty.
+furn("f_arcade_snake",  71, 96, True)
+furn("f_arcade_flappy", 76, 96, True)
+furn("f_arcade_2048",   84, 96, True)
+furn("f_vending",       68, 96, True)   # snack machine by the entrance wall
+furn("f_plant_big",     68, 107, True)  # corner greenery
+furn("f_plant_big",     86, 107, True)
+furn("f_sofa",          80, 106, True)  # a lounge bench facing the cabinets
+furn("f_sofa_small",    83, 106, True)
 
 # ── Board-game tables (PRD 11 phase 2) ────────────────────────────────────
 # Two two-seat tables in the SW plaza. tableId + game must match the shared

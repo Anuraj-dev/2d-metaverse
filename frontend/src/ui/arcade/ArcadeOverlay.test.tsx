@@ -9,6 +9,7 @@ const net = vi.hoisted(() => ({
 vi.mock("../../net/arcade", () => net);
 
 import ArcadeOverlay from "./ArcadeOverlay";
+import { getSettings, setSettings } from "../settings";
 
 const board: ArcadeLeaderboard = {
   game: "snake",
@@ -57,6 +58,53 @@ describe("ArcadeOverlay", () => {
     expect(document.activeElement).not.toBe(stale);
 
     stale.remove();
+  });
+
+  it("toggles the arcade mute through the shared settings store", () => {
+    setSettings({ muteArcade: false });
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    const muteBtn = screen.getByLabelText("Mute arcade sound");
+    fireEvent.click(muteBtn);
+    expect(getSettings().muteArcade).toBe(true);
+    // The button flips to the unmute affordance once muted.
+    expect(screen.getByLabelText("Unmute arcade sound")).toBeTruthy();
+  });
+
+  it("writes the arcade volume slider into settings (and unmutes)", () => {
+    setSettings({ arcadeVolume: 0.5, muteArcade: true });
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    const slider = screen.getByLabelText("Arcade volume");
+    fireEvent.change(slider, { target: { value: "20" } });
+    expect(getSettings().arcadeVolume).toBeCloseTo(0.2);
+    expect(getSettings().muteArcade).toBe(false);
+  });
+
+  it("requests fullscreen on open and exits it on close", () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    const exit = vi.fn().mockResolvedValue(undefined);
+    // jsdom lacks the Fullscreen API — stub the minimum the overlay touches.
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: request,
+    });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit });
+
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="2048" label="2048" onClose={onClose} />);
+    expect(request).toHaveBeenCalledTimes(1);
+
+    // Pretend the browser granted it, then close via Escape → exitFullscreen runs.
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => document.querySelector(".arcade-backdrop"),
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalled();
+
+    Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen");
+    Reflect.deleteProperty(document, "exitFullscreen");
+    Reflect.deleteProperty(document, "fullscreenElement");
   });
 
   it("submits the score and shows Game over when a run ends", async () => {

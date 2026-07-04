@@ -11,7 +11,10 @@ import {
 } from "../../game/arcade/snake";
 import type { ArcadeGameProps } from "./gameTypes";
 
-const CELL = 18;
+// Internal render resolution (CSS scales the canvas up crisply to fill the
+// stage). Larger cells than the world tile give room for rounded segments +
+// eyes without touching the pure game module.
+const CELL = 24;
 const TICK_MS = 110;
 
 const KEY_DIR: Record<string, Dir> = {
@@ -29,9 +32,31 @@ const KEY_DIR: Record<string, Dir> = {
   D: "right",
 };
 
+const EYE_OFFSET: Record<Dir, [number, number][]> = {
+  up: [[0.3, 0.32], [0.7, 0.32]],
+  down: [[0.3, 0.68], [0.7, 0.68]],
+  left: [[0.32, 0.3], [0.32, 0.7]],
+  right: [[0.68, 0.3], [0.68, 0.7]],
+};
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+  ctx.fill();
+}
+
 /**
  * Thin canvas renderer for the pure Snake module. A new run remounts this
  * component (ArcadeOverlay keys it by seed), so the refs init fresh from `seed`.
+ * All game rules stay in game/arcade/snake — this only draws the returned state.
  */
 export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -43,14 +68,47 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
     const s = stateRef.current;
-    ctx.fillStyle = "#10141f";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const { width, height } = canvas;
+
+    // Playfield backdrop + subtle checker so motion reads clearly.
+    ctx.fillStyle = "#0b0f18";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "rgba(127, 209, 185, 0.04)";
+    for (let y = 0; y < s.height; y++) {
+      for (let x = 0; x < s.width; x++) {
+        if ((x + y) % 2 === 0) ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+
+    // Food: a glowing pink pellet.
+    ctx.save();
+    ctx.shadowColor = "#e0567a";
+    ctx.shadowBlur = 12;
     ctx.fillStyle = "#e0567a";
-    ctx.fillRect(s.food.x * CELL + 2, s.food.y * CELL + 2, CELL - 4, CELL - 4);
+    roundRect(ctx, s.food.x * CELL + 4, s.food.y * CELL + 4, CELL - 8, CELL - 8, 5);
+    ctx.restore();
+
+    // Snake: rounded segments fading head→tail; the head carries two eyes.
+    const n = s.body.length;
     s.body.forEach((c, i) => {
-      ctx.fillStyle = i === 0 ? "#7fd1b9" : "#4a9d8e";
-      ctx.fillRect(c.x * CELL + 1, c.y * CELL + 1, CELL - 2, CELL - 2);
+      const t = n > 1 ? i / (n - 1) : 0;
+      const head = i === 0;
+      ctx.fillStyle = head ? "#8ff0d6" : `rgb(${74 - t * 20}, ${157 - t * 40}, ${142 - t * 30})`;
+      roundRect(ctx, c.x * CELL + 1.5, c.y * CELL + 1.5, CELL - 3, CELL - 3, 6);
+      if (head) {
+        ctx.fillStyle = "#0b0f18";
+        for (const [ex, ey] of EYE_OFFSET[s.dir]) {
+          ctx.beginPath();
+          ctx.arc(c.x * CELL + ex * CELL, c.y * CELL + ey * CELL, CELL * 0.09, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     });
+
+    // Frame.
+    ctx.strokeStyle = "#1d2740";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, width - 2, height - 2);
   }, []);
 
   // Paint the initial frame once mounted.

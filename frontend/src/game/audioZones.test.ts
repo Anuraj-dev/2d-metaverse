@@ -116,6 +116,8 @@ interface TiledMap {
 
 const MAP_ROOMS: Record<string, string[]> = {
   // Campus is the single canonical map (PRD 13): hostel rooms 1-3 + HQ rooms 4-6.
+  // The PRD 16 arcade hall is intentionally NOT a roomBounds (public walk-in, no
+  // audio zone) so it stays out of the locked-room rollback — see maps.test.ts.
   campus: ["1", "2", "3", "4", "5", "6"],
 };
 

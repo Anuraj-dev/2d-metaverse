@@ -202,6 +202,53 @@ describe("campus arcade cabinets (PRD 11)", () => {
   });
 });
 
+describe("campus arcade hall (PRD 16)", () => {
+  interface TiledObject {
+    name: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    properties?: { name: string; value: unknown }[];
+  }
+  interface ObjectLayer {
+    name: string;
+    objects?: TiledObject[];
+  }
+  function objects(layerName: string): TiledObject[] {
+    const json = loadMap("campus") as unknown as { layers: ObjectLayer[] };
+    return json.layers.find((l) => l.name === layerName)?.objects ?? [];
+  }
+  function prop(o: TiledObject, name: string): unknown {
+    return o.properties?.find((p) => p.name === name)?.value;
+  }
+
+  // The arcade hall is a public walk-in building: walls + open doorway, but NO
+  // roomBounds / doorZone / seats. This is load-bearing — the locked-room
+  // rollback bounces the player out of any roomBounds they aren't admitted to,
+  // so a roomBounds here would make the hall unenterable.
+  it("is a public, ungated hall: no roomBounds/doorZone/seats claim an 'arcade' room", () => {
+    expect(objects("roomBounds").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
+    expect(objects("doorZones").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
+    expect(objects("seats").some((o) => prop(o, "roomId") === "arcade")).toBe(false);
+    // And it does not accidentally reuse an existing private roomId's zone: the
+    // canonical rooms stay exactly 1-6 (asserted in audioZones.test.ts).
+  });
+
+  it("relocates the three cabinets together into the southern hall (well clear of the plaza)", () => {
+    const cabinets = objects("furniture").filter((o) => o.name.startsWith("f_arcade_"));
+    expect(cabinets.length).toBe(3);
+    for (const c of cabinets) {
+      // Deep south of spawn (row 44 = 704px) — the cabinets moved out of the
+      // old plaza cluster (~row 50) into the far-south hall (row 96 = 1536px).
+      expect(c.y ?? 0, `${c.name} is in the south hall`).toBeGreaterThan(1400);
+    }
+    // Clustered on one wall (all within a few tiles vertically).
+    const ys = cabinets.map((c) => c.y ?? 0);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(16);
+  });
+});
+
 describe("campus board-game tables (PRD 11 phase 2)", () => {
   interface TiledObject {
     name: string;

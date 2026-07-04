@@ -356,15 +356,44 @@ wakes the scene, resets the camera, and restores everything. A socket blip
 during a meeting reconnects within the seat-grace window and the client stays
 in the meeting — a blip never ejects you to the world.
 
-### Arcade cabinets (mini-games, PRD 11)
+### Arcade cabinets (mini-games, PRD 11 / PRD 16)
 
-Solid arcade cabinets stand in the campus plaza. Walking next to one shows the
-usual interact hint; pressing **E** opens a full-screen overlay hosting the
-game. The world scene **sleeps** underneath (the same pattern meetings use) and
-**Escape** closes instantly. The overlay pauses the game when the tab loses
+Solid arcade cabinets line the north wall of a dedicated **Arcade Hall** in the
+south campus (authored in `gen_campus.py`, far from the auditorium, reached by
+walking south from spawn down the x=79-80 stone artery). The hall is a **public
+walk-in building** — walls + a wide open doorway, authored like the HQ shell with
+**no `roomBounds`, no `doorZone`, no seats**. That is deliberate: the frontend's
+locked-room rollback (`WorldScene.keepLockedRoomsClosed`) bounces the player out
+of any `roomBounds` rect they have not been admitted to, so a roomBounds here
+would make the hall *unenterable* (it has no knock/access path). The trade-off is
+no private audio zone — voices carry through the doorway, exactly as they did for
+the old open-plaza cabinets. No seats also means it can never arm the all-seated
+meeting trigger. Walking next to a cabinet shows the usual interact hint; pressing
+**E** opens the overlay hosting the game.
+
+The overlay presents the game **fullscreen**: it requests the browser Fullscreen
+API on the backdrop on open (with a header toggle that always runs from a real
+user gesture) and **falls back gracefully to a CSS-maximized overlay** when
+fullscreen is denied (no user activation, or the API is unavailable). The game
+canvas scales to fill the stage crisply (`object-fit: contain` +
+`image-rendering: pixelated`), so it stays sharp at any size. The world scene
+**sleeps** underneath (the same pattern meetings use) and **Escape** closes
+instantly *and* exits fullscreen. The overlay pauses the game when the tab loses
 visibility or the window loses focus, and it takes keyboard focus robustly on
-open (blurring any lingering input — e.g. the chat field — so its focus
-can't swallow the game's keys via the scene's `isTyping` guard).
+open (blurring any lingering input — e.g. the chat field — so its focus can't
+swallow the game's keys via the scene's `isTyping` guard).
+
+**Per-arcade sound control:** the overlay header carries a mute toggle + volume
+slider bound to a dedicated **`arcade` mixer channel** (`arcadeVolume` /
+`muteArcade` in `ui/settings.ts`). Kept in the (lazy-loaded) overlay rather than
+the core Settings panel so the entry bundle stays lean under the size budget.
+Arcade blips (`open-arcade`, `arcade-point`, `arcade-over`) route on that channel
+in the pure `soundMixer` `EVENT_SOUNDS` table, so a player can quiet a noisy game
+independently of world sfx. Scope is **arcade-wide**, not per-game: all three
+games share the same three domain cues and the `SfxBridge` is game-agnostic, so a
+per-game volume would mean threading the active game through the global bridge for
+marginal value — arcade-wide is the clean seam and still honours the pure-mixer
+rule (games stay audio-agnostic; the mixer decides the blip).
 
 **Architecture — pure rules, thin renderers, audio-agnostic:**
 

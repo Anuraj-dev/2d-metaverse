@@ -8,7 +8,7 @@
  */
 import type { Settings } from "../ui/settings";
 
-export type Channel = "music" | "sfx" | "ambient";
+export type Channel = "music" | "sfx" | "ambient" | "arcade";
 
 /** Snapshot of the mixer's inputs, derived from the persisted Settings. */
 export interface MixerVolumes {
@@ -16,8 +16,10 @@ export interface MixerVolumes {
   music: number; // 0..1
   sfx: number; // 0..1
   ambient: number; // 0..1
+  arcade: number; // 0..1 — arcade mini-game sfx, its own volume/mute
   muted: boolean; // master mute
   muteSfx: boolean; // silence the sfx channel specifically
+  muteArcade: boolean; // silence the arcade channel specifically
 }
 
 /**
@@ -55,8 +57,10 @@ export function volumesFromSettings(s: Settings): MixerVolumes {
     music: s.musicVolume,
     sfx: s.sfxVolume,
     ambient: s.ambientVolume,
+    arcade: s.arcadeVolume,
     muted: s.muted,
     muteSfx: s.muteSfx,
+    muteArcade: s.muteArcade,
   };
 }
 
@@ -74,6 +78,12 @@ export function channelGain(v: MixerVolumes, channel: Channel): number {
   if (channel === "sfx") {
     if (v.muteSfx) return 0;
     return clamp01(master * clamp01(v.sfx));
+  }
+  if (channel === "arcade") {
+    // Arcade mini-game blips have their own volume + mute so a player can quiet
+    // a noisy game without touching world sfx. Still folds under master mute.
+    if (v.muteArcade) return 0;
+    return clamp01(master * clamp01(v.arcade));
   }
   // ambient
   return clamp01(master * clamp01(v.ambient));
@@ -208,9 +218,11 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "meeting-grid-hidden": { clip: "meeting_leave", channel: "sfx" },
   // Arcade cabinets (PRD 11): games stay audio-agnostic and emit these domain
   // events; the mixer decides the blip. Frequent flaps stay silent (no filler).
-  "open-arcade": { clip: "arcade_start", channel: "sfx" },
-  "arcade-point": { clip: "arcade_point", channel: "sfx" },
-  "arcade-over": { clip: "arcade_over", channel: "sfx" },
+  // On the dedicated `arcade` channel so players get an independent volume/mute
+  // (surfaced in the arcade overlay) without affecting world sfx.
+  "open-arcade": { clip: "arcade_start", channel: "arcade" },
+  "arcade-point": { clip: "arcade_point", channel: "arcade" },
+  "arcade-over": { clip: "arcade_over", channel: "arcade" },
   // Board-game tables (PRD 11 phase 2): reuse the existing sit/arcade cues — the
   // game stays audio-agnostic and emits these domain events; the mixer decides.
   "board-sat": { clip: "sit", channel: "sfx" },
