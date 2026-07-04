@@ -5,33 +5,80 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(6, 9, 16, 0.82);
-  backdrop-filter: blur(3px);
+  background: radial-gradient(circle at 50% 30%, #10182b 0%, #06090f 100%);
+}
+/* When the backdrop itself is the fullscreen element it must paint the whole
+   screen (the default :fullscreen bg is black). */
+.arcade-backdrop:fullscreen {
+  background: radial-gradient(circle at 50% 30%, #10182b 0%, #06090f 100%);
 }
 
 .arcade-overlay {
-  background: #161c2b;
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 96vw);
+  height: min(88vh, 840px);
+  background: #141a29;
   color: #e8ecf5;
   border: 1px solid #2b3550;
-  border-radius: 12px;
-  padding: 16px 18px 20px;
-  max-width: min(760px, 94vw);
-  max-height: 92vh;
-  overflow: auto;
+  border-radius: 14px;
+  padding: 14px 18px 18px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
   outline: none;
   font-family: system-ui, sans-serif;
+}
+/* Fill the screen when we actually got fullscreen. */
+.arcade-backdrop:fullscreen .arcade-overlay {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  border-radius: 0;
+  border: none;
 }
 
 .arcade-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex: 0 0 auto;
 }
 .arcade-header h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.2rem;
+  letter-spacing: 0.02em;
+}
+.arcade-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.arcade-sound {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #10141f;
+  border: 1px solid #26304a;
+  border-radius: 8px;
+  padding: 3px 8px 3px 4px;
+}
+.arcade-vol {
+  width: 84px;
+  accent-color: #7fd1b9;
+}
+.arcade-icon-btn {
+  background: #24304a;
+  color: #cdd6ea;
+  border: 1px solid #3a4767;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.arcade-icon-btn:hover {
+  background: #2f3d5c;
 }
 .arcade-close {
   background: #24304a;
@@ -49,21 +96,31 @@
 .arcade-body {
   display: flex;
   gap: 16px;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .arcade-stage {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 .arcade-scoreline {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   color: #aeb8d0;
+  flex: 0 0 auto;
+}
+.arcade-score {
+  font-weight: 600;
+  color: #e8ecf5;
+  font-variant-numeric: tabular-nums;
 }
 .arcade-controls-hint {
   color: #7c88a6;
@@ -71,13 +128,24 @@
 
 .arcade-surface {
   position: relative;
-  display: inline-flex;
-  border-radius: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
   overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(127, 209, 185, 0.08), transparent 60%),
+    #0b0f18;
+  box-shadow: inset 0 0 0 1px #1d2740, inset 0 0 40px rgba(0, 0, 0, 0.55);
 }
+/* The game canvas scales to fill the stage crisply, preserving aspect ratio. */
 .arcade-canvas {
   display: block;
-  background: #10141f;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   image-rendering: pixelated;
 }
 
@@ -88,17 +156,18 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  background: rgba(10, 14, 24, 0.78);
+  gap: 10px;
+  background: rgba(8, 11, 20, 0.82);
   text-align: center;
 }
 .arcade-gameover p {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.3rem;
 }
 .arcade-final {
   color: #f2c14e;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 1.5rem !important;
 }
 .arcade-play-again {
   margin-top: 4px;
@@ -106,7 +175,7 @@
   color: #10141f;
   border: none;
   border-radius: 6px;
-  padding: 8px 16px;
+  padding: 9px 18px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -115,21 +184,22 @@
 }
 
 .arcade-leaderboard {
-  flex: 1;
+  flex: 0 0 220px;
   min-width: 180px;
   background: #10141f;
   border: 1px solid #26304a;
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow: auto;
 }
 .arcade-leaderboard h3 {
   margin: 0 0 6px;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
 }
 .arcade-best {
   margin: 0 0 8px;
   color: #f2c14e;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
 }
 .arcade-leaderboard ol {
   list-style: none;
@@ -165,28 +235,42 @@
   font-style: italic;
 }
 
-/* 2048 board */
+/* Narrow screens: stack the leaderboard under the game. */
+@media (max-width: 720px) {
+  .arcade-body {
+    flex-direction: column;
+  }
+  .arcade-leaderboard {
+    flex: 0 0 auto;
+    max-height: 30vh;
+  }
+}
+
+/* 2048 board — DOM grid, sized to scale up in fullscreen. */
 .arcade-2048 {
   display: grid;
-  gap: 6px;
-  padding: 6px;
-  background: #10141f;
-  border-radius: 8px;
-  width: 288px;
-  height: 288px;
+  gap: 8px;
+  padding: 8px;
+  background: #0d1220;
+  border-radius: 10px;
+  width: min(70vmin, 560px);
+  height: min(70vmin, 560px);
+  box-shadow: inset 0 0 0 1px #1d2740;
 }
 .arcade-tile {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 5px;
+  border-radius: 7px;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: clamp(1rem, 6vmin, 2.4rem);
   color: #10141f;
   background: #1c2436;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18);
 }
 .arcade-tile.t0 {
   color: transparent;
+  box-shadow: none;
 }
 .arcade-tile.t2 { background: #cfe8dd; }
 .arcade-tile.t4 { background: #a9dcc9; }
@@ -197,6 +281,10 @@
 .arcade-tile.t128 { background: #9b7dd6; color: #f5f8ff; }
 .arcade-tile.t256 { background: #c079c9; color: #f5f8ff; }
 .arcade-tile.t512 { background: #e0567a; color: #f5f8ff; }
-.arcade-tile.t1024 { background: #f2924e; color: #10141f; font-size: 0.95rem; }
+.arcade-tile.t1024 { background: #f2924e; color: #10141f; }
 .arcade-tile.t2048,
-.arcade-tile.tbig { background: #f2c14e; color: #10141f; font-size: 0.95rem; }
+.arcade-tile.tbig {
+  background: #f2c14e;
+  color: #10141f;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 0 18px rgba(242, 193, 78, 0.5);
+}

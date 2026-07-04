@@ -115,8 +115,9 @@ interface TiledMap {
 }
 
 const MAP_ROOMS: Record<string, string[]> = {
-  // Campus is the single canonical map (PRD 13): hostel rooms 1-3 + HQ rooms 4-6.
-  campus: ["1", "2", "3", "4", "5", "6"],
+  // Campus is the single canonical map (PRD 13): hostel rooms 1-3 + HQ rooms 4-6,
+  // plus the public "arcade" hall (PRD 16) which gets its own audio zone.
+  campus: ["1", "2", "3", "4", "5", "6", "arcade"],
 };
 
 function loadRoomBounds(mapKey: string): TiledObjectLike[] {
