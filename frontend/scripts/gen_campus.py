@@ -255,18 +255,22 @@ make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
 # as before). A stone spur off the full-height x=79-80 artery paves the walk from
 # spawn straight south to the door.
 AX0, AY0, AX1, AY1 = 67, 94, 87, 108
-ARCADE_DOOR_X = 79   # aligns with the x=79-80 stone artery running down from spawn
+# Wide (4-tile) north entrance centred on the x=79-80 stone artery running down
+# from spawn — a generous games-hall doorway that players thread comfortably.
+ARCADE_DOOR_X = 78
+ARCADE_DOOR_W = 4
 wall_rect(AX0, AY0, AX1, AY1)
-door_gap(ARCADE_DOOR_X, AY0, width=2)
+door_gap(ARCADE_DOOR_X, AY0, width=ARCADE_DOOR_W)
 # Interior: tan-plank hall with an olive-checker runner down the cabinet row and
 # a centre rug — cohesive with the existing indoor palette (no new tiles).
 fill(ground, AX0 + 1, AY0 + 1, AX1 - 1, AY1 - 1, FLOOR_ACC)
 fill(ground, AX0 + 2, AY0 + 2, AX1 - 2, AY0 + 2, FLOOR_MOSS)          # cabinet-row runner
 fill(ground, (AX0 + AX1) // 2 - 3, (AY0 + AY1) // 2,
      (AX0 + AX1) // 2 + 3, (AY0 + AY1) // 2 + 1, FLOOR_MOSS)          # centre rug
-# Pave the approach spur from the coworking deck down to the door (the artery is
-# already stone above y=88; this just guarantees the two door tiles read paved).
-fill(ground, ARCADE_DOOR_X, AY0, ARCADE_DOOR_X + 1, AY0, STONE)
+# Pave the threshold + the spur down from the coworking deck (the artery is
+# already stone above y=88; this makes the door row read as a paved entrance).
+fill(ground, ARCADE_DOOR_X, AY0, ARCADE_DOOR_X + ARCADE_DOOR_W - 1, AY0, STONE)
+fill(ground, 79, 89, 80, 93, STONE)
 room_bounds.append({
     "id": 11099, "name": "room_arcade_bounds",
     "x": (AX0 + 1) * TS, "y": (AY0 + 1) * TS,
