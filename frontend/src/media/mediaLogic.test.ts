@@ -112,6 +112,16 @@ describe("computeVolumes", () => {
     expect(computeVolumes(players, "me", ["mate"])?.get("mate")).toBeCloseTo(0.5);
   });
 
+  it("keeps a same-room teammate audible past the cutoff (the big-room silence bug)", () => {
+    // Opposite ends of a room wider than AUDIO_CUTOFF (the campus hostel rooms):
+    // the shared-room floor must keep them audible, not silence them by distance.
+    const players: MediaPos[] = [
+      { id: "me", x: 0, y: 0, zone: "roomA" },
+      { id: "mate", x: AUDIO_CUTOFF * 1.5, y: 0, zone: "roomA" },
+    ];
+    expect(computeVolumes(players, "me", ["mate"])?.get("mate")).toBeGreaterThan(0);
+  });
+
   it("treats a missing zone as outdoor (unchanged pre-PRD behaviour)", () => {
     const players: MediaPos[] = [me, { id: "a", x: 0, y: 0 }];
     expect(computeVolumes(players, "me", ["a"])?.get("a")).toBe(1);

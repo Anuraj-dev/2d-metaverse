@@ -3,6 +3,7 @@ import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAPS, DEFAULT_MAP, activeMapKey, activeMap } from "./maps";
+import { roomAreasFromObjects, zoneAt, type TiledObjectLike } from "./audioZones";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -310,4 +311,105 @@ describe("campus board-game tables (PRD 11 phase 2)", () => {
       expect(table, `missing solid table sprite for ${tableId}`).toBeDefined();
     }
   });
+});
+
+// Regression guard for the audio-zone bug: a room whose `roomBounds` rect does
+// not fully cover its walkable interior classifies a player standing on the
+// uncovered floor as OUTDOOR while a teammate a step away is in the room zone —
+// the two then can't hear each other. Flood-fill each room's walkable interior
+// (bounded by the walls collision layer and the door threshold) and assert every
+// reachable tile — sampled at the player's feet, matching WorldScene — resolves
+// to that room's own audio zone.
+describe("campus room audio zones cover the walkable interior", () => {
+  // WorldScene samples the audio zone at the sprite's feet (`y + 8`); mirror it
+  // so this guard classifies exactly what the running game does.
+  const FEET_OFFSET_Y = 8;
+
+  interface RawTiledObject extends TiledObjectLike {
+    name?: string;
+  }
+  interface RawMap {
+    width: number;
+    height: number;
+    tilewidth: number;
+    tileheight: number;
+    layers: {
+      name: string;
+      type: string;
+      data?: number[];
+      objects?: RawTiledObject[];
+    }[];
+  }
+
+  const map = loadMap("campus") as unknown as RawMap;
+  const { width: W, height: H, tilewidth: TW, tileheight: TH } = map;
+  const layer = (name: string) => map.layers.find((l) => l.name === name);
+  const objects = (name: string): RawTiledObject[] => layer(name)?.objects ?? [];
+
+  const wallData = layer("walls")?.data;
+  if (!wallData) throw new Error("campus walls layer missing");
+  const solid = (tx: number, ty: number): boolean => {
+    if (tx < 0 || tx >= W || ty < 0 || ty >= H) return true;
+    return (wallData[ty * W + tx] ?? 0) !== 0;
+  };
+
+  const zones = roomAreasFromObjects(objects("roomBounds"));
+
+  // Door-threshold tiles: the one authored gap in a room's wall ring. Treated as
+  // a flood barrier so the fill stays inside the room instead of leaking out the
+  // door into the outdoor plaza (the door threshold itself is the intended
+  // binary cutover to OUTDOOR and is not part of the room interior).
+  const doorTiles = new Set<string>();
+  for (const d of objects("doorZones")) {
+    const x0 = Math.floor((d.x ?? 0) / TW);
+    const y0 = Math.floor((d.y ?? 0) / TH);
+    const x1 = Math.floor(((d.x ?? 0) + (d.width ?? 0)) / TW);
+    const y1 = Math.floor(((d.y ?? 0) + (d.height ?? 0)) / TH);
+    for (let tx = x0; tx < x1; tx++) for (let ty = y0; ty < y1; ty++) doorTiles.add(`${tx},${ty}`);
+  }
+
+  // Seed each room's flood-fill from its authored seats (guaranteed interior).
+  const seatSeeds = new Map<string, [number, number][]>();
+  for (const s of objects("seats")) {
+    const roomId = (s.name ?? "").split("_seat_")[0]?.replace("room_", "") ?? "";
+    const tx = Math.floor(((s.x ?? 0) + (s.width ?? 0) / 2) / TW);
+    const ty = Math.floor(((s.y ?? 0) + (s.height ?? 0) / 2) / TH);
+    const seeds = seatSeeds.get(roomId) ?? [];
+    seeds.push([tx, ty]);
+    seatSeeds.set(roomId, seeds);
+  }
+
+  it("has at least one room and a seed for each", () => {
+    expect(zones.length).toBeGreaterThan(0);
+    for (const z of zones) expect(seatSeeds.get(z.roomId)?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  for (const z of zones) {
+    it(`room ${z.roomId}: every interior tile resolves to its own zone`, () => {
+      const seeds = seatSeeds.get(z.roomId) ?? [];
+      const seen = new Set<string>(seeds.map(([x, y]) => `${x},${y}`));
+      const queue: [number, number][] = [...seeds];
+      let interiorTiles = 0;
+      for (let cursor = queue.shift(); cursor !== undefined; cursor = queue.shift()) {
+        const [tx, ty] = cursor;
+        if (solid(tx, ty) || doorTiles.has(`${tx},${ty}`)) continue;
+        interiorTiles++;
+        // Sample at the feet point, exactly as WorldScene stamps the zone.
+        const px = tx * TW + TW / 2;
+        const py = ty * TH + TH / 2 + FEET_OFFSET_Y;
+        expect(
+          zoneAt(zones, px, py),
+          `room ${z.roomId} interior tile (${tx},${ty}) is misclassified`,
+        ).toBe(z.roomId);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const key = `${tx + dx},${ty + dy}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            queue.push([tx + dx, ty + dy]);
+          }
+        }
+      }
+      expect(interiorTiles).toBeGreaterThan(0);
+    });
+  }
 });
