@@ -1271,6 +1271,13 @@ html, body, #root {
   filter: blur(14px) brightness(0.35) saturate(0.8);
   transform: scale(1.05); /* hide blur edge bleed */
 }
+/* Phase B layer: holds the gradient ring + the expanding burst so they fade
+   out together (opacity only) as the grid reveals — no gap, no double-flash. */
+.portal-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .portal-burst {
   position: absolute;
   width: 220vmax;
@@ -1279,12 +1286,22 @@ html, body, #root {
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(230, 240, 255, 0.98) 0%,
-    rgba(124, 92, 255, 0.96) 28%,
-    rgba(56, 208, 255, 0.92) 55%,
-    rgba(10, 14, 24, 0.9) 78%
+    rgba(240, 244, 255, 0.98) 0%,
+    rgba(240, 180, 255, 0.95) 18%,
+    rgba(124, 92, 255, 0.95) 42%,
+    rgba(56, 208, 255, 0.9) 64%,
+    rgba(10, 14, 24, 0.92) 82%
   );
   pointer-events: none;
+  will-change: transform, opacity;
+}
+/* Gradient-traced portal ring blooming from the seat. Positioned by inline
+   left/top; the SVG stroke pulse animates via motion (small, GPU-cheap). */
+.portal-ring {
+  position: absolute;
+  overflow: visible;
+  filter: drop-shadow(0 0 10px rgba(124, 92, 255, 0.6));
+  will-change: transform, opacity;
 }
 .meet-seat-ghost {
   position: absolute;
