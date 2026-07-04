@@ -1,5 +1,11 @@
 import Phaser from "phaser";
-import type { Dir, PlayerState } from "@metaverse/shared";
+import type { BoardUpdatePayload, BoardErrorPayload, Dir, PlayerState } from "@metaverse/shared";
+import { SERVER_EVENTS } from "@metaverse/shared";
+import {
+  boardSeatOccupants,
+  canTakeBoardSeat,
+  type BoardSeatOccupants,
+} from "../boardTable";
 import type { Net } from "../../net/net";
 import { authToken } from "../../net/auth";
 import { bus } from "../eventBus";
@@ -112,6 +118,9 @@ export default class WorldScene extends Phaser.Scene {
   private boardSeats: BoardSeat[] = [];
   private currentBoardSeat: BoardSeat | null = null;
   private boardSeated = false;
+  /** Authoritative seat occupancy per board table, mirrored from `board-update`.
+   *  Drives client-side seat-taken prevention + optimistic-sit reconciliation. */
+  private boardOccupants = new Map<string, BoardSeatOccupants>();
   private currentRoom: string | null = null;
   private lastPublicPosition = new Phaser.Math.Vector2();
   private avatar = "char1";
@@ -510,6 +519,14 @@ export default class WorldScene extends Phaser.Scene {
       this.roomOpenState.set(p.roomId, { allowAll: p.allowAll, atCapacity: p.atCapacity });
       this.refreshDoor(p.roomId);
     });
+    // Authoritative board-seat occupancy: mirror every snapshot so we can refuse a
+    // sit onto a taken seat and reconcile an optimistic sit the server rejected.
+    this.net.on<BoardUpdatePayload>(SERVER_EVENTS.boardUpdate, (snap) => this.onBoardUpdate(snap));
+    // A rejected sit (seat lost to a simultaneous sitter, or already seated
+    // elsewhere) rolls back our optimistic local seat — the server picks the winner.
+    this.net.on<BoardErrorPayload>(SERVER_EVENTS.boardError, (err) => {
+      if (err.reason === "seat-taken") this.releaseBoardSeat();
+    });
     bus.on("do-sit", () => {
       if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
       else this.trySit();
@@ -799,13 +816,7 @@ export default class WorldScene extends Phaser.Scene {
       for (const s of this.boardSeats) if (rectContains(s.rect, fx, fy)) inBoard = s;
       if (inBoard !== this.currentBoardSeat) {
         this.currentBoardSeat = inBoard;
-        if (inBoard)
-          bus.emit("near-board-seat", {
-            tableId: inBoard.tableId,
-            seat: inBoard.seat,
-            game: inBoard.game,
-            label: inBoard.label,
-          });
+        if (inBoard) this.emitNearBoardSeat(inBoard);
         else bus.emit("leave-board-seat");
       }
     }
@@ -920,6 +931,13 @@ export default class WorldScene extends Phaser.Scene {
   private tryBoardSit() {
     const s = this.currentBoardSeat;
     if (this.boardSeated || this.seated || !s) return;
+    // Refuse a sit onto a seat the authoritative snapshot shows another player
+    // holds. The seat-taken hint stays; the server would reject this sit anyway,
+    // so we never optimistically snap onto an occupied chair.
+    if (!this.canSitBoardSeat(s)) {
+      this.emitNearBoardSeat(s);
+      return;
+    }
     this.boardSeated = true;
     this.player.setPosition(s.cx, s.cy);
     this.player.setVelocity(0, 0);
@@ -932,10 +950,55 @@ export default class WorldScene extends Phaser.Scene {
 
   private boardStand() {
     if (!this.boardSeated) return;
+    this.net.boardStand();
+    this.releaseBoardSeat();
+  }
+
+  /** True when the local player may take a board seat per the latest snapshot
+   *  (unknown occupancy is optimistic — the server still validates authoritatively). */
+  private canSitBoardSeat(s: BoardSeat): boolean {
+    const occ = this.boardOccupants.get(s.tableId);
+    return !occ || canTakeBoardSeat(occ, s.seat, this.net.selfId);
+  }
+
+  /** Emit `near-board-seat`, stamping whether the seat is occupied by someone else
+   *  so the hint offers "play" only on a takeable seat. */
+  private emitNearBoardSeat(s: BoardSeat) {
+    bus.emit("near-board-seat", {
+      tableId: s.tableId,
+      seat: s.seat,
+      game: s.game,
+      label: s.label,
+      occupied: !this.canSitBoardSeat(s),
+    });
+  }
+
+  /** Mirror an authoritative board snapshot: refresh occupancy, keep the sit hint
+   *  live, and roll back an optimistic local seat the server did not grant us. */
+  private onBoardUpdate(snap: BoardUpdatePayload) {
+    const occ = boardSeatOccupants(snap);
+    this.boardOccupants.set(snap.tableId, occ);
+    const s = this.currentBoardSeat;
+    if (!s || s.tableId !== snap.tableId) return;
+    // We optimistically took this seat but the authoritative snapshot hands it to
+    // someone else (lost race) — stand back up locally.
+    if (this.boardSeated && occ[s.seat] !== null && occ[s.seat] !== this.net.selfId) {
+      this.releaseBoardSeat();
+      return;
+    }
+    if (!this.boardSeated) this.emitNearBoardSeat(s);
+  }
+
+  /** Roll back the local board seat (optimistic-sit reversal or a real stand):
+   *  step off the chair and reset UI. Does NOT emit a `board-stand` to the server
+   *  (a rejected sit was never granted; a genuine stand sends it before calling us). */
+  private releaseBoardSeat() {
+    if (!this.boardSeated) return;
     this.boardSeated = false;
     this.player.y += 18;
-    this.net.boardStand();
     bus.emit("board-stood");
+    // Refresh the hint for the seat we're still standing on (now "seat taken").
+    if (this.currentBoardSeat) this.emitNearBoardSeat(this.currentBoardSeat);
   }
 
   private triggerInteractable(ia: InteractableDef) {

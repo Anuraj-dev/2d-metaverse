@@ -17,8 +17,8 @@ export default function InteractionHint() {
     const offLeaveSeat = bus.on("leave-seat", () => setHint(null));
     const offSat       = bus.on("sat",  () => setHint("Press E to stand"));
     const offStood     = bus.on("stood", () => setHint(null));
-    const offNearBoard  = bus.on("near-board-seat", (p: { label: string }) =>
-      setHint(`Press E to play ${p.label}`),
+    const offNearBoard  = bus.on("near-board-seat", (p: { label: string; occupied?: boolean }) =>
+      setHint(p.occupied ? "Seat taken" : `Press E to play ${p.label}`),
     );
     const offLeaveBoard = bus.on("leave-board-seat", () => setHint(null));
     const offBoardSat   = bus.on("board-sat", () => setHint("Press E to leave"));
