@@ -264,10 +264,10 @@ export class MockNet implements Net {
   cancelKnock() {
     /* you are the admin in the mock, never a pending knocker */
   }
-  approveKnock(roomId: string, _playerId: string) {
+  approveKnock(roomId: string) {
     this.bus.emit(SERVER_EVENTS.knockPending, { roomId, knocks: [] });
   }
-  denyKnock(roomId: string, _playerId: string) {
+  denyKnock(roomId: string) {
     this.bus.emit(SERVER_EVENTS.knockPending, { roomId, knocks: [] });
   }
   toggleAllowAll(roomId: string, allowAll: boolean) {

@@ -11,7 +11,7 @@ import { adminPanelView, type AdminRef, type Requester, type RoomOpenState } fro
  * `adminPanelView` decides what to render.
  */
 export default function RoomAdminPanel() {
-  const [selfId, setSelfId] = useState<string | null>(null);
+  const [selfId, setSelfId] = useState<string | null>(() => sharedNet().selfId || null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [admin, setAdmin] = useState<AdminRef | null>(null);
   const [open, setOpen] = useState<RoomOpenState | undefined>(undefined);
@@ -19,7 +19,6 @@ export default function RoomAdminPanel() {
 
   useEffect(() => {
     const net = sharedNet();
-    setSelfId(net.selfId || null);
     const offInit = net.on("init", (p: { selfId: string; players: PlayerState[] }) => setSelfId(p.selfId));
 
     // Entering / leaving a room scopes the panel and clears stale state.
