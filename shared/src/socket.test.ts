@@ -14,8 +14,15 @@ import {
   meetingParticipantLeftSchema,
   meetingStartedSchema,
   moveSchema,
-  roomEnterResultSchema,
-  roomEnterSchema,
+  adminChangedSchema,
+  approveKnockSchema,
+  cancelKnockSchema,
+  capacityAlertSchema,
+  knockPendingSchema,
+  knockResultSchema,
+  knockSchema,
+  roomOpenStateSchema,
+  toggleAllowAllSchema,
   seatSitSchema,
   seatUpdateSchema,
   socketAuthSchema,
@@ -87,12 +94,24 @@ describe("whisper", () => {
   });
 });
 
-describe("room-enter", () => {
-  it("accepts a roomId and key", () => {
-    expect(roomEnterSchema.safeParse({ roomId: "1", key: "1234" }).success).toBe(true);
+describe("room access — knock/approve (PRD 14)", () => {
+  it("accepts a knock with just a roomId", () => {
+    expect(knockSchema.safeParse({ roomId: "1" }).success).toBe(true);
+    expect(cancelKnockSchema.safeParse({ roomId: "1" }).success).toBe(true);
   });
-  it("rejects a missing key", () => {
-    expect(roomEnterSchema.safeParse({ roomId: "1", key: "" }).success).toBe(false);
+  it("rejects a knock with an empty roomId or an extra key field", () => {
+    expect(knockSchema.safeParse({ roomId: "" }).success).toBe(false);
+    // strict: no legacy `key` allowed
+    expect(knockSchema.safeParse({ roomId: "1", key: "1234" }).success).toBe(false);
+  });
+  it("accepts approve/deny carrying the target playerId", () => {
+    expect(approveKnockSchema.safeParse({ roomId: "1", playerId: "p2" }).success).toBe(true);
+    expect(approveKnockSchema.safeParse({ roomId: "1", playerId: "" }).success).toBe(false);
+    expect(approveKnockSchema.safeParse({ roomId: "1" }).success).toBe(false);
+  });
+  it("accepts a boolean allow-all toggle only", () => {
+    expect(toggleAllowAllSchema.safeParse({ roomId: "1", allowAll: true }).success).toBe(true);
+    expect(toggleAllowAllSchema.safeParse({ roomId: "1", allowAll: "yes" }).success).toBe(false);
   });
 });
 
@@ -107,10 +126,26 @@ describe("seat-sit", () => {
 });
 
 describe("server → client shapes", () => {
-  it("validates a room-enter-result with an optional reason", () => {
-    expect(roomEnterResultSchema.safeParse({ ok: true, roomId: "1" }).success).toBe(true);
-    expect(roomEnterResultSchema.safeParse({ ok: false, roomId: "1", reason: "bad-key" }).success).toBe(true);
-    expect(roomEnterResultSchema.safeParse({ ok: false, roomId: "1", reason: "nope" }).success).toBe(false);
+  it("validates the knock-pending queue and its requesters", () => {
+    expect(knockPendingSchema.safeParse({ roomId: "1", knocks: [] }).success).toBe(true);
+    expect(knockPendingSchema.safeParse({ roomId: "1", knocks: [{ id: "p2", name: "Bo" }] }).success).toBe(true);
+    expect(knockPendingSchema.safeParse({ roomId: "1", knocks: [{ id: "p2" }] }).success).toBe(false);
+  });
+  it("validates a knock-result outcome, rejecting unknown outcomes", () => {
+    expect(knockResultSchema.safeParse({ roomId: "1", result: "approved" }).success).toBe(true);
+    expect(knockResultSchema.safeParse({ roomId: "1", result: "timeout" }).success).toBe(true);
+    // `canceled` is client-initiated and never sent back
+    expect(knockResultSchema.safeParse({ roomId: "1", result: "canceled" }).success).toBe(false);
+  });
+  it("validates admin-changed with a nullable admin and a known reason", () => {
+    expect(adminChangedSchema.safeParse({ roomId: "1", admin: { id: "a", name: "A" }, reason: "initial" }).success).toBe(true);
+    expect(adminChangedSchema.safeParse({ roomId: "1", admin: null, reason: "succession" }).success).toBe(true);
+    expect(adminChangedSchema.safeParse({ roomId: "1", admin: null, reason: "poof" }).success).toBe(false);
+  });
+  it("validates room-open-state and capacity-alert", () => {
+    expect(roomOpenStateSchema.safeParse({ roomId: "1", allowAll: true, atCapacity: false }).success).toBe(true);
+    expect(roomOpenStateSchema.safeParse({ roomId: "1", allowAll: true }).success).toBe(false);
+    expect(capacityAlertSchema.safeParse({ roomId: "1" }).success).toBe(true);
   });
   it("allows a null playerId on seat-update (a freed seat)", () => {
     expect(seatUpdateSchema.safeParse({ roomId: "1", seatId: 0, playerId: null }).success).toBe(true);

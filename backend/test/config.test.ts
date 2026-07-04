@@ -21,8 +21,6 @@ const productionEnv: Record<string, string> = {
   LIVEKIT_URL: "wss://livekit.example.com",
   LIVEKIT_API_KEY: "prod-livekit-key",
   LIVEKIT_API_SECRET: "prod-livekit-secret-with-plenty-of-entropy",
-  ROOM_1_KEY: "r1-prod", ROOM_2_KEY: "r2-prod", ROOM_3_KEY: "r3-prod",
-  ROOM_4_KEY: "r4-prod", ROOM_5_KEY: "r5-prod", ROOM_6_KEY: "r6-prod",
   STAGE_KEY: "prod-stage-presenter-key"
 };
 
@@ -85,18 +83,6 @@ describe("production refusal of development defaults", () => {
     ["placeholder replace- JWT secret", { JWT_SECRET: "replace-with-at-least-32-random-characters" }],
     ["dev LiveKit API key", { LIVEKIT_API_KEY: "devkey" }],
     ["dev LiveKit API secret", { LIVEKIT_API_SECRET: "local-development-livekit-secret-change-me" }],
-    ["dev ROOM_1_KEY", { ROOM_1_KEY: "1234" }],
-    ["missing ROOM_1_KEY", { ROOM_1_KEY: undefined }],
-    ["dev ROOM_2_KEY", { ROOM_2_KEY: "4321" }],
-    ["missing ROOM_2_KEY", { ROOM_2_KEY: undefined }],
-    ["dev ROOM_3_KEY", { ROOM_3_KEY: "3333" }],
-    ["missing ROOM_3_KEY", { ROOM_3_KEY: undefined }],
-    ["dev ROOM_4_KEY", { ROOM_4_KEY: "4444" }],
-    ["missing ROOM_4_KEY", { ROOM_4_KEY: undefined }],
-    ["dev ROOM_5_KEY", { ROOM_5_KEY: "5555" }],
-    ["missing ROOM_5_KEY", { ROOM_5_KEY: undefined }],
-    ["dev ROOM_6_KEY", { ROOM_6_KEY: "6666" }],
-    ["missing ROOM_6_KEY", { ROOM_6_KEY: undefined }],
     ["dev STAGE_KEY", { STAGE_KEY: "stage-presenter-123" }],
     ["missing STAGE_KEY", { STAGE_KEY: undefined }],
     ["dev DATABASE_URL credentials", { DATABASE_URL: "postgres://metaverse:metaverse@db:5432/metaverse" }]

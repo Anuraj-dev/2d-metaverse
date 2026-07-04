@@ -10,15 +10,16 @@
  */
 import { z } from "zod";
 import {
+  ADMIN_CHANGE_REASONS,
   BOARD_END_REASONS,
   BOARD_MATCH_PHASES,
   BOARD_MOVE_REJECTIONS,
   BOARD_TABLE_IDS,
   CHAT_SCOPES,
   DIRS,
+  KNOCK_RESULTS,
   LIMITS,
   MEETING_CANCEL_REASONS,
-  ROOM_ENTER_REASONS,
 } from "./constants.js";
 import { BOARD_GAMES } from "./games/board.js";
 
@@ -69,11 +70,37 @@ export const whisperSchema = z.object({
 });
 export type WhisperPayload = z.infer<typeof whisperSchema>;
 
-export const roomEnterSchema = z.object({
-  roomId: z.string().min(1).max(LIMITS.roomIdMax),
-  key: z.string().min(1).max(LIMITS.roomKeyMax),
+/* --------------------- client → server: room access (PRD 14) --------------- */
+/* Passwords are gone: entry is admin + knock/approve. These strict schemas guard
+ * the wire; the authoritative rules live in the backend room-access machine. */
+
+const roomIdSchema = z.string().min(1).max(LIMITS.roomIdMax);
+
+/** Knock at a private room's door, asking to be admitted. */
+export const knockSchema = z.strictObject({ roomId: roomIdSchema });
+export type KnockPayload = z.infer<typeof knockSchema>;
+
+/** Withdraw your own pending knock. */
+export const cancelKnockSchema = z.strictObject({ roomId: roomIdSchema });
+export type CancelKnockPayload = z.infer<typeof cancelKnockSchema>;
+
+/** Admin: approve a specific pending knocker into the room. */
+export const approveKnockSchema = z.strictObject({
+  roomId: roomIdSchema,
+  playerId: z.string().min(1).max(LIMITS.playerIdMax),
 });
-export type RoomEnterPayload = z.infer<typeof roomEnterSchema>;
+export type ApproveKnockPayload = z.infer<typeof approveKnockSchema>;
+
+/** Admin: deny a specific pending knocker. Same shape as approve. */
+export const denyKnockSchema = approveKnockSchema;
+export type DenyKnockPayload = z.infer<typeof denyKnockSchema>;
+
+/** Admin: toggle the room's allow-all (open door) mode. */
+export const toggleAllowAllSchema = z.strictObject({
+  roomId: roomIdSchema,
+  allowAll: z.boolean(),
+});
+export type ToggleAllowAllPayload = z.infer<typeof toggleAllowAllSchema>;
 
 export const seatSitSchema = z.object({
   roomId: z.string().min(1).max(LIMITS.roomIdMax),
@@ -152,12 +179,60 @@ export type WhisperMessage = z.infer<typeof whisperMessageSchema>;
 export const whisperFailSchema = z.object({ name: z.string() });
 export type WhisperFailPayload = z.infer<typeof whisperFailSchema>;
 
-export const roomEnterResultSchema = z.object({
-  ok: z.boolean(),
-  roomId: z.string(),
-  reason: z.enum(ROOM_ENTER_REASONS).optional(),
+/* --------------------- server → client: room access (PRD 14) --------------- */
+/* Strict contracts (unknown keys REJECT): new payloads with no legacy shapes. */
+
+/** A pending knocker, shown to the admin in the approve/deny toast. */
+export const knockRequesterSchema = z.strictObject({
+  id: z.string(),
+  name: z.string(),
 });
-export type RoomEnterResultPayload = z.infer<typeof roomEnterResultSchema>;
+export type KnockRequester = z.infer<typeof knockRequesterSchema>;
+
+/**
+ * The room's current pending-knock queue, broadcast to occupants on every
+ * change. Only the admin's client renders the approve/deny prompts; a cancel or
+ * timeout simply shrinks the list.
+ */
+export const knockPendingSchema = z.strictObject({
+  roomId: z.string(),
+  knocks: z.array(knockRequesterSchema),
+});
+export type KnockPendingPayload = z.infer<typeof knockPendingSchema>;
+
+/** The terminal outcome of THIS client's knock, sent only to the knocker. */
+export const knockResultSchema = z.strictObject({
+  roomId: z.string(),
+  result: z.enum(KNOCK_RESULTS),
+});
+export type KnockResultPayload = z.infer<typeof knockResultSchema>;
+
+/**
+ * Who holds the room's admin now, broadcast to occupants (badge + "you are the
+ * admin" notice). `admin` is null once the room empties.
+ */
+export const adminChangedSchema = z.strictObject({
+  roomId: z.string(),
+  admin: knockRequesterSchema.nullable(),
+  reason: z.enum(ADMIN_CHANGE_REASONS),
+});
+export type AdminChangedPayload = z.infer<typeof adminChangedSchema>;
+
+/**
+ * The room's door visibility, broadcast space-wide so players near the door see
+ * it disappear in allow-all mode and reappear at capacity. The door is hidden
+ * (walk-in) iff `allowAll && !atCapacity`.
+ */
+export const roomOpenStateSchema = z.strictObject({
+  roomId: z.string(),
+  allowAll: z.boolean(),
+  atCapacity: z.boolean(),
+});
+export type RoomOpenStatePayload = z.infer<typeof roomOpenStateSchema>;
+
+/** Sent to a player turned away because the room is at max capacity. */
+export const capacityAlertSchema = z.strictObject({ roomId: z.string() });
+export type CapacityAlertPayload = z.infer<typeof capacityAlertSchema>;
 
 export const seatUpdateSchema = z.object({
   roomId: z.string(),
@@ -295,7 +370,11 @@ export interface ClientToServerEvents {
   move: (payload: MovePayload) => void;
   chat: (payload: ChatPayload) => void;
   whisper: (payload: WhisperPayload) => void;
-  "room-enter": (payload: RoomEnterPayload) => void;
+  knock: (payload: KnockPayload) => void;
+  "cancel-knock": (payload: CancelKnockPayload) => void;
+  "approve-knock": (payload: ApproveKnockPayload) => void;
+  "deny-knock": (payload: DenyKnockPayload) => void;
+  "toggle-allow-all": (payload: ToggleAllowAllPayload) => void;
   "room-leave": () => void;
   "seat-sit": (payload: SeatSitPayload) => void;
   "seat-stand": () => void;
@@ -314,7 +393,11 @@ export interface ServerToClientEvents {
   chat: (payload: ChatMessage) => void;
   whisper: (payload: WhisperMessage) => void;
   "whisper-fail": (payload: WhisperFailPayload) => void;
-  "room-enter-result": (payload: RoomEnterResultPayload) => void;
+  "knock-pending": (payload: KnockPendingPayload) => void;
+  "knock-result": (payload: KnockResultPayload) => void;
+  "admin-changed": (payload: AdminChangedPayload) => void;
+  "room-open-state": (payload: RoomOpenStatePayload) => void;
+  "capacity-alert": (payload: CapacityAlertPayload) => void;
   "seat-update": (payload: SeatUpdatePayload) => void;
   "meeting-countdown": (payload: MeetingCountdownPayload) => void;
   "meeting-countdown-canceled": (payload: MeetingCountdownCanceledPayload) => void;

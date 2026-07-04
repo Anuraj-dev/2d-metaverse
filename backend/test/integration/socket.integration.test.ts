@@ -25,6 +25,29 @@ async function joinAs(token: string) {
   return { socket, init: await init };
 }
 
+type Joined = Awaited<ReturnType<typeof joinAs>>;
+
+/** The first player to knock at an empty room walks straight in as its admin. */
+async function enterAsAdmin(player: Joined, roomId: string): Promise<void> {
+  const approved = once(player.socket, "knock-result");
+  player.socket.emit("knock", { roomId });
+  expect(await approved).toEqual({ roomId, result: "approved" });
+}
+
+/** A later arrival knocks; the room's admin approves them in. */
+async function knockAndApprove(roomId: string, admin: Joined, knocker: Joined): Promise<void> {
+  const pending = onceMatching<{ knocks: Array<{ id: string }> }>(
+    admin.socket,
+    "knock-pending",
+    (payload) => payload.knocks.some((k) => k.id === knocker.init.selfId),
+  );
+  const approved = once(knocker.socket, "knock-result");
+  knocker.socket.emit("knock", { roomId });
+  await pending;
+  admin.socket.emit("approve-knock", { roomId, playerId: knocker.init.selfId });
+  expect(await approved).toEqual({ roomId, result: "approved" });
+}
+
 beforeAll(async () => {
   server = await startServer();
   base = server.baseUrl;
@@ -145,42 +168,48 @@ describe("whisper", () => {
   });
 });
 
-describe("room keys", () => {
-  it("rejects a wrong key then accepts the right one", async () => {
-    const a = await joinAs((await createPlayer("rka")).token);
+describe("room access — knock/approve (PRD 14)", () => {
+  it("admits the first knocker as admin, then a knocker the admin approves", async () => {
+    const admin = await joinAs((await createPlayer("rka")).token);
+    const guest = await joinAs((await createPlayer("rkg")).token);
 
-    const rejected = once(a.socket, "room-enter-result");
-    a.socket.emit("room-enter", { roomId: "1", key: "wrong" });
-    expect(await rejected).toEqual({ ok: false, roomId: "1", reason: "bad-key" });
+    // Empty room: the admin walks straight in and is announced as admin.
+    const adminAnnounced = once<{ admin: { id: string } | null; reason: string }>(admin.socket, "admin-changed");
+    await enterAsAdmin(admin, "1");
+    expect(await adminAnnounced).toMatchObject({ admin: { id: admin.init.selfId }, reason: "initial" });
 
-    const accepted = once(a.socket, "room-enter-result");
-    a.socket.emit("room-enter", { roomId: "1", key: process.env.ROOM_1_KEY });
-    expect(await accepted).toEqual({ ok: true, roomId: "1" });
+    // A later arrival is queued until approved.
+    const pending = onceMatching<{ knocks: Array<{ id: string }> }>(
+      admin.socket,
+      "knock-pending",
+      (payload) => payload.knocks.some((k) => k.id === guest.init.selfId),
+    );
+    const approved = once(guest.socket, "knock-result");
+    guest.socket.emit("knock", { roomId: "1" });
+    await pending;
+    admin.socket.emit("approve-knock", { roomId: "1", playerId: guest.init.selfId });
+    expect(await approved).toEqual({ roomId: "1", result: "approved" });
   });
 
-  it("locks out brute force after five attempts, even with the right key", async () => {
-    const a = await joinAs((await createPlayer("rkb")).token);
+  it("times out an unanswered knock as denied", async () => {
+    const admin = await joinAs((await createPlayer("rta")).token);
+    const guest = await joinAs((await createPlayer("rtg")).token);
+    await enterAsAdmin(admin, "2");
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const result = once(a.socket, "room-enter-result");
-      a.socket.emit("room-enter", { roomId: "2", key: "wrong" });
-      expect(await result).toEqual({ ok: false, roomId: "2", reason: "bad-key" });
-    }
-    const locked = once(a.socket, "room-enter-result");
-    a.socket.emit("room-enter", { roomId: "2", key: process.env.ROOM_2_KEY });
-    expect(await locked).toEqual({ ok: false, roomId: "2", reason: "rate-limited" });
+    // KNOCK_TIMEOUT_MS is shrunk to 300ms in setup.ts — no admin action.
+    const result = once<{ result: string }>(guest.socket, "knock-result", 3_000);
+    guest.socket.emit("knock", { roomId: "2" });
+    expect(await result).toEqual({ roomId: "2", result: "timeout" });
   });
 
   it("scopes room chat to room members only", async () => {
-    const a = await joinAs((await createPlayer("rca")).token);
+    const admin = await joinAs((await createPlayer("rca")).token);
     const b = await joinAs((await createPlayer("rcb")).token);
 
-    const entered = once(a.socket, "room-enter-result");
-    a.socket.emit("room-enter", { roomId: "3", key: process.env.ROOM_3_KEY });
-    expect(await entered).toMatchObject({ ok: true });
+    await enterAsAdmin(admin, "3");
 
-    const ownEcho = once(a.socket, "chat");
-    a.socket.emit("chat", { text: "room secret" });
+    const ownEcho = once(admin.socket, "chat");
+    admin.socket.emit("chat", { text: "room secret" });
     expect(await ownEcho).toMatchObject({ text: "room secret", scope: "3" });
     await expectSilence(b.socket, "chat");
   });
@@ -193,11 +222,8 @@ describe("seats", () => {
     const a = await joinAs(userA.token);
     const b = await joinAs(userB.token);
 
-    for (const player of [a, b]) {
-      const entered = once(player.socket, "room-enter-result");
-      player.socket.emit("room-enter", { roomId: "4", key: process.env.ROOM_4_KEY });
-      expect(await entered).toMatchObject({ ok: true, roomId: "4" });
-    }
+    await enterAsAdmin(a, "4");
+    await knockAndApprove("4", a, b);
 
     const sitSeenByB = once(b.socket, "seat-update");
     a.socket.emit("seat-sit", { roomId: "4", seatId: 0 });
@@ -227,11 +253,8 @@ describe("room-leave", () => {
     const a = await joinAs((await createPlayer("rla")).token);
     const b = await joinAs((await createPlayer("rlb")).token);
 
-    for (const player of [a, b]) {
-      const entered = once(player.socket, "room-enter-result");
-      player.socket.emit("room-enter", { roomId: "5", key: process.env.ROOM_5_KEY });
-      expect(await entered).toMatchObject({ ok: true, roomId: "5" });
-    }
+    await enterAsAdmin(a, "5");
+    await knockAndApprove("5", a, b);
 
     const sat = onceMatching<{ seatId: number }>(b.socket, "seat-update", (payload) => payload.seatId === 1);
     a.socket.emit("seat-sit", { roomId: "5", seatId: 1 });
@@ -308,11 +331,15 @@ describe("disconnect grace", () => {
     const a = await joinAs(userA.token);
     const b = await joinAs((await createPlayer("gsb")).token);
 
-    const entered = once(a.socket, "room-enter-result");
-    a.socket.emit("room-enter", { roomId: "6", key: process.env.ROOM_6_KEY });
-    expect(await entered).toMatchObject({ ok: true });
+    await enterAsAdmin(a, "6");
 
-    const sat = once(b.socket, "seat-update");
+    // Match this room+seat specifically: a prior test's grace-delayed seat free
+    // can still be broadcasting a null seat-update into the shared space.
+    const sat = onceMatching<{ roomId: string; seatId: number; playerId: string | null }>(
+      b.socket,
+      "seat-update",
+      (payload) => payload.roomId === "6" && payload.seatId === 1 && payload.playerId === a.init.selfId,
+    );
     a.socket.emit("seat-sit", { roomId: "6", seatId: 1 });
     expect(await sat).toEqual({ roomId: "6", seatId: 1, playerId: a.init.selfId });
 

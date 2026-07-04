@@ -4,6 +4,7 @@
  * directly and feed it env fixtures without touching process.env.
  */
 import { z } from "zod";
+import { KNOCK_TIMEOUT_MS } from "@metaverse/shared";
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -19,12 +20,8 @@ const schema = z.object({
   LIVEKIT_API_URL: z.string().min(1).optional(),
   LIVEKIT_API_KEY: z.string().min(1),
   LIVEKIT_API_SECRET: z.string().min(1),
-  ROOM_1_KEY: z.string().min(1).optional(),
-  ROOM_2_KEY: z.string().min(1).optional(),
-  ROOM_3_KEY: z.string().min(1).optional(),
-  ROOM_4_KEY: z.string().min(1).optional(),
-  ROOM_5_KEY: z.string().min(1).optional(),
-  ROOM_6_KEY: z.string().min(1).optional(),
+  // Private rooms are no longer password-gated (PRD 14): entry is admin + knock.
+  // Only the stage presenter key remains a shared secret.
   STAGE_KEY: z.string().min(1).optional(),
   MAP_JSON_URL: z.string().default("/assets/maps/campus.json"),
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
@@ -36,7 +33,10 @@ const schema = z.object({
   LEAVE_GRACE_MS: z.coerce.number().int().positive().finite().default(4_000),
   // Meeting-start countdown (PRD 10). Default mirrors shared MEETING_COUNTDOWN_MS;
   // integration tests shrink it to exercise the countdown → started path quickly.
-  MEETING_COUNTDOWN_MS: z.coerce.number().int().positive().finite().default(3_000)
+  MEETING_COUNTDOWN_MS: z.coerce.number().int().positive().finite().default(3_000),
+  // Knock auto-expiry (PRD 14). Default mirrors shared KNOCK_TIMEOUT_MS;
+  // integration tests shrink it to exercise the knock → timeout path quickly.
+  KNOCK_TIMEOUT_MS: z.coerce.number().int().positive().finite().default(KNOCK_TIMEOUT_MS)
 });
 
 type ParsedEnv = z.infer<typeof schema>;
@@ -65,12 +65,6 @@ function usesDevelopmentSecret(data: ParsedEnv): boolean {
     data.JWT_SECRET.startsWith("replace-") ||
     data.LIVEKIT_API_KEY === "devkey" ||
     data.LIVEKIT_API_SECRET === "local-development-livekit-secret-change-me" ||
-    !data.ROOM_1_KEY || data.ROOM_1_KEY === "1234" ||
-    !data.ROOM_2_KEY || data.ROOM_2_KEY === "4321" ||
-    !data.ROOM_3_KEY || data.ROOM_3_KEY === "3333" ||
-    !data.ROOM_4_KEY || data.ROOM_4_KEY === "4444" ||
-    !data.ROOM_5_KEY || data.ROOM_5_KEY === "5555" ||
-    !data.ROOM_6_KEY || data.ROOM_6_KEY === "6666" ||
     !data.STAGE_KEY || data.STAGE_KEY === "stage-presenter-123" ||
     data.DATABASE_URL.includes("metaverse:metaverse@")
   );

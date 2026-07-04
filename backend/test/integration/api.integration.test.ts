@@ -124,7 +124,7 @@ describe("livekit token", () => {
     expect(denied.status).toBe(403);
     expect(denied.json.error).toBe("seat-required");
 
-    // Mirror the real flow: the key check (`room-enter`) records access, then
+    // Mirror the real flow: admission (knock/approve) records access, then
     // seat-sit claims the seat. Both must be present for a room media token.
     const seated = await sitPlayer(userId, "1", 0);
     expect(seated.ok).toBe(true);

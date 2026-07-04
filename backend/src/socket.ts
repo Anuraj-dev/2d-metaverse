@@ -4,16 +4,20 @@ import {
   BOARD_MATCH_TTL_SECONDS,
   BOARD_TABLES,
   RATE_LIMITS,
+  approveKnockSchema,
   boardAcceptSchema,
   boardMoveSchema,
   boardSitSchema,
   boardUpdateSchema,
+  cancelKnockSchema,
   chatSchema,
+  denyKnockSchema,
   joinSchema,
+  knockSchema,
   moveSchema,
-  roomEnterSchema,
   seatSitSchema,
   socketAuthSchema,
+  toggleAllowAllSchema,
   whisperSchema,
 } from "@metaverse/shared";
 import { verifyToken } from "./auth.js";
@@ -25,8 +29,8 @@ import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
 import type { RoomMeetingSnapshot } from "./meeting.js";
 import { createBoardManager } from "./board-manager.js";
+import { createRoomAdminManager, type RoomAdminManager, type RoomAdminSnapshot } from "./room-admin-manager.js";
 import type { SeatRef } from "./seat-key.js";
-import { verifySecret } from "./password.js";
 import { removeMediaParticipant } from "./media.js";
 import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketData } from "./types.js";
 
@@ -39,8 +43,8 @@ const WHISPER_WINDOW_SECONDS = RATE_LIMITS.whisperWindowSeconds;
 // Integration tests shrink them via env to exercise the timing paths quickly.
 const LEAVE_GRACE_MS = config.LEAVE_GRACE_MS;
 const JOIN_TIMEOUT_MS = config.JOIN_TIMEOUT_MS;
-const ROOM_KEY_ATTEMPT_LIMIT = RATE_LIMITS.roomKeyAttemptLimit;
-const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = RATE_LIMITS.roomKeyAttemptWindowSeconds;
+const KNOCK_LIMIT = RATE_LIMITS.knockLimit;
+const KNOCK_WINDOW_SECONDS = RATE_LIMITS.knockWindowSeconds;
 
 // Where new players enter the world: the campus map's authored spawn point
 // (plaza centre, on the E-W artery — open in every direction). Matches the
@@ -55,6 +59,10 @@ const roomChannel = (roomId: string) => `room:${roomId}`;
 // space is invisible to another running the same campus map. The Redis mirror is
 // likewise scoped by spaceId so table ids (map fixtures) never collide.
 const boardKey = (spaceId: string, tableId: string) => `board:${spaceId}:${tableId}`;
+// Live room-access state (admin, occupants, allow-all) mirrored per room. Cleared
+// at boot by resetEphemeralGameState — restart drops every socket, so the mirror
+// is never restored into a runtime (see room-admin-manager.ts).
+const roomAdminKey = (roomId: string) => `room-admin:${roomId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
 
@@ -80,18 +88,15 @@ async function emitOccupiedSeats(socket: GameSocket, roomId: string): Promise<vo
   });
 }
 
-async function occupiedCount(roomId: string): Promise<number> {
-  const seatIds = await getSeatIds(roomId);
-  if (seatIds.length === 0) return 0;
-  const occupants = await redis.mGet(seatIds.map((seatId) => `seat:${roomId}:${seatId}`));
-  return occupants.filter(Boolean).length;
-}
-
 function broadcastFreedSeat(io: ReturnType<typeof createGameServer>, spaceId: string, seat: SeatRef | null): void {
   if (seat) io.to(spaceChannel(spaceId)).emit("seat-update", { ...seat, playerId: null });
 }
 
-async function leaveCurrentRoom(socket: GameSocket, meetings: MeetingManager): Promise<void> {
+async function leaveCurrentRoom(
+  socket: GameSocket,
+  meetings: MeetingManager,
+  roomAdmins: RoomAdminManager,
+): Promise<void> {
   const { currentRoomId, playerId } = socket.data;
   if (!currentRoomId || !playerId) return;
   await socket.leave(roomChannel(currentRoomId));
@@ -100,6 +105,8 @@ async function leaveCurrentRoom(socket: GameSocket, meetings: MeetingManager): P
   // A client must not remain connected to a room after its socket membership ends.
   await removeMediaParticipant(`room:${currentRoomId}`, playerId);
   meetings.dispatch(currentRoomId, { type: "leave", playerId });
+  // Room-access succession: the leaver may be the admin (promote next occupant).
+  roomAdmins.dispatch(currentRoomId, { type: "leave", playerId });
 }
 
 /** Players holding one of the room's seats right now (Redis seat keys). */
@@ -167,6 +174,49 @@ export function createGameServer(httpServer: HttpServer) {
       return parsed.data;
     },
     log: childLogger({ module: "board" }),
+  });
+
+  // Room-access admin/knock system (PRD 14): the pure rules live in roomAdmin.ts;
+  // this shell writes the room-access grant on admission, runs knock-timeout
+  // timers, and fans effects out to the room channel (admin/occupants), the space
+  // channel (door visibility), and individual sockets (knock results, capacity).
+  const roomAdmins: RoomAdminManager = createRoomAdminManager({
+    knockTimeoutMs: config.KNOCK_TIMEOUT_MS,
+    getRoomContext: async (roomId) => {
+      const room = await getRoom(roomId);
+      return room ? { capacity: room.capacity, spaceId: room.spaceId } : null;
+    },
+    resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
+    admit: async (roomId, playerId, _asAdmin) => {
+      const socket = activeSockets.get(playerId);
+      const spaceId = socket?.data.spaceId;
+      if (!socket || !spaceId) return;
+      if (socket.data.currentRoomId && socket.data.currentRoomId !== roomId) {
+        await leaveCurrentRoom(socket, meetings, roomAdmins);
+      }
+      socket.data.currentRoomId = roomId;
+      await socket.join(roomChannel(roomId));
+      await redis.set(`room-access:${playerId}:${roomId}`, "1", { EX: 8 * 60 * 60 });
+      // World and private-room media are mutually exclusive: evict any world seat.
+      await removeMediaParticipant(`world:${spaceId}`, playerId);
+      // A fresh (unseated) entry cancels a pending meeting countdown; a seated
+      // re-entry (reconnect within grace) must not.
+      const existingSeat = await redis.get(`player-seat:${playerId}`);
+      if (!(existingSeat?.startsWith(`seat:${roomId}:`) ?? false)) {
+        meetings.dispatch(roomId, { type: "enter", playerId });
+      }
+    },
+    toRoom: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
+    toSpace: (spaceId, event, ...payload) => io.to(spaceChannel(spaceId)).emit(event, ...payload),
+    toPlayer: (playerId, event, ...payload) => activeSockets.get(playerId)?.emit(event, ...payload),
+    persist: (roomId, snapshot: RoomAdminSnapshot | null) => {
+      const done =
+        snapshot === null
+          ? redis.del(roomAdminKey(roomId))
+          : redis.set(roomAdminKey(roomId), JSON.stringify(snapshot), { EX: 8 * 60 * 60 });
+      void done.catch((error: unknown) => childLogger({ module: "room-admin" }).error({ err: error, roomId }, "room-admin persist failed"));
+    },
+    log: childLogger({ module: "room-admin" }),
   });
 
   io.use((socket, next) => {
@@ -309,44 +359,55 @@ export function createGameServer(httpServer: HttpServer) {
       socket.emit("whisper", message); // echo so the sender sees their own line
     }));
 
-    socket.on("room-enter", safeHandler("room-enter", async (payload) => {
-      const parsed = roomEnterSchema.safeParse(payload);
+    // Room access (PRD 14): a knock is a request to enter. The pure machine
+    // (via roomAdmins) decides — admit as admin (empty room), auto-admit
+    // (allow-all under capacity), enqueue for the admin, or turn away (full).
+    // All authority lives server-side; the client only asks.
+    socket.on("knock", safeHandler("knock", async (payload) => {
+      const parsed = knockSchema.safeParse(payload);
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
-      if (await isRateLimitExceeded(
-        `room-key-attempt:${playerId}:${parsed.data.roomId}`,
-        ROOM_KEY_ATTEMPT_LIMIT,
-        ROOM_KEY_ATTEMPT_WINDOW_SECONDS
-      )) {
-        socket.emit("room-enter-result", { ok: false, roomId: parsed.data.roomId, reason: "rate-limited" });
-        return;
-      }
+      // Already inside this room? Nothing to knock for.
+      if (socket.data.currentRoomId === parsed.data.roomId) return;
       const room = await getRoom(parsed.data.roomId);
-      if (!room || room.spaceId !== spaceId || !(await verifySecret(parsed.data.key, room.keyHash))) {
-        socket.emit("room-enter-result", { ok: false, roomId: parsed.data.roomId, reason: "bad-key" });
-        return;
-      }
-      const existingSeat = await redis.get(`player-seat:${playerId}`);
-      const alreadySeatedHere = existingSeat?.startsWith(`seat:${room.id}:`) ?? false;
-      if (!alreadySeatedHere && await occupiedCount(room.id) >= room.capacity) {
-        socket.emit("room-enter-result", { ok: false, roomId: room.id, reason: "full" });
-        return;
-      }
-      if (socket.data.currentRoomId && socket.data.currentRoomId !== room.id) await leaveCurrentRoom(socket, meetings);
-      socket.data.currentRoomId = room.id;
-      await socket.join(roomChannel(room.id));
-      await redis.set(`room-access:${playerId}:${room.id}`, "1", { EX: 8 * 60 * 60 });
-      // World and private-room media are mutually exclusive. This server-side
-      // eviction prevents a stale client from leaking or receiving world audio.
-      await removeMediaParticipant(`world:${spaceId}`, playerId);
-      socket.emit("room-enter-result", { ok: true, roomId: room.id });
-      // An unseated entry cancels a pending meeting countdown; a seated player
-      // re-entering (reconnect within grace) must not.
-      if (!alreadySeatedHere) meetings.dispatch(room.id, { type: "enter", playerId });
+      if (!room || room.spaceId !== spaceId) return;
+      // Anti-harassment: cap knock attempts per player+room.
+      if (await isRateLimitExceeded(`knock:${playerId}:${room.id}`, KNOCK_LIMIT, KNOCK_WINDOW_SECONDS)) return;
+      socket.data.knockRoomId = room.id;
+      roomAdmins.dispatch(room.id, { type: "knock", playerId });
+    }));
+
+    socket.on("cancel-knock", safeHandler("cancel-knock", (payload) => {
+      const parsed = cancelKnockSchema.safeParse(payload);
+      const { playerId } = socket.data;
+      if (!parsed.success || !playerId) return;
+      roomAdmins.dispatch(parsed.data.roomId, { type: "cancel-knock", playerId });
+    }));
+
+    socket.on("approve-knock", safeHandler("approve-knock", (payload) => {
+      const parsed = approveKnockSchema.safeParse(payload);
+      const { playerId } = socket.data;
+      if (!parsed.success || !playerId) return;
+      // `by` is the authenticated actor; the machine rejects non-admins.
+      roomAdmins.dispatch(parsed.data.roomId, { type: "approve", by: playerId, playerId: parsed.data.playerId });
+    }));
+
+    socket.on("deny-knock", safeHandler("deny-knock", (payload) => {
+      const parsed = denyKnockSchema.safeParse(payload);
+      const { playerId } = socket.data;
+      if (!parsed.success || !playerId) return;
+      roomAdmins.dispatch(parsed.data.roomId, { type: "deny", by: playerId, playerId: parsed.data.playerId });
+    }));
+
+    socket.on("toggle-allow-all", safeHandler("toggle-allow-all", (payload) => {
+      const parsed = toggleAllowAllSchema.safeParse(payload);
+      const { playerId } = socket.data;
+      if (!parsed.success || !playerId) return;
+      roomAdmins.dispatch(parsed.data.roomId, { type: "toggle-allow-all", by: playerId, value: parsed.data.allowAll });
     }));
 
     socket.on("room-leave", safeHandler("room-leave", async () => {
-      await leaveCurrentRoom(socket, meetings);
+      await leaveCurrentRoom(socket, meetings, roomAdmins);
     }));
 
     socket.on("seat-sit", safeHandler("seat-sit", async (payload) => {
@@ -441,6 +502,12 @@ export function createGameServer(httpServer: HttpServer) {
         // the all-seated picture for those remaining.
         if (previous) meetings.dispatch(previous.roomId, { type: "stand", playerId });
         else if (socket.data.currentRoomId) meetings.dispatch(socket.data.currentRoomId, { type: "leave", playerId });
+        // Room-access: an admin disconnecting past grace hands off (succession);
+        // a pending knocker disconnecting withdraws their knock.
+        if (socket.data.currentRoomId) roomAdmins.dispatch(socket.data.currentRoomId, { type: "leave", playerId });
+        if (socket.data.knockRoomId && socket.data.knockRoomId !== socket.data.currentRoomId) {
+          roomAdmins.dispatch(socket.data.knockRoomId, { type: "leave", playerId });
+        }
       })().catch((error) => log.error({ err: error }, "socket cleanup failed")), LEAVE_GRACE_MS));
     });
   });

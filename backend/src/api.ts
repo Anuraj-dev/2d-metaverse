@@ -149,7 +149,8 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
     const roomId = roomName.slice("room:".length);
     const room = await getRoom(roomId);
     // A private room's media token requires BOTH the seat lock AND the same
-    // room-access grant the key flow establishes (`room-enter`). The seat lock
+    // room-access grant admission establishes (knock/approve or allow-all; PRD 14).
+    // The seat lock
     // alone is not proof of access: the seat-claim Lua never records access, and
     // a seat lock can outlive its access grant (access is revoked on room-leave/
     // disconnect while the seat's TTL persists). Gating on access too keeps the

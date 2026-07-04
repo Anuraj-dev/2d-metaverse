@@ -44,11 +44,9 @@ describe("spaces and rooms", () => {
     expect(await getSpace("does-not-exist")).toBeNull();
   });
 
-  it("getRoom returns capacity and a key hash that verifies the room key", async () => {
+  it("getRoom returns id, space and capacity (no password — PRD 14)", async () => {
     const room = await getRoom("3");
-    expect(room).toMatchObject({ id: "3", spaceId: "1", capacity: 12 });
-    expect(await verifySecret(process.env.ROOM_3_KEY!, room!.keyHash)).toBe(true);
-    expect(await verifySecret("wrong-key", room!.keyHash)).toBe(false);
+    expect(room).toEqual({ id: "3", spaceId: "1", capacity: 12 });
     expect(await getRoom("does-not-exist")).toBeNull();
   });
 
