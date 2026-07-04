@@ -160,6 +160,8 @@ describe("cueForEvent", () => {
     });
     expect(cueForEvent("arcade-point")).toEqual({ clip: "arcade_point", channel: "arcade" });
     expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
+    expect(cueForEvent("stage-on-air")).toEqual({ clip: "meeting_join", channel: "sfx" });
+    expect(cueForEvent("stage-off-air")).toEqual({ clip: "meeting_leave", channel: "sfx" });
   });
   it("returns null for unmapped events", () => {
     expect(cueForEvent("leave-door")).toBeNull();

@@ -205,6 +205,25 @@ you share an *audio zone*.
 - Seated meetings are a separate, already-watertight path (a per-room LiveKit room with
   seat-gated tokens); this model governs only the open-world proximity layer.
 
+**Stage broadcast (PRD 17).** The auditorium stage is a **server-wide** voice surface,
+not proximity audio. Standing still on the stage zone for ~2s raises a keyless confirm
+prompt (the pure state machine `game/onAir.ts`); confirming publishes the performer's mic
+to the shared stage LiveKit room (`stage:<spaceId>`). Every non-private-room client is a
+fixed-volume audience subscriber (`STAGE_VOLUME`, below 1.0 so nearby proximity chat still
+reads over the broadcast — `mediaLogic`'s `"stage-audience"` routing). Two dedupes keep the
+mix clean, both decided in `mediaLogic`: a listener standing next to an on-air performer
+mutes that performer's *proximity* track (they already hear the broadcast — `computeVolumes`
+`mutedIds`), and the performer counts as a `speakingState` `"stage"` speaker so listeners'
+music/ambient ducks. **Private-room exception:** a client holding a room-av mode detaches
+the stage subscription entirely (no stage audio inside a meeting) and re-attaches on exit —
+client-side routing in `App.tsx`, consistent with the zone-audio trust caveat above.
+**Server-authoritative gate (the one thing that is NOT client-trust):** a *publish*-capable
+stage token is issued only when the backend's server-known position (`presence:<spaceId>`)
+is inside the stage zone (`backend/src/stage.ts`), so a malicious client can't broadcast
+server-wide from anywhere on the map. Audience subscription stays client-trust (same phase-2
+server-isolation path as above). The stage rect is mirrored in `backend/src/stage.ts` —
+keep it in sync if the campus stage is re-authored.
+
 **Trust model (v1).** Zone enforcement is **client-side**: each client mutes remotes
 outside its zone locally. A modified client could ignore the volume it's told to apply
 and still listen to a room it's standing outside of — the raw mic track is still

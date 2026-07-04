@@ -34,6 +34,12 @@ const TRACKED_EVENTS = [
   "close-arcade",
   "near-stage",
   "leave-stage",
+  // Stage broadcast (PRD 17): audience subscription state + on-air lifecycle.
+  "stage-audience",
+  "stage-prompt-show",
+  "stage-prompt-hide",
+  "stage-on-air",
+  "stage-off-air",
   "audio-volumes",
   // Meeting lifecycle (PRD 10): server events mirrored by the app shell,
   // plus the portal/grid milestones the shell and overlay emit.

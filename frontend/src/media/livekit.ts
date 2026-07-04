@@ -11,6 +11,7 @@ import { serverBase, authToken } from "../net/auth";
 import { bus } from "../game/eventBus";
 import {
   AUDIO_CUTOFF,
+  STAGE_VOLUME,
   computeVolumes,
   subscribeAction,
   unsubscribeAction,
@@ -21,9 +22,18 @@ import {
 } from "./mediaLogic";
 import { speakingState } from "./speakingState";
 
+/**
+ * Identities whose live stage audio the local client is currently subscribed to
+ * (PRD 17). The world proximity room mutes these performers' proximity tracks so a
+ * listener standing near an on-air performer never hears a doubled signal — the
+ * broadcast (fixed volume) wins. Updated by `StageVideo` as stage audio tracks
+ * attach/detach; read by `WorldAudio` on every positions tick.
+ */
+let stagePerformerIds: ReadonlySet<string> = new Set();
+
 async function fetchToken(
   roomName: string,
-  presenterKey?: string
+  opts?: { stagePublish?: boolean }
 ): Promise<{ token: string; url: string }> {
   const res = await fetch(`${serverBase}/api/v1/livekit/token`, {
     method: "POST",
@@ -31,7 +41,7 @@ async function fetchToken(
       "Content-Type": "application/json",
       Authorization: `Bearer ${authToken()}`,
     },
-    body: JSON.stringify({ roomName, ...(presenterKey !== undefined ? { presenterKey } : {}) }),
+    body: JSON.stringify({ roomName, ...(opts?.stagePublish ? { stagePublish: true } : {}) }),
   });
   if (!res.ok) throw new Error(`livekit token ${res.status}`);
   // Backend returns { livekitToken, url }.
@@ -69,10 +79,15 @@ function wireTrackRouting(
     const action = subscribeAction(kind, mode);
     if (action === "surface-video") {
       sinks.surfaceVideo(participant.identity, track.mediaStreamTrack);
-    } else if (action === "attach-audio" || action === "attach-audio-silent") {
+    } else if (
+      action === "attach-audio" ||
+      action === "attach-audio-silent" ||
+      action === "attach-audio-fixed"
+    ) {
       const el = track.attach() as HTMLAudioElement;
       el.dataset.identity = participant.identity;
       if (action === "attach-audio-silent") el.volume = 0;
+      else if (action === "attach-audio-fixed") el.volume = STAGE_VOLUME;
       document.body.appendChild(el);
       sinks.attachAudio(participant.identity, el);
     }
@@ -154,7 +169,9 @@ class WorldAudio {
     const remoteIds = p.players
       .filter((pl) => !pl.self && pl.id !== this.selfId)
       .map((pl) => pl.id);
-    const vols = computeVolumes(p.players, this.selfId, remoteIds, AUDIO_CUTOFF);
+    // Mute any remote who is a live stage performer: the listener already hears
+    // them server-wide off the stage room, so their proximity track is deduped.
+    const vols = computeVolumes(p.players, this.selfId, remoteIds, AUDIO_CUTOFF, stagePerformerIds);
     if (!vols) return;
     for (const [id, el] of this.audioEls) el.volume = vols.get(id) ?? 0;
     // Surface the computed world-audio volumes on the bus unconditionally:
@@ -299,13 +316,25 @@ class RoomVideo {
   }
 }
 
-/* ----------------------------- Stage video ----------------------------- */
+/* ----------------------------- Stage broadcast ----------------------------- */
+/**
+ * The stage LiveKit room (`stage:<spaceId>`), used for BOTH the server-wide voice
+ * broadcast (PRD 17) and the explicit "Go Live" video. One connection per client
+ * (a participant can't join the same room twice), so this holds a single `mode`:
+ *  - "audience": subscribe-only. Every non-private-room client is here; remote
+ *    performers attach at the FIXED `STAGE_VOLUME` ("stage-audience" routing).
+ *  - "performer": reconnected with a position-validated publish token; publishes
+ *    mic (voice) and optionally cam ("Go Live"). Still subscribes to co-performers.
+ * Going on/off air reconnects with the appropriate token. Both connections feed
+ * the shared speaking-state seam so a broadcasting performer ducks listeners' beds.
+ */
 class StageVideo {
   private room: LKRoom | null = null;
   private listeners = new Set<(tracks: RoomTrack[]) => void>();
   private tracks = new Map<string, MediaStreamTrack>();
   private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
+  private mode: "none" | "audience" | "performer" = "none";
 
   onTracks(cb: (tracks: RoomTrack[]) => void) {
     this.listeners.add(cb);
@@ -323,16 +352,30 @@ class StageVideo {
     const snap = this.snapshot();
     this.listeners.forEach((cb) => cb(snap));
   }
+  /** Publish the live-performer set for the world room's proximity dedupe. */
+  private syncPerformers() {
+    stagePerformerIds = new Set(this.audioEls.keys());
+  }
 
-  async joinAsAudience(spaceId: string, selfId: string) {
-    if (this.room) return;
+  private async open(spaceId: string, selfId: string, opts: { publish: boolean; video: boolean }) {
     this.selfId = selfId;
     try {
-      const { token, url } = await fetchToken(stageRoomName(spaceId));
+      const { token, url } = await fetchToken(
+        stageRoomName(spaceId),
+        opts.publish ? { stagePublish: true } : undefined,
+      );
       const { Room, RoomEvent, Track } = await import("livekit-client");
-      const room = new Room();
+      const room = opts.publish
+        ? new Room({
+            audioCaptureDefaults: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          })
+        : new Room();
       this.room = room;
-      wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
+      wireTrackRouting(room, { RoomEvent, Track }, "stage-audience", {
         surfaceVideo: (id, t) => {
           this.tracks.set(id, t);
           this.emit();
@@ -341,77 +384,102 @@ class StageVideo {
           this.tracks.delete(id);
           this.emit();
         },
-        attachAudio: (id, el) => this.audioEls.set(id, el),
+        attachAudio: (id, el) => {
+          this.audioEls.set(id, el);
+          this.syncPerformers();
+        },
         detachAudio: (id) => {
           this.audioEls.get(id)?.remove();
           this.audioEls.delete(id);
+          this.syncPerformers();
         },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.tracks.delete(p.identity);
         this.audioEls.get(p.identity)?.remove();
         this.audioEls.delete(p.identity);
+        this.syncPerformers();
         this.emit();
       });
+      // A broadcasting performer counts as an audible speaking peer for every
+      // subscribed listener's duck (PRD 15 speaking-state seam, "stage" source).
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        speakingState.setSpeakers(
+          "stage",
+          speakers.map((s) => s.identity),
+        );
+      });
       await room.connect(url, token);
+      if (opts.publish) {
+        await room.localParticipant.setMicrophoneEnabled(true);
+        if (opts.video) {
+          await room.localParticipant.setCameraEnabled(true);
+          const localVideo = room.localParticipant
+            .getTrackPublications()
+            .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;
+          if (localVideo) {
+            this.tracks.set(selfId, localVideo);
+            this.emit();
+          }
+        }
+      }
     } catch (e) {
-      console.warn("Stage (audience) unavailable:", e);
+      console.warn("Stage unavailable:", e);
     }
   }
 
-  async joinAsPresenter(spaceId: string, selfId: string, presenterKey: string) {
+  /** Subscribe-only audience connection — every non-private-room client (PRD 17). */
+  async joinAsAudience(spaceId: string, selfId: string) {
     if (this.room) return;
-    this.selfId = selfId;
-    try {
-      const { token, url } = await fetchToken(stageRoomName(spaceId), presenterKey);
-      const { Room, RoomEvent, Track } = await import("livekit-client");
-      const room = new Room({
-        audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      this.room = room;
-      wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
-        surfaceVideo: (id, t) => {
-          this.tracks.set(id, t);
-          this.emit();
-        },
-        dropVideo: (id) => {
-          this.tracks.delete(id);
-          this.emit();
-        },
-        attachAudio: (id, el) => this.audioEls.set(id, el),
-        detachAudio: (id) => {
-          this.audioEls.get(id)?.remove();
-          this.audioEls.delete(id);
-        },
-      });
-      room.on(RoomEvent.ParticipantDisconnected, (p) => {
-        this.tracks.delete(p.identity);
-        this.audioEls.get(p.identity)?.remove();
-        this.audioEls.delete(p.identity);
-        this.emit();
-      });
-      await room.connect(url, token);
-      await room.localParticipant.setCameraEnabled(true);
-      await room.localParticipant.setMicrophoneEnabled(true);
-      const localVideo = room.localParticipant
+    await this.open(spaceId, selfId, { publish: false, video: false });
+    this.mode = "audience";
+  }
+
+  /** Voice broadcast: reconnect with a publish token and go live on mic. */
+  async goOnAir(spaceId: string, selfId: string) {
+    if (this.mode === "performer") return;
+    await this.leave();
+    await this.open(spaceId, selfId, { publish: true, video: false });
+    this.mode = "performer";
+  }
+
+  /** Explicit keyless "Go Live" video: publish cam + mic (adds cam if already on air). */
+  async goLive(spaceId: string, selfId: string) {
+    if (this.mode === "performer" && this.room) {
+      await this.room.localParticipant.setCameraEnabled(true);
+      const { Track } = await import("livekit-client");
+      const localVideo = this.room.localParticipant
         .getTrackPublications()
         .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;
       if (localVideo) {
-        this.tracks.set(selfId, localVideo);
+        this.tracks.set(this.selfId, localVideo);
         this.emit();
       }
-    } catch (e) {
-      console.warn("Stage (presenter) unavailable:", e);
+      return;
     }
+    await this.leave();
+    await this.open(spaceId, selfId, { publish: true, video: true });
+    this.mode = "performer";
+  }
+
+  /** Stop broadcasting but stay subscribed to the stage as audience. */
+  async goOffAir(spaceId: string, selfId: string) {
+    if (this.mode !== "performer") return;
+    await this.leave();
+    await this.open(spaceId, selfId, { publish: false, video: false });
+    this.mode = "audience";
   }
 
   async leave() {
     this.tracks.clear();
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
+    this.syncPerformers();
+    speakingState.clear("stage");
     this.emit();
     await this.room?.disconnect();
     this.room = null;
+    this.mode = "none";
   }
 }
 

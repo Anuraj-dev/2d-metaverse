@@ -189,7 +189,6 @@ export const LIMITS = {
   passwordMax: 128,
   /** LiveKit token request. */
   roomNameMax: 128,
-  presenterKeyMax: 128,
   /** Client error beacon payload caps. */
   clientErrorMessageMax: 2000,
   clientErrorStackMax: 8000,

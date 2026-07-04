@@ -24,7 +24,9 @@ const media = vi.hoisted(() => {
     },
     stageVideo: {
       joinAsAudience: ok(),
-      joinAsPresenter: ok(),
+      goOnAir: ok(),
+      goOffAir: ok(),
+      goLive: ok(),
       leave: ok(),
       onTracks: vi.fn(() => () => {}),
     },
@@ -163,12 +165,14 @@ describe("App shell", () => {
     expect(media.worldAudio.start).toHaveBeenCalledTimes(1);
   });
 
-  it("entering a private room stops world audio and leaves room video", async () => {
+  it("entering a private room stops world audio and detaches room + stage video", async () => {
     render(<App />);
     await enterAndInit();
     await emit(() => bus.emit("room-entered", { roomId: "D" }));
     await waitFor(() => expect(media.worldAudio.stop).toHaveBeenCalled());
     expect(media.roomVideo.leave).toHaveBeenCalled();
+    // No stage audio inside a private room (PRD 17 private-room exception).
+    expect(media.stageVideo.leave).toHaveBeenCalled();
   });
 
   it("sitting (seat-update for self) stops world audio and joins the room video", async () => {
@@ -204,13 +208,19 @@ describe("App shell", () => {
     expect(media.roomVideo.leave).toHaveBeenCalled();
   });
 
-  it("stepping onto the stage joins as audience; leaving the stage leaves it", async () => {
+  it("subscribes to the stage as audience on init (server-wide, PRD 17)", async () => {
     render(<App />);
     await enterAndInit();
-    await emit(() => bus.emit("near-stage"));
     await waitFor(() => expect(media.stageVideo.joinAsAudience).toHaveBeenCalledWith("1", SELF));
-    await emit(() => bus.emit("leave-stage"));
-    await waitFor(() => expect(media.stageVideo.leave).toHaveBeenCalled());
+  });
+
+  it("going on air / off air drives the stage publish reconnect", async () => {
+    render(<App />);
+    await enterAndInit();
+    await emit(() => bus.emit("stage-on-air"));
+    await waitFor(() => expect(media.stageVideo.goOnAir).toHaveBeenCalledWith("1", SELF));
+    await emit(() => bus.emit("stage-off-air"));
+    await waitFor(() => expect(media.stageVideo.goOffAir).toHaveBeenCalledWith("1", SELF));
   });
 
   it("holds a queued transition until the pending one fully settles, then runs in order", async () => {
@@ -225,23 +235,21 @@ describe("App shell", () => {
       return gate.promise;
     });
     media.roomVideo.join.mockImplementationOnce(async () => void order.push("room-join"));
-    media.stageVideo.joinAsAudience.mockImplementationOnce(
-      async () => void order.push("stage-join")
-    );
+    media.stageVideo.goOnAir.mockImplementationOnce(async () => void order.push("stage-on-air"));
 
     await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
-    // op2 (near-stage) enqueued while op1 is still pending on the gate.
-    await emit(() => bus.emit("near-stage"));
+    // op2 (stage-on-air) enqueued while op1 is still pending on the gate.
+    await emit(() => bus.emit("stage-on-air"));
 
     await waitFor(() => expect(order).toEqual(["world-stop"]));
     // Neither the rest of op1 nor any of op2 may start while op1 is pending —
     // this fails if the serialized mediaTransition queue is removed.
     expect(media.roomVideo.join).not.toHaveBeenCalled();
-    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
 
     gate.resolve();
     await waitFor(() =>
-      expect(order).toEqual(["world-stop", "room-join", "stage-join"])
+      expect(order).toEqual(["world-stop", "room-join", "stage-on-air"])
     );
   });
 
@@ -381,17 +389,18 @@ describe("App shell", () => {
 
     // Phase A is still running (no portal-phase-a-done): the portal-in op must
     // HOLD the queue — an op enqueued behind it may not start.
-    await emit(() => bus.emit("near-stage"));
-    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+    media.stageVideo.goOnAir.mockClear();
+    await emit(() => bus.emit("stage-on-air"));
+    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
 
     // Self leaves mid-cinematic: cancellation settles the pending Phase A, the
-    // queue drains in order (portal-exit runs, then the stage join), and the
+    // queue drains in order (portal-exit runs, then the stage op), and the
     // overlay is gone.
     await emit(() =>
       netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: SELF })
     );
     await waitFor(() => expect(busEvents).toContain("portal-exit"));
-    await waitFor(() => expect(media.stageVideo.joinAsAudience).toHaveBeenCalled());
+    await waitFor(() => expect(media.stageVideo.goOnAir).toHaveBeenCalled());
     expect(busEvents.indexOf("portal-enter")).toBeLessThan(busEvents.indexOf("portal-exit"));
     expect(screen.queryByTestId("meeting-overlay")).toBeNull();
 
@@ -480,9 +489,10 @@ describe("App shell", () => {
     // op1 starts and blocks on the gate…
     await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
     await waitFor(() => expect(media.worldAudio.stop).toHaveBeenCalledTimes(1));
-    // …op2 is queued behind it, not yet started.
-    await emit(() => bus.emit("near-stage"));
-    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+    // …op2 (stage-on-air) is queued behind it, not yet started.
+    media.stageVideo.goOnAir.mockClear();
+    await emit(() => bus.emit("stage-on-air"));
+    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
 
     unmount();
     // Teardown must not run while op1 is still pending.
@@ -496,11 +506,11 @@ describe("App shell", () => {
     // op1 had already started, so it ran to completion after the gate opened…
     expect(media.roomVideo.join).toHaveBeenCalledWith("D", SELF);
     // …but the queued op2 was dropped by the disposed guard.
-    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
 
     // Listeners are gone: a post-unmount bus event triggers no new joins.
-    bus.emit("near-stage");
+    bus.emit("stage-on-air");
     await Promise.resolve();
-    expect(media.stageVideo.joinAsAudience).not.toHaveBeenCalled();
+    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
   });
 });

@@ -21,10 +21,15 @@ export const credentialsSchema = z.object({
 });
 export type Credentials = z.infer<typeof credentialsSchema>;
 
-/** `POST /api/v1/livekit/token` body. */
+/**
+ * `POST /api/v1/livekit/token` body. `stagePublish` requests a publish-capable
+ * stage token (PRD 17); the backend grants it only when the requester's
+ * server-known position is inside the stage zone (no presenter key). Absent /
+ * false yields a subscribe-only audience token.
+ */
 export const liveKitSchema = z.object({
   roomName: z.string().min(1).max(LIMITS.roomNameMax),
-  presenterKey: z.string().max(LIMITS.presenterKeyMax).optional(),
+  stagePublish: z.boolean().optional(),
 });
 export type LiveKitTokenRequest = z.infer<typeof liveKitSchema>;
 
