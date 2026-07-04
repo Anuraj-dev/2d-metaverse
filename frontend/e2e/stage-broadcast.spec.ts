@@ -4,20 +4,24 @@
  * (on-air lifecycle, audience subscription state) — never RTC internals. No sleeps:
  * every wait is a bus event or a hook-state condition.
  *
- * Waypoint path BFS-verified reachable against campus.json (walls layer + inflated
- * solid furniture, sampled at the avatar's (x, y+8) collision point): spawn → east
- * along the y≈712 corridor through the plaza→stage doorway → north into the stage
- * interior. Straight segments each re-checked every 4px; standing point well inside
- * the stage_zone rect (not on a boundary).
+ * Waypoint path verified against campus.json with the avatar's REAL collision box
+ * (18×14 body, offset per WorldScene `setSize(18,14).setOffset(7,16)` → x±9,
+ * y..y+14), the walls layer AND the 54 solid-furniture footprints (each sized from
+ * its texture PNG, 0.8w×0.55h bottom-anchored). The stage is walled with a single
+ * 2-tile doorway in its south wall at x 1568–1600. Route: drop into the clear
+ * corridor at y≈736 (16px below the stage's south wall so steering drift can't clip
+ * the SW corner) → east under the wall → north straight through the doorway centre
+ * (x=1584) into the interior. Every straight segment re-checked every 3px with the
+ * full body box; standing point well inside the stage_zone rect.
  */
 import { test, expect } from "@playwright/test";
 import { BACKEND_URL, signUpAndJoin, enterRoom, walkPath } from "./helpers";
 
 const STAGE_PATH: [number, number][] = [
   [960, 704],
-  [1296, 712],
-  [1568, 712],
-  [1584, 512], // inside stage_zone (rect 1312,256 + 576×448); sample (1584,520) walkable
+  [1150, 736], // drop south into the corridor before the stage's west wall (x=1296)
+  [1584, 736], // east under the south wall, aligned with the doorway centre
+  [1584, 500], // north through the 2-tile doorway (x 1568–1600) into stage_zone
 ];
 
 test("a performer standing still on the stage goes on air with a publish token", async ({
