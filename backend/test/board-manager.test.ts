@@ -291,6 +291,24 @@ describe("board manager", () => {
     expect(errors).toContainEqual({ playerId: "a", payload: { tableId: C4, reason: "seat-taken" } });
   });
 
+  it("two overlapping sits to the SAME seat — one is seated, the other is rejected", async () => {
+    // The core seat-exclusivity guard: with both sits in flight the space queue
+    // serializes them, so exactly one player lands on the seat and the loser gets
+    // an authoritative seat-taken rejection (never a silent overwrite / double-seat).
+    const gate = deferredLoad();
+    const { manager, errors } = makeManager(gate.load);
+    manager.dispatch(SPACE, TABLE, { type: "sit", seat: 0, playerId: "a" });
+    manager.dispatch(SPACE, TABLE, { type: "sit", seat: 0, playerId: "b" });
+    gate.release(SPACE, TABLE);
+    await manager.settle();
+
+    const seat0 = (await manager.currentSnapshot(SPACE, TABLE))?.seats[0]?.id;
+    expect(seat0).toBe("a"); // first sit wins; b never overwrites it
+    // The second sitter (b, enqueued behind a) is the one rejected.
+    expect(errors).toContainEqual({ playerId: "b", payload: { tableId: TABLE, reason: "seat-taken" } });
+    expect(errors.some((e) => e.playerId === "a")).toBe(false);
+  });
+
   it("same-table move, move, stand apply in arrival order — the second move still commits", async () => {
     const { manager, updates } = makeManager();
     // Active match: a = seat 0 (mark 1, moves first), b = seat 1 (mark 2).

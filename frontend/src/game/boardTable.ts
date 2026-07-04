@@ -37,6 +37,36 @@ export interface BoardTableView {
   seatNames: [string | null, string | null];
 }
 
+/** Seat occupant ids for a table snapshot, by seat index (null when empty). */
+export type BoardSeatOccupants = readonly [string | null, string | null];
+
+/** Extract the occupant ids of a snapshot's two seats. */
+export function boardSeatOccupants(snapshot: BoardUpdatePayload): BoardSeatOccupants {
+  return [snapshot.seats[0]?.id ?? null, snapshot.seats[1]?.id ?? null];
+}
+
+/** The id holding `seat`, or null (also null for any out-of-range seat index). */
+export function boardSeatHolder(occupants: BoardSeatOccupants, seat: number): string | null {
+  if (seat === 0) return occupants[0];
+  if (seat === 1) return occupants[1];
+  return null;
+}
+
+/**
+ * May `selfId` sit on `seat`? True only when the seat is empty or already theirs
+ * (re-sit is a no-op). A seat held by ANY other player is not takeable — this is
+ * the client-side prevention mirror of the server's authoritative `seat-taken`
+ * rejection, so a taken board seat is never offered.
+ */
+export function canTakeBoardSeat(
+  occupants: BoardSeatOccupants,
+  seat: number,
+  selfId: string,
+): boolean {
+  const holder = boardSeatHolder(occupants, seat);
+  return holder === null || holder === selfId;
+}
+
 function gridSize(game: BoardGame): { columns: number; rows: number } {
   return game === "connect4"
     ? { columns: CONNECT4_COLS, rows: CONNECT4_ROWS }

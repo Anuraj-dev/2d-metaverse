@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { BoardOccupant, BoardUpdatePayload } from "@metaverse/shared";
-import { boardTableView, clickToMove } from "./boardTable";
+import {
+  boardSeatHolder,
+  boardSeatOccupants,
+  boardTableView,
+  canTakeBoardSeat,
+  clickToMove,
+} from "./boardTable";
 
 const board9 = (fill: 0 | 1 | 2 = 0): (0 | 1 | 2)[] => Array<0 | 1 | 2>(9).fill(fill);
 
@@ -27,6 +33,40 @@ describe("clickToMove", () => {
     expect(clickToMove("connect4", 0)).toBe(0);
     expect(clickToMove("connect4", 9)).toBe(2); // row 1, col 2 → column 2
     expect(clickToMove("connect4", 41)).toBe(6);
+  });
+});
+
+describe("board-seat occupancy (client-side seat-taken prevention)", () => {
+  it("reads occupant ids per seat, null when empty", () => {
+    expect(boardSeatOccupants(snap({ seats: [alice, null] }))).toEqual(["a", null]);
+    expect(boardSeatOccupants(snap({ seats: [alice, bob] }))).toEqual(["a", "b"]);
+    expect(boardSeatOccupants(snap({ seats: [null, null] }))).toEqual([null, null]);
+  });
+
+  it("boardSeatHolder returns the seat's id (null for empty or out-of-range)", () => {
+    expect(boardSeatHolder(["a", "b"], 0)).toBe("a");
+    expect(boardSeatHolder(["a", "b"], 1)).toBe("b");
+    expect(boardSeatHolder(["a", null], 1)).toBeNull();
+    expect(boardSeatHolder(["a", "b"], 2)).toBeNull();
+  });
+
+  it("an empty seat is takeable by anyone", () => {
+    expect(canTakeBoardSeat([null, null], 0, "a")).toBe(true);
+    expect(canTakeBoardSeat(["a", null], 1, "b")).toBe(true);
+  });
+
+  it("a seat held by another player is NOT takeable (would double-seat)", () => {
+    expect(canTakeBoardSeat(["a", null], 0, "b")).toBe(false);
+    expect(canTakeBoardSeat(["a", "b"], 1, "a")).toBe(false);
+  });
+
+  it("re-taking your own seat is allowed (no-op re-sit)", () => {
+    expect(canTakeBoardSeat(["a", null], 0, "a")).toBe(true);
+    expect(canTakeBoardSeat(["a", "b"], 1, "b")).toBe(true);
+  });
+
+  it("an out-of-range seat index is treated as empty/takeable", () => {
+    expect(canTakeBoardSeat(["a", "b"], 2, "c")).toBe(true);
   });
 });
 
