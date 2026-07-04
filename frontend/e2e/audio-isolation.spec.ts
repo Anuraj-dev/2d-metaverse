@@ -79,8 +79,8 @@ test("a player entering a room goes silent to those outside it", async ({ browse
     // Both walk down to the hostel forecourt and stand outdoors, ~84px apart in
     // the same (outdoor) zone — well within the 200px cutoff. A stands off to
     // the east (x=784) so it never blocks B's descent down the x=560 path.
-    await walkPath(pageA, [[944, 600], [560, 600], [560, 1520], [784, 1520]]);
-    await walkPath(pageB, [[944, 600], [560, 600], [560, 1520], [700, 1520]]);
+    await walkPath(pageA, [[560, 704], [560, 1520], [784, 1520]]);
+    await walkPath(pageB, [[560, 704], [560, 1520], [700, 1520]]);
 
     // A hears B: same zone + close ⇒ non-zero world-audio volume.
     await waitForVolume(pageA, idB, "audible");

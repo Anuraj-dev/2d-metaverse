@@ -199,8 +199,8 @@ export default class WorldScene extends Phaser.Scene {
 
     // spawn point
     const spawn = map.findObject("spawn", (o) => o.name === "spawn");
-    const sx = (spawn?.x as number) ?? 320;
-    const sy = (spawn?.y as number) ?? 288;
+    const sx = (spawn?.x as number) ?? 960;
+    const sy = (spawn?.y as number) ?? 704;
 
     this.player = this.physics.add.sprite(sx, sy, this.avatar, idleFrame("down"));
     this.player.setSize(18, 14).setOffset(7, 16);

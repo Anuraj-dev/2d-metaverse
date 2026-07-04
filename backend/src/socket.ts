@@ -42,6 +42,12 @@ const JOIN_TIMEOUT_MS = config.JOIN_TIMEOUT_MS;
 const ROOM_KEY_ATTEMPT_LIMIT = RATE_LIMITS.roomKeyAttemptLimit;
 const ROOM_KEY_ATTEMPT_WINDOW_SECONDS = RATE_LIMITS.roomKeyAttemptWindowSeconds;
 
+// Where new players enter the world: the campus map's authored spawn point
+// (plaza centre, on the E-W artery — open in every direction). Matches the
+// `spawn` object in campus.json and the WorldScene fallback.
+const SPAWN_X = 960;
+const SPAWN_Y = 704;
+
 const spaceChannel = (spaceId: string) => `space:${spaceId}`;
 const roomChannel = (roomId: string) => `room:${roomId}`;
 // Board updates reach seated players + passing spectators via the space channel
@@ -194,8 +200,8 @@ export function createGameServer(httpServer: HttpServer) {
       void redis.hSet(`presence:${socket.data.spaceId}`, socket.data.playerId, JSON.stringify({
         id: socket.data.playerId,
         name: socket.data.username,
-        x: 320,
-        y: 288,
+        x: SPAWN_X,
+        y: SPAWN_Y,
         dir: "down",
         connectionId: socket.id
       }));
@@ -233,7 +239,7 @@ export function createGameServer(httpServer: HttpServer) {
       await socket.join(spaceChannel(parsed.data.spaceId));
 
       const players = (await presenceFor(parsed.data.spaceId)).filter((player) => player.id !== userId);
-      const self: PlayerState = { id: userId, name: username, x: 320, y: 288, dir: "down" };
+      const self: PlayerState = { id: userId, name: username, x: SPAWN_X, y: SPAWN_Y, dir: "down" };
       await redis.hSet(`presence:${parsed.data.spaceId}`, userId, JSON.stringify({ ...self, connectionId: socket.id }));
       socket.emit("init", { selfId: userId, players: [self, ...players] });
       socket.to(spaceChannel(parsed.data.spaceId)).emit("player-joined", self);
