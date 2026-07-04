@@ -14,6 +14,7 @@ import {
   denyKnockSchema,
   joinSchema,
   knockSchema,
+  meetingChatSchema,
   moveSchema,
   seatSitSchema,
   socketAuthSchema,
@@ -39,6 +40,8 @@ type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<stri
 // Payload schemas + abuse-protection windows live in @metaverse/shared.
 const WHISPER_LIMIT = RATE_LIMITS.whisperLimit;
 const WHISPER_WINDOW_SECONDS = RATE_LIMITS.whisperWindowSeconds;
+const MEETING_CHAT_LIMIT = RATE_LIMITS.meetingChatLimit;
+const MEETING_CHAT_WINDOW_SECONDS = RATE_LIMITS.meetingChatWindowSeconds;
 // Validated in parse-config.ts (positive finite integers; defaults 4s / 10s).
 // Integration tests shrink them via env to exercise the timing paths quickly.
 const LEAVE_GRACE_MS = config.LEAVE_GRACE_MS;
@@ -140,6 +143,9 @@ export function createGameServer(httpServer: HttpServer) {
     },
     resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
     broadcast: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
+    // In-meeting chat is delivered per-participant (never the room channel), so
+    // an unseated occupant sharing the room zone can't eavesdrop on the meeting.
+    sendToPlayer: (playerId, event, ...payload) => activeSockets.get(playerId)?.emit(event, ...payload),
     log: childLogger({ module: "meeting" }),
   });
 
@@ -334,6 +340,18 @@ export function createGameServer(httpServer: HttpServer) {
         scope: toWorld ? "world" : currentRoomId
       };
       io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId)).emit("chat", message);
+    }));
+
+    // In-meeting chat (PRD 10): scoped to the sender's live meeting. The meeting
+    // manager owns the participant set and per-socket fan-out — this handler only
+    // validates the wire shape, rate-limits, and hands off; membership/scoping is
+    // decided there (a non-participant, or a room with no live meeting, is a no-op).
+    socket.on("meeting-chat", safeHandler("meeting-chat", async (payload) => {
+      const parsed = meetingChatSchema.safeParse(payload);
+      const { playerId, currentRoomId } = socket.data;
+      if (!parsed.success || !playerId || !currentRoomId) return;
+      if (await isRateLimitExceeded(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS)) return;
+      meetings.chat(currentRoomId, playerId, parsed.data.text);
     }));
 
     socket.on("whisper", safeHandler("whisper", async (payload) => {

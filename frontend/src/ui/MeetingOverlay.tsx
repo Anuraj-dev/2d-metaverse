@@ -12,13 +12,16 @@
  *
  * Lazy-loaded (motion + LiveKit components stay out of the entry chunk).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import "@livekit/components-styles";
-import type { MeetingParticipant } from "@metaverse/shared";
+import { SERVER_EVENTS, type MeetingChatMessage, type MeetingParticipant } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
+import { EMPTY_MEETING_CHAT, appendMeetingChat } from "../game/meetingChat";
+import { sharedNet } from "../net/shared";
 import { roomVideo } from "../media/livekit";
 import MeetingGrid from "./MeetingGrid";
+import MeetingChatPanel from "./MeetingChatPanel";
 
 export interface MeetingOverlayProps {
   backdrop: string | null;
@@ -103,6 +106,20 @@ export default function MeetingOverlay({
   const [cam, setCam] = useState(true);
   const selfChar = localStorage.getItem("avatar") ?? undefined;
 
+  // In-meeting chat (PRD 10). Owned here because the overlay is mounted only for
+  // the meeting's lifetime: the transcript starts empty and is discarded on
+  // unmount, so it's ephemeral and a latecomer gets no backlog — no manual reset.
+  // The server owns scoping (per-participant relay), so a line only arrives when
+  // we're a participant; we mirror it on the bus for e2e/HUD observability.
+  const [chat, setChat] = useState(EMPTY_MEETING_CHAT);
+  useEffect(() => {
+    const net = sharedNet();
+    return net.on(SERVER_EVENTS.meetingChat, (message: MeetingChatMessage) => {
+      bus.emit(SERVER_EVENTS.meetingChat, message);
+      setChat((prev) => appendMeetingChat(prev, message, selfId));
+    });
+  }, [selfId]);
+
   const toggleMic = () => {
     const on = !mic;
     setMic(on);
@@ -179,7 +196,10 @@ export default function MeetingOverlay({
               </button>
             </div>
           </header>
-          <MeetingGrid participants={participants} selfId={selfId} selfChar={selfChar} />
+          <div className="meeting-body">
+            <MeetingGrid participants={participants} selfId={selfId} selfChar={selfChar} />
+            <MeetingChatPanel lines={chat.lines} onSend={(text) => sharedNet().meetingChat(text)} />
+          </div>
         </motion.div>
       )}
     </div>

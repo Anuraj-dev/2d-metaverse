@@ -26,17 +26,34 @@ type MeetingBroadcast = <E extends keyof ServerToClientEvents>(
   ...payload: Parameters<ServerToClientEvents[E]>
 ) => void;
 
+/** Deliver one event to a single participant's socket (per-player, not room-wide). */
+type MeetingSendToPlayer = <E extends keyof ServerToClientEvents>(
+  playerId: string,
+  event: E,
+  ...payload: Parameters<ServerToClientEvents[E]>
+) => void;
+
 export interface MeetingManagerDeps {
   countdownMs: number;
   getSnapshot: (roomId: string) => Promise<RoomMeetingSnapshot>;
   resolveName: (playerId: string) => string;
   broadcast: MeetingBroadcast;
+  /** Per-participant delivery, so in-meeting chat never leaks to spectators. */
+  sendToPlayer: MeetingSendToPlayer;
   log: Logger;
 }
 
 export interface MeetingManager {
   /** Feed a room-occupancy event; effects broadcast asynchronously. */
   dispatch: (roomId: string, event: MeetingEvent) => void;
+  /**
+   * Relay an in-meeting chat line (PRD 10). No-op unless the room's meeting is
+   * live AND the sender is a current participant; delivered per-socket to the
+   * participant set only (the sender included, so their own line echoes back).
+   * Rides the room's serialized queue, so the gate always sees post-transition
+   * state — a chat racing a queued stand/leave can never use a stale roster.
+   */
+  chat: (roomId: string, senderId: string, text: string) => void;
   /** Await all in-flight dispatches (test synchronization only). */
   settle: () => Promise<void>;
 }
@@ -101,6 +118,29 @@ export function createMeetingManager(deps: MeetingManagerDeps): MeetingManager {
     }
   };
 
+  /** Chain a task onto the room's serialized queue (shared by dispatch + chat). */
+  const enqueue = (
+    roomId: string,
+    room: RoomMeeting,
+    task: () => Promise<void> | void,
+    onError: (error: unknown) => void,
+  ): void => {
+    room.pending += 1;
+    room.queue = room.queue
+      .then(task)
+      .catch(onError)
+      .finally(() => {
+        room.pending -= 1;
+        // Drop fully settled idle rooms so the map never leaks across a
+        // long-lived process. Never drop mid-queue: a queued task still
+        // holds this room object, and splitting state across two objects
+        // would fork the machine.
+        if (room.pending === 0 && room.state.phase === "idle" && !room.timer) {
+          rooms.delete(roomId);
+        }
+      });
+  };
+
   const dispatch = (roomId: string, event: MeetingEvent): void => {
     let room = rooms.get(roomId);
     if (!room) {
@@ -108,27 +148,44 @@ export function createMeetingManager(deps: MeetingManagerDeps): MeetingManager {
       rooms.set(roomId, room);
     }
     const current = room;
-    current.pending += 1;
-    current.queue = current.queue
-      .then(() => apply(roomId, current, event))
-      .catch((error: unknown) => {
-        deps.log.error({ err: error, roomId, event }, "meeting dispatch failed");
-      })
-      .finally(() => {
-        current.pending -= 1;
-        // Drop fully settled idle rooms so the map never leaks across a
-        // long-lived process. Never drop mid-queue: a queued dispatch still
-        // holds this room object, and splitting state across two objects
-        // would fork the machine.
-        if (current.pending === 0 && current.state.phase === "idle" && !current.timer) {
-          rooms.delete(roomId);
+    enqueue(
+      roomId,
+      current,
+      () => apply(roomId, current, event),
+      (error) => deps.log.error({ err: error, roomId, event }, "meeting dispatch failed"),
+    );
+  };
+
+  const chat = (roomId: string, senderId: string, text: string): void => {
+    const room = rooms.get(roomId);
+    // No tracked room means no live meeting and no queued transition that
+    // could still start one — drop the line without touching the queue.
+    if (!room) return;
+    // State transitions are applied asynchronously on the room queue, so the
+    // gate must run AFTER any already-dispatched stand/leave/sit has applied:
+    // checking room.state synchronously here would fan out from a stale
+    // participant set (e.g. one last line landing after the sender left).
+    enqueue(
+      roomId,
+      room,
+      () => {
+        const state = room.state;
+        // Gate on the authoritative live participant set: only a seated
+        // participant of a running meeting may speak, and only participants
+        // receive the line.
+        if (state.phase !== "active" || !state.participants.includes(senderId)) return;
+        const message = { roomId, id: senderId, name: deps.resolveName(senderId), text };
+        for (const participantId of state.participants) {
+          deps.sendToPlayer(participantId, "meeting-chat", message);
         }
-      });
+      },
+      (error) => deps.log.error({ err: error, roomId, senderId }, "meeting chat relay failed"),
+    );
   };
 
   const settle = async (): Promise<void> => {
     await Promise.all([...rooms.values()].map((room) => room.queue));
   };
 
-  return { dispatch, settle };
+  return { dispatch, chat, settle };
 }

@@ -41,6 +41,7 @@ export interface Net {
   leaveRoom(): void;
   sit(roomId: string, seatId: number): void;
   stand(): void;
+  meetingChat(text: string): void;
   boardSit(tableId: string, seat: number): void;
   boardStand(): void;
   boardAccept(tableId: string): void;
@@ -136,6 +137,9 @@ export class RealNet implements Net {
   }
   stand() {
     this.socket.emit(CLIENT_EVENTS.seatStand);
+  }
+  meetingChat(text: string) {
+    this.socket.emit(CLIENT_EVENTS.meetingChat, { text });
   }
   boardSit(tableId: string, seat: number) {
     this.socket.emit(CLIENT_EVENTS.boardSit, { tableId: tableId as BoardTableId, seat });
@@ -282,6 +286,11 @@ export class MockNet implements Net {
   }
   stand() {
     /* seat freed handled by scene */
+  }
+  meetingChat(text: string) {
+    // No real meetings in mock mode; echo the line back so the panel still
+    // reflects your own message if it is ever mounted in a dev sandbox.
+    this.bus.emit(SERVER_EVENTS.meetingChat, { roomId: "1", id: this.selfId, name: this.name, text });
   }
 
   /* --- Board tables: a local practice sandbox (you vs a random bot). --- */

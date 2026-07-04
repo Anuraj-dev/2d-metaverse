@@ -108,6 +108,17 @@ export const seatSitSchema = z.object({
 });
 export type SeatSitPayload = z.infer<typeof seatSitSchema>;
 
+/**
+ * A line typed into the in-meeting chat (PRD 10). The server derives the target
+ * meeting from the sender's current room + live participant set — the client
+ * only supplies text, so there is no roomId to spoof. Reuses the shared chat
+ * length cap. Strict: this is a new contract with no legacy shape to tolerate.
+ */
+export const meetingChatSchema = z.strictObject({
+  text: z.string().trim().min(1).max(LIMITS.chatTextMax),
+});
+export type MeetingChatPayload = z.infer<typeof meetingChatSchema>;
+
 /* ----------------------- client → server: board games ---------------------- */
 /* Strict contracts (new; no legacy payloads). The board rules themselves live in
  * `@metaverse/shared` games modules — these schemas only guard the wire. */
@@ -307,6 +318,21 @@ export const meetingParticipantLeftSchema = z.strictObject({
 });
 export type MeetingParticipantLeftPayload = z.infer<typeof meetingParticipantLeftSchema>;
 
+/**
+ * One in-meeting chat line relayed to the meeting's participants only (PRD 10).
+ * Delivered per-socket to the live participant set (never the room channel), so
+ * unseated spectators in the same room never receive it. `id` is the sender's
+ * player id (drives the local "you" styling); the message is echoed to the
+ * sender too, so their own line arrives on the same path.
+ */
+export const meetingChatMessageSchema = z.strictObject({
+  roomId: z.string(),
+  id: z.string(),
+  name: z.string(),
+  text: z.string(),
+});
+export type MeetingChatMessage = z.infer<typeof meetingChatMessageSchema>;
+
 /* ---------------------- server → client: board games ----------------------- */
 /* The authoritative match snapshot the server broadcasts on every transition
  * (seat change, offer, accept, move, forfeit, end). Mirrors the pure `BoardState`
@@ -378,6 +404,7 @@ export interface ClientToServerEvents {
   "room-leave": () => void;
   "seat-sit": (payload: SeatSitPayload) => void;
   "seat-stand": () => void;
+  "meeting-chat": (payload: MeetingChatPayload) => void;
   "board-sit": (payload: BoardSitPayload) => void;
   "board-stand": () => void;
   "board-accept": (payload: BoardAcceptPayload) => void;
@@ -405,6 +432,7 @@ export interface ServerToClientEvents {
   "meeting-ended": (payload: MeetingEndedPayload) => void;
   "meeting-participant-joined": (payload: MeetingParticipantJoinedPayload) => void;
   "meeting-participant-left": (payload: MeetingParticipantLeftPayload) => void;
+  "meeting-chat": (payload: MeetingChatMessage) => void;
   "board-update": (payload: BoardUpdatePayload) => void;
   "board-error": (payload: BoardErrorPayload) => void;
 }

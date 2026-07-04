@@ -77,7 +77,9 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [selfId, setSelfId] = useState("");
-  // Meeting lifecycle (PRD 10): reducer output for the HUD…
+  // Meeting lifecycle (PRD 10): reducer output for the HUD. (In-meeting chat is
+  // owned by MeetingOverlay itself — mounted only for the meeting's lifetime —
+  // so its transcript is naturally ephemeral and its code stays in the lazy chunk.)
   const [meeting, setMeeting] = useState<MeetingUiState>(MEETING_NONE);
   // …and the portal/handoff visuals (backdrop snapshot, reveal flag, morph seat).
   const [portal, setPortal] = useState<PortalState | null>(null);
