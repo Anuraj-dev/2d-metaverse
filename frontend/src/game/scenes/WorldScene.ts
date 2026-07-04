@@ -21,6 +21,7 @@ import { doorPassable, shouldAnnounceKnock, type RoomOpenState } from "../roomAc
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
 import { interactAction } from "../interaction";
+import { initOnAir, stepOnAir, type OnAirEffect, type OnAirInput, type OnAirState } from "../onAir";
 import { positionsEmitDue, moveSendDue } from "../throttle";
 import { tintForHour } from "../dayNight";
 import { terrainFromTiledMap, type TiledMapLike } from "../../ui/minimapTerrain";
@@ -109,6 +110,8 @@ export default class WorldScene extends Phaser.Scene {
   private presenterZone: Phaser.Geom.Rectangle | null = null;
   private inStage = false;
   private inPresenterSlot = false;
+  // Stage broadcast on-air machine (PRD 17): pure rules in game/onAir.ts.
+  private onAir: OnAirState = initOnAir();
   private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
   private roomAreas: RoomArea[] = [];
   private enteredRooms = new Set<string>();
@@ -540,10 +543,26 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("locate", (p: { id: string }) => this.locate(p.id));
     bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p));
     bus.on("do-interact", () => (this.interactQueued = true));
+    // Stage on-air confirm prompt (PRD 17): the HUD returns the player's choice.
+    bus.on("stage-confirm", () => this.applyOnAir({ type: "confirm" }));
+    bus.on("stage-decline", () => this.applyOnAir({ type: "decline" }));
     // Arcade overlay closed → wake the world scene it slept under.
     bus.on("close-arcade", () => {
       if (this.scene.isSleeping()) this.scene.wake();
     });
+  }
+
+  /** Advance the pure on-air machine and surface its effect on the bus. */
+  private applyOnAir(input: OnAirInput) {
+    const { state, effect } = stepOnAir(this.onAir, input);
+    this.onAir = state;
+    const emit: Record<Exclude<OnAirEffect, "none">, string> = {
+      "show-prompt": "stage-prompt-show",
+      "hide-prompt": "stage-prompt-hide",
+      "go-on-air": "stage-on-air",
+      "go-off-air": "stage-off-air",
+    };
+    if (effect !== "none") bus.emit(emit[effect]);
   }
 
   /** One-time snapshot of map size, terrain + room footprints for the minimap.
@@ -801,6 +820,15 @@ export default class WorldScene extends Phaser.Scene {
       if (nowInStage) bus.emit("near-stage");
       else bus.emit("leave-stage");
     }
+    // Drive the on-air machine every frame: standing still on the stage arms the
+    // confirm prompt; the emitted effects flow to the HUD + media layer.
+    this.applyOnAir({
+      type: "tick",
+      onStage: nowInStage,
+      x: Math.floor(this.player.x),
+      y: Math.floor(this.player.y),
+      now: this.time.now,
+    });
 
     // presenter zone (podium — emit regardless of seated state)
     const nowInPresenter = inZone(this.presenterZone, fx, fy);

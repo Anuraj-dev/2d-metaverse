@@ -236,6 +236,11 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "knock-approved": { clip: "meeting_join", channel: "sfx" },
   "knock-denied": { clip: "leave", channel: "sfx" },
   "admin-promoted": { clip: "portal_in", channel: "sfx" },
+  // Stage broadcast (PRD 17): going on / off air. Reuse the meeting join/leave
+  // chimes — "you're now broadcasting to the room" reads the same. Audio-agnostic:
+  // WorldScene emits the domain events; the mixer picks the clip.
+  "stage-on-air": { clip: "meeting_join", channel: "sfx" },
+  "stage-off-air": { clip: "meeting_leave", channel: "sfx" },
 };
 
 export function cueForEvent(event: string): SoundCue | null {

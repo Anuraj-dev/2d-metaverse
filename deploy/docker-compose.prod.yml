@@ -18,7 +18,6 @@ x-backend-environment: &backend-environment
   LIVEKIT_API_URL: ${LIVEKIT_API_URL:-http://livekit:7880}
   LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
   LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
-  STAGE_KEY: ${STAGE_KEY}
   MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/campus.json}
   TRUST_PROXY: "true"
 

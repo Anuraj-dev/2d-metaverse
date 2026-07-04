@@ -25,9 +25,9 @@ describe("credentials", () => {
 });
 
 describe("livekit token request", () => {
-  it("accepts a room name with an optional presenter key", () => {
+  it("accepts a room name with an optional stage-publish flag", () => {
     expect(liveKitSchema.safeParse({ roomName: "world:1" }).success).toBe(true);
-    expect(liveKitSchema.safeParse({ roomName: "stage:1", presenterKey: "k" }).success).toBe(true);
+    expect(liveKitSchema.safeParse({ roomName: "stage:1", stagePublish: true }).success).toBe(true);
   });
   it("rejects an empty room name", () => {
     expect(liveKitSchema.safeParse({ roomName: "" }).success).toBe(false);

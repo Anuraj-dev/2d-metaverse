@@ -22,7 +22,13 @@ async function openContext(browser: Browser): Promise<{ context: BrowserContext;
   return { context, page };
 }
 
+// Two live game contexts on one CI runner is roughly double the work of a
+// single-player scenario, so — like the other two-context specs (multiplayer,
+// meeting, audio-isolation) — each of these knock/approve flows gets a
+// proportionate budget instead of the default 60s it was previously running
+// right at the edge of (the waits themselves stay event-driven).
 test("admin approves a knock and the visitor gets in", async ({ browser }) => {
+  test.setTimeout(120_000);
   const admin = await openContext(browser);
   const guest = await openContext(browser);
   try {
@@ -45,6 +51,7 @@ test("admin approves a knock and the visitor gets in", async ({ browser }) => {
 });
 
 test("admin denies a knock and the visitor stays out", async ({ browser }) => {
+  test.setTimeout(120_000);
   const admin = await openContext(browser);
   const guest = await openContext(browser);
   try {
@@ -64,6 +71,7 @@ test("admin denies a knock and the visitor stays out", async ({ browser }) => {
 });
 
 test("adminship passes to the next occupant when the admin leaves", async ({ browser }) => {
+  test.setTimeout(120_000);
   const admin = await openContext(browser);
   const heir = await openContext(browser);
   try {

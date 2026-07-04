@@ -179,8 +179,9 @@ join keys with an admin/knock system), so there are no `ROOM_*_KEY` values to se
 Steps:
 
 1. **Complete the prod env.** Set any missing required parameters in the production
-   SSM env: `STAGE_KEY` (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if not already
-   set).
+   SSM env (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if not already set). The
+   stage is no longer key-gated (PRD 17 removed `STAGE_KEY`), so there is no stage
+   secret to set either.
 2. **Re-run the seed and check it.** On the EC2 host. Two things every manual
    compose command here needs: `--env-file .env` (compose does not read it
    implicitly for variable substitution in this file's `${VAR}` references),

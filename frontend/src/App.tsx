@@ -9,7 +9,6 @@ import BubbleLayer from "./ui/BubbleLayer";
 import MediaControls from "./ui/MediaControls";
 import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
-import StageScreen from "./ui/StageScreen";
 import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
 import Landing from "./ui/Landing";
@@ -42,6 +41,9 @@ const ArcadeOverlay = lazy(() => import("./ui/arcade/ArcadeOverlay"));
 const BoardTablePanel = lazy(() => import("./ui/BoardTablePanel"));
 // Room knock/admin HUD (PRD 14): lazy so its code stays out of the entry bundle.
 const RoomAccessLayer = lazy(() => import("./ui/RoomAccessLayer"));
+// The stage broadcast HUD (on-air prompt/indicator + video grid, PRD 17) is not
+// first-paint critical — lazy-load it so it stays out of the entry chunk.
+const StageScreen = lazy(() => import("./ui/StageScreen"));
 
 function isArcadeGame(value: string): value is ArcadeGame {
   return (ARCADE_GAMES as readonly string[]).includes(value);
@@ -184,16 +186,29 @@ export default function App() {
     const startWorldAudio = () => {
       if (selfId && !inPrivateRoom) transition(() => worldAudio.start(SPACE_ID, selfId));
     };
+    // Stage broadcast (PRD 17): every non-private-room client subscribes to the
+    // stage room as audience (fixed volume, server-wide). Private-room players
+    // detach entirely — no stage audio inside a meeting. `stage-audience` mirrors
+    // the intended subscription state onto the bus for the E2E hook.
+    const startStageAudience = () => {
+      if (selfId && !inPrivateRoom) {
+        transition(() => stageVideo.joinAsAudience(SPACE_ID, selfId));
+        bus.emit("stage-audience", { active: true });
+      }
+    };
     const offInit = net.on("init", (p: { selfId: string }) => {
       selfId = p.selfId;
       startWorldAudio();
+      startStageAudience();
     });
     const offRoomEntered = bus.on("room-entered", () => {
       inPrivateRoom = true;
       transition(async () => {
         await worldAudio.stop();
         await roomVideo.leave();
+        await stageVideo.leave();
       });
+      bus.emit("stage-audience", { active: false });
     });
     const offSeat = net.on(
       "seat-update",
@@ -213,11 +228,18 @@ export default function App() {
         await roomVideo.leave();
         if (selfId) await worldAudio.start(SPACE_ID, selfId);
       });
+      startStageAudience();
     });
-    const offNearStage = bus.on("near-stage", () => {
-      if (selfId) transition(() => stageVideo.joinAsAudience(SPACE_ID, selfId));
+    // On-air lifecycle (PRD 17): the pure on-air machine in WorldScene emits these
+    // once the performer confirms / steps off the stage. Going on air reconnects
+    // the stage room with a position-validated publish token; off air returns to
+    // the audience subscription.
+    const offOnAir = bus.on("stage-on-air", () => {
+      if (selfId) transition(() => stageVideo.goOnAir(SPACE_ID, selfId));
     });
-    const offLeaveStage = bus.on("leave-stage", () => transition(() => stageVideo.leave()));
+    const offOffAir = bus.on("stage-off-air", () => {
+      if (selfId) transition(() => stageVideo.goOffAir(SPACE_ID, selfId));
+    });
 
     // ---- Meeting lifecycle + portal handoff (PRD 10) ----------------------
     // The pure rules live in game/meetingUi.ts (what this client shows/does)
@@ -322,8 +344,8 @@ export default function App() {
       offSeat();
       offStood();
       offRoomLeft();
-      offNearStage();
-      offLeaveStage();
+      offOnAir();
+      offOffAir();
       offMeetingPositions();
       offPhaseADone();
       offMeetingEvents.forEach((off) => off());
@@ -386,7 +408,9 @@ export default function App() {
           <RoomAccessLayer />
         </Suspense>
         <InteractableModal />
-        <StageScreen />
+        <Suspense fallback={null}>
+          <StageScreen />
+        </Suspense>
         <ChatBox />
         <ChatToast />
         {meeting.status === "countdown" && <MeetingCountdown durationMs={meeting.durationMs} />}

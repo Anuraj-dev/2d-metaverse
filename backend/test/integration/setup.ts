@@ -20,7 +20,6 @@ process.env.JWT_SECRET ??= "integration-test-jwt-secret-0123456789abcdef";
 process.env.LIVEKIT_URL ??= "ws://localhost:7880";
 process.env.LIVEKIT_API_KEY ??= "devkey";
 process.env.LIVEKIT_API_SECRET ??= "local-development-livekit-secret-change-me";
-process.env.STAGE_KEY ??= "stage-presenter-123";
 // Shrink socket timings so timeout/grace paths are testable in milliseconds.
 process.env.JOIN_TIMEOUT_MS ??= "500";
 process.env.LEAVE_GRACE_MS ??= "400";

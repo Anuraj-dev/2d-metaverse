@@ -16,8 +16,6 @@ const DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const ASSETS = join(DIST, "assets");
 
 // Budget for the entry chunk, gzipped. The real (configured-production) entry
-// is ~120.5 KB — earlier CI measured ~105 KB only because the build lacked
-// VITE_SERVER_URL and Vite tree-shook the app behind the misconfiguration
 // screen. The budget still catches real regressions like Phaser/LiveKit leaking
 // into the entry.
 //
@@ -26,8 +24,13 @@ const ASSETS = join(DIST, "assets");
 // unavoidable core-mixer bit — the `arcade` sound channel in soundMixer +
 // two settings fields, both consumed by the always-loaded SfxBridge. The arcade
 // overlay, game renderers and PRNG stay lazy-loaded in their own chunk (~5 KB,
-// out of the entry). 130 KB restores a few KB of headroom without letting the
-// heavy transitive deps back in.
+// out of the entry).
+//
+// PRD 17 (stage broadcast voice) added the stage media transport + on-air
+// routing to the always-loaded media layer (`livekit.ts`/`App.tsx`, statically
+// imported by the entry), but kept the on-air HUD lazy-loaded — so the measured
+// entry stays ~124.9 KB, unchanged from the PRD 16 baseline. 130 KB still holds
+// with headroom and keeps catching regressions like Phaser/LiveKit leaking in.
 const ENTRY_BUDGET_KB = 130;
 
 const html = readFileSync(join(DIST, "index.html"), "utf8");

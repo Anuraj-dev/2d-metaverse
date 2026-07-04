@@ -264,6 +264,7 @@ export async function walkTo(
         if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
         let lastPos: { x: number; y: number } | null = null;
         let stuckSince = 0;
+        let lastTickAt = 0;
         const finish = () => {
           clearTimeout(timer);
           off();
@@ -290,6 +291,20 @@ export async function walkTo(
             return;
           }
           const now = Date.now();
+          // A large gap between position ticks means the render/positions loop
+          // itself froze (a CI GPU/CPU stall — "GPU stall due to ReadPixels"),
+          // NOT that steering failed to make progress. The stuck-detector below
+          // measures no-progress in wall-clock time, so a frozen interval would
+          // otherwise be misread as a 4s+ navigation stall the instant ticks
+          // resume. Treat the freeze as a discontinuity: reset the no-progress
+          // clock and skip this tick's comparison so the walk isn't blamed for
+          // the runner stalling. Normal ticks arrive ~66ms apart (a few hundred
+          // ms under CI throttle), well under this threshold.
+          if (lastTickAt !== 0 && now - lastTickAt > 800) {
+            stuckSince = 0;
+            lastPos = null;
+          }
+          lastTickAt = now;
           if (lastPos && Math.hypot(self.x - lastPos.x, self.y - lastPos.y) < 1) {
             if (stuckSince === 0) stuckSince = now;
             else if (now - stuckSince > 4000) {

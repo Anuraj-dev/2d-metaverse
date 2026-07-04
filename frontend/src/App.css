@@ -1250,6 +1250,41 @@ html, body, #root {
   text-align: center;
 }
 
+/* On-air confirm prompt + persistent ON AIR indicator (PRD 17). */
+.stage-onair-prompt { bottom: 240px; }
+.stage-onair-title { font-weight: 800; font-size: 16px; color: var(--ink); }
+.stage-onair-sub { font-size: 12px; color: var(--muted); text-align: center; }
+.stage-onair-actions { display: flex; gap: 10px; }
+.stage-on-air-indicator {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #e03737;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  box-shadow: 0 2px 12px rgba(224, 55, 55, 0.5);
+  z-index: 20;
+}
+.stage-on-air-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  animation: stage-on-air-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stage-on-air-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 /* ============================== Meeting (PRD 10) ==============================
    Portal transition + Meet-style grid. The overlay sits above the whole HUD;
    the countdown toast is a small centered banner. */

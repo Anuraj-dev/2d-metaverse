@@ -13,7 +13,7 @@ docker compose up --build
 
 The API and Socket.IO server are at `http://localhost:3001`; LiveKit signaling is at `ws://localhost:7880`. The setup container applies migrations and seeds space `1`, rooms `1`–`6`, their map coordinates, and their seats.
 
-Private rooms have no join keys — access is admin-gated at runtime (PRD 14): the first arrival becomes the room admin, and later visitors knock at the door for approval. The auditorium stage still uses a separate `STAGE_KEY` (dev default `stage-presenter-123`); never use that default in production.
+Private rooms have no join keys — access is admin-gated at runtime (PRD 14): the first arrival becomes the room admin, and later visitors knock at the door for approval. The auditorium stage is also keyless (PRD 17): going on air is gated by a server-validated on-stage position plus a 2s stillness confirm, not a presenter key.
 
 ## Environment variables
 
@@ -25,7 +25,6 @@ Private rooms have no join keys — access is admin-gated at runtime (PRD 14): t
 | `JWT_SECRET`, `JWT_TTL` | Auth token signing secret and lifetime. |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins. |
 | `LIVEKIT_URL`, `LIVEKIT_API_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | LiveKit client URL, server-to-server URL, and credentials. |
-| `STAGE_KEY` | Presenter key for the auditorium stage broadcast. |
 | `KNOCK_TIMEOUT_MS` | How long a pending door knock waits for admin approval before auto-denying (default `30000`). |
 | `MAP_JSON_URL` | Path/URL the client loads the map from. |
 | `TRUST_PROXY` | `true` behind the production Nginx proxy. |
@@ -119,7 +118,7 @@ Use `npm run typecheck`, `npm test`, and `npm run build` (each builds `shared` f
 
 ## AWS EC2 deployment requirements
 
-Use an Elastic IP and DNS names such as `api.example.com` and `livekit.example.com`. Set production secrets in `.env`, including a random JWT secret, random LiveKit key/secret, and a non-default `STAGE_KEY`. Set `NODE_ENV=production`, `TRUST_PROXY=true`, `CORS_ORIGINS` to the frontend origin, `LIVEKIT_URL=wss://livekit.example.com`, and keep `LIVEKIT_API_URL=http://livekit:7880` for server-to-server cleanup.
+Use an Elastic IP and DNS names such as `api.example.com` and `livekit.example.com`. Set production secrets in `.env`, including a random JWT secret and random LiveKit key/secret. Set `NODE_ENV=production`, `TRUST_PROXY=true`, `CORS_ORIGINS` to the frontend origin, `LIVEKIT_URL=wss://livekit.example.com`, and keep `LIVEKIT_API_URL=http://livekit:7880` for server-to-server cleanup.
 
 Use `deploy/nginx.conf.example` with Let's Encrypt. For production, enable LiveKit's embedded TURN server after the `TURN_DOMAIN` certificate exists:
 

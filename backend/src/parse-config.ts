@@ -21,8 +21,8 @@ const schema = z.object({
   LIVEKIT_API_KEY: z.string().min(1),
   LIVEKIT_API_SECRET: z.string().min(1),
   // Private rooms are no longer password-gated (PRD 14): entry is admin + knock.
-  // Only the stage presenter key remains a shared secret.
-  STAGE_KEY: z.string().min(1).optional(),
+  // The stage is no longer key-gated either (PRD 17): a publish-capable stage
+  // token is granted by validating the requester's server-known position.
   MAP_JSON_URL: z.string().default("/assets/maps/campus.json"),
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
   GIT_SHA: z.string().default("dev"),
@@ -65,7 +65,6 @@ function usesDevelopmentSecret(data: ParsedEnv): boolean {
     data.JWT_SECRET.startsWith("replace-") ||
     data.LIVEKIT_API_KEY === "devkey" ||
     data.LIVEKIT_API_SECRET === "local-development-livekit-secret-change-me" ||
-    !data.STAGE_KEY || data.STAGE_KEY === "stage-presenter-123" ||
     data.DATABASE_URL.includes("metaverse:metaverse@")
   );
 }

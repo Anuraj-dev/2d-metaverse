@@ -20,8 +20,7 @@ const productionEnv: Record<string, string> = {
   JWT_SECRET: "a-genuinely-random-production-secret-0123456789",
   LIVEKIT_URL: "wss://livekit.example.com",
   LIVEKIT_API_KEY: "prod-livekit-key",
-  LIVEKIT_API_SECRET: "prod-livekit-secret-with-plenty-of-entropy",
-  STAGE_KEY: "prod-stage-presenter-key"
+  LIVEKIT_API_SECRET: "prod-livekit-secret-with-plenty-of-entropy"
 };
 
 describe("parseConfig validation", () => {
@@ -83,8 +82,6 @@ describe("production refusal of development defaults", () => {
     ["placeholder replace- JWT secret", { JWT_SECRET: "replace-with-at-least-32-random-characters" }],
     ["dev LiveKit API key", { LIVEKIT_API_KEY: "devkey" }],
     ["dev LiveKit API secret", { LIVEKIT_API_SECRET: "local-development-livekit-secret-change-me" }],
-    ["dev STAGE_KEY", { STAGE_KEY: "stage-presenter-123" }],
-    ["missing STAGE_KEY", { STAGE_KEY: undefined }],
     ["dev DATABASE_URL credentials", { DATABASE_URL: "postgres://metaverse:metaverse@db:5432/metaverse" }]
   ];
 

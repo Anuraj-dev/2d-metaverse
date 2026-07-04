@@ -25,9 +25,31 @@ import {
   submitArcadeScore,
 } from "./repository.js";
 import { redis } from "./redis.js";
+import { canPublishFromStage } from "./stage.js";
 
 // Request schemas live in @metaverse/shared (single source of truth for wire shapes).
 export const api = Router();
+
+/** Read a player's last known {x,y} from the space's Redis presence hash. */
+async function presencePosition(
+  spaceId: string,
+  playerId: string,
+): Promise<{ x: number; y: number } | null> {
+  const raw = await redis.hGet(`presence:${spaceId}`, playerId);
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value === "object" && value !== null && "x" in value && "y" in value) {
+      const { x, y } = value;
+      if (typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y)) {
+        return { x, y };
+      }
+    }
+  } catch {
+    // Malformed presence JSON → treat as unknown position (denies publish).
+  }
+  return null;
+}
 const authLimiter = rateLimit({
   windowMs: RATE_LIMITS.authWindowMs,
   limit: RATE_LIMITS.authLimit,
@@ -169,13 +191,17 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
       response.status(404).json({ error: "space-not-found" });
       return;
     }
-    const pKey = parsed.data.presenterKey;
-    if (pKey !== undefined) {
-      if (!config.STAGE_KEY || pKey !== config.STAGE_KEY) {
-        response.status(403).json({ error: "bad-presenter-key" });
+    if (parsed.data.stagePublish) {
+      // Server-authoritative broadcast gate (PRD 17): a publish-capable stage
+      // token is issued only when the requester's server-known position is
+      // inside the stage zone, so a malicious client can't hijack the stage as a
+      // server-wide megaphone from anywhere on the map. Audience tokens stay open.
+      const pos = await presencePosition(spaceId, user.id);
+      if (!pos || !canPublishFromStage(pos.x, pos.y)) {
+        response.status(403).json({ error: "not-on-stage" });
         return;
       }
-      canPublishVideo = true;  // presenter: cam + screen + mic
+      canPublishVideo = true;  // performer: mic (+ optional cam for "Go Live")
     } else {
       canPublish = false;  // audience: subscribe-only
     }

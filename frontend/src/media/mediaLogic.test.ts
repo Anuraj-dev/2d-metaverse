@@ -26,9 +26,12 @@ describe("track routing — subscribe matrix", () => {
     // world (proximity) room: mic-only — audio starts silent, video is ignored
     ["audio", "world-audio", "attach-audio-silent"],
     ["video", "world-audio", "ignore"],
-    // private room / stage: video surfaces to the UI, audio attaches at full volume
+    // private room: video surfaces to the UI, audio attaches at full volume
     ["video", "room-av", "surface-video"],
     ["audio", "room-av", "attach-audio"],
+    // stage broadcast (PRD 17): video surfaces, audio attaches at the FIXED volume
+    ["video", "stage-audience", "surface-video"],
+    ["audio", "stage-audience", "attach-audio-fixed"],
   ];
   it.each(matrix)("%s track in %s room → %s", (kind, mode, action) => {
     expect(subscribeAction(kind, mode)).toBe(action);
@@ -39,6 +42,8 @@ describe("track routing — unsubscribe matrix", () => {
   const matrix: Array<["audio" | "video", RoomMode, UnsubscribeAction]> = [
     ["video", "room-av", "drop-video"],
     ["audio", "room-av", "detach-audio"],
+    ["video", "stage-audience", "drop-video"],
+    ["audio", "stage-audience", "detach-audio"],
     // world room never surfaced video, so everything just detaches
     ["audio", "world-audio", "detach-audio"],
     ["video", "world-audio", "detach-audio"],
@@ -125,5 +130,19 @@ describe("computeVolumes", () => {
   it("treats a missing zone as outdoor (unchanged pre-PRD behaviour)", () => {
     const players: MediaPos[] = [me, { id: "a", x: 0, y: 0 }];
     expect(computeVolumes(players, "me", ["a"])?.get("a")).toBe(1);
+  });
+
+  it("mutes a live stage performer's proximity track (PRD 17 dedupe)", () => {
+    // A point-blank remote who would normally be full volume is silenced when
+    // they are a live stage performer — the listener hears the broadcast instead.
+    const players: MediaPos[] = [me, { id: "star", x: 0, y: 0 }];
+    expect(computeVolumes(players, "me", ["star"], AUDIO_CUTOFF, ["star"])?.get("star")).toBe(0);
+  });
+
+  it("only dedupes the listed performers, leaving other nearby voices audible", () => {
+    const players: MediaPos[] = [me, { id: "star", x: 0, y: 0 }, { id: "mate", x: 0, y: 0 }];
+    const vols = computeVolumes(players, "me", ["star", "mate"], AUDIO_CUTOFF, ["star"]);
+    expect(vols?.get("star")).toBe(0);
+    expect(vols?.get("mate")).toBe(1);
   });
 });

@@ -141,15 +141,16 @@ try {
   assert.deepEqual(await standSeen, { ...selected, playerId: null });
   assert.equal((await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: `room:${selected.roomId}` } })).status, 403);
 
-  // stage token: audience (no presenterKey) → 200
+  // stage token: audience (no stagePublish) → 200
   const stageAudience = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "stage:1" } });
   assert.equal(stageAudience.status, 200);
   assert.equal(typeof stageAudience.json.livekitToken, "string");
 
-  // stage token: bad presenterKey → 403
-  const stageBadKey = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "stage:1", presenterKey: "wrong-key" } });
-  assert.equal(stageBadKey.status, 403);
-  assert.equal(stageBadKey.json.error, "bad-presenter-key");
+  // stage token: publish request while not standing on the stage → 403 (PRD 17
+  // server-authoritative gate; tokenA's player is at spawn, not the stage zone).
+  const stagePublishOffStage = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "stage:1", stagePublish: true } });
+  assert.equal(stagePublishOffStage.status, 403);
+  assert.equal(stagePublishOffStage.json.error, "not-on-stage");
 } finally {
   socketA.disconnect();
   socketB.disconnect();

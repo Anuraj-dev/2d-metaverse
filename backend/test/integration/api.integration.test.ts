@@ -171,23 +171,59 @@ describe("livekit token", () => {
     expect(payload.video).toMatchObject({ room: "stage:1", roomJoin: true, canPublish: false, canSubscribe: true, canPublishData: false });
   });
 
-  it("gates the stage presenter grant on STAGE_KEY", async () => {
-    const { token } = await createUser(base, "lk5");
-    const bad = await api(base, "/api/v1/livekit/token", {
-      token,
-      body: { roomName: "stage:1", presenterKey: "wrong-key" }
-    });
-    expect(bad.status).toBe(403);
-    expect(bad.json.error).toBe("bad-presenter-key");
+  it("denies a stage publish token when the server-known position is off stage", async () => {
+    const { token, username } = await createUser(base, "lk5");
+    const userId = (jwt.decode(token) as jwt.JwtPayload).sub!;
 
-    const good = await api(base, "/api/v1/livekit/token", {
+    // No presence at all → no proof of being on stage.
+    const noPos = await api(base, "/api/v1/livekit/token", {
       token,
-      body: { roomName: "stage:1", presenterKey: process.env.STAGE_KEY }
+      body: { roomName: "stage:1", stagePublish: true }
     });
-    expect(good.status).toBe(200);
-    const payload = decodeGrant(good.json.livekitToken);
-    expect(payload.video).toMatchObject({ room: "stage:1", canPublish: true });
-    expect(payload.video.canPublishSources).toBeUndefined();
+    expect(noPos.status).toBe(403);
+    expect(noPos.json.error).toBe("not-on-stage");
+
+    // A known position away from the stage (campus spawn) is still denied.
+    await redis.hSet(
+      "presence:1",
+      userId,
+      JSON.stringify({ id: userId, name: username, x: 960, y: 704, dir: "down", connectionId: "test" })
+    );
+    try {
+      const offStage = await api(base, "/api/v1/livekit/token", {
+        token,
+        body: { roomName: "stage:1", stagePublish: true }
+      });
+      expect(offStage.status).toBe(403);
+      expect(offStage.json.error).toBe("not-on-stage");
+    } finally {
+      await redis.hDel("presence:1", userId);
+    }
+  });
+
+  it("grants a publish-capable stage token when the server-known position is on stage", async () => {
+    const { token, username } = await createUser(base, "lk8");
+    const userId = (jwt.decode(token) as jwt.JwtPayload).sub!;
+
+    // Stage floor centre (stage_zone 1312,256 + 576×448).
+    await redis.hSet(
+      "presence:1",
+      userId,
+      JSON.stringify({ id: userId, name: username, x: 1600, y: 480, dir: "down", connectionId: "test" })
+    );
+    try {
+      const granted = await api(base, "/api/v1/livekit/token", {
+        token,
+        body: { roomName: "stage:1", stagePublish: true }
+      });
+      expect(granted.status).toBe(200);
+      const payload = decodeGrant(granted.json.livekitToken);
+      expect(payload.video).toMatchObject({ room: "stage:1", roomJoin: true, canPublish: true, canSubscribe: true });
+      // Performer may publish video too (cam for "Go Live"): no source restriction.
+      expect(payload.video.canPublishSources).toBeUndefined();
+    } finally {
+      await redis.hDel("presence:1", userId);
+    }
   });
 
   it("rejects unknown prefixes and malformed bodies with 400", async () => {
