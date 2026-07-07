@@ -22,3 +22,31 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }
+
+/* Shared icon-button base (PRD 18): the ONE affordance — shape, hover, active,
+   focus-visible — for every icon-only control (settings/help chrome, media
+   controls, meeting top bar, arcade tools). It lives in this always-loaded
+   stylesheet so lazy chunks (e.g. the arcade overlay) can reuse it without
+   duplicating rules. Surfaces layer only size/accent modifiers on top; the
+   var() fallbacks mirror the App.css tokens so the base stands alone. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--line, #2a2f3d);
+  border-radius: 50%;
+  background: var(--panel, rgba(23, 26, 35, 0.92));
+  color: var(--ink, #e6e9f0);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.icon-btn:hover { filter: brightness(1.12); }
+.icon-btn:active { filter: brightness(0.92); }
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent, #6ea8fe);
+  outline-offset: 2px;
+}

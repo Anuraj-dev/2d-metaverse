@@ -936,44 +936,30 @@ html, body, #root {
   padding: 8px 12px;
   border-radius: 30px;
 }
-.media-controls button {
-  border: none;
-  border-radius: 50%;
+/* Mic/cam toggles ride the shared .icon-btn base (index.css); size + accents only. */
+.media-controls .icon-btn {
   width: 42px;
   height: 42px;
-  font-size: 18px;
-  cursor: pointer;
   background: #2a3146;
-  color: var(--ink);
-  display: grid;
-  place-items: center;
 }
-.media-controls button.off { background: #5a2030; }
+.media-controls .icon-btn.off { background: #5a2030; }
 .media-controls .leave {
-  width: auto;
+  border: none;
   border-radius: 21px;
   padding: 0 16px;
   font-size: 13px;
   font-weight: 700;
   background: #ff6b6b;
   color: #fff;
+  cursor: pointer;
 }
 
 /* ---------- Icon buttons / Settings / Help ---------- */
-.icon-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--ink);
-  font-size: 16px;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
+/* Shared .icon-btn base lives in index.css; floating chrome adds a shadow. */
+.settings .icon-btn,
+.icon-btn.help-btn {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
 }
-.icon-btn:hover { filter: brightness(1.12); }
 .settings {
   position: absolute;
   top: 14px;
@@ -984,7 +970,6 @@ html, body, #root {
   position: absolute;
   top: 14px;
   left: 62px;
-  font-weight: 800;
   z-index: 8;
 }
 .settings-panel {
@@ -1474,24 +1459,22 @@ html, body, #root {
   display: flex;
   gap: 8px;
 }
-.meeting-actions button {
+/* Mic/cam toggles ride the shared .icon-btn base (index.css); accents only. */
+.meeting-actions .icon-btn {
+  background: rgba(20, 26, 40, 0.9);
+  color: #fff;
+}
+.meeting-actions .icon-btn.off {
+  background: #5a2030;
+}
+.meeting-actions .leave {
   min-width: 44px;
   padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid var(--line);
-  background: rgba(20, 26, 40, 0.9);
+  background: #b03040;
   color: #fff;
   cursor: pointer;
-  font-size: 15px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.meeting-actions button.off {
-  background: #5a2030;
-}
-.meeting-actions .leave {
-  background: #b03040;
   font-weight: 700;
   font-size: 13px;
 }

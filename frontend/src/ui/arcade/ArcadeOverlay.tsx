@@ -170,7 +170,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
           <div className="arcade-tools">
             <div className="arcade-sound" title="Arcade sound">
               <button
-                className="arcade-icon-btn"
+                className="icon-btn arcade-icon-btn"
                 onClick={() => setSettings({ muteArcade: !muteArcade })}
                 aria-label={muteArcade ? "Unmute arcade sound" : "Mute arcade sound"}
                 aria-pressed={muteArcade}
@@ -190,7 +190,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
               />
             </div>
             <button
-              className="arcade-icon-btn"
+              className="icon-btn arcade-icon-btn"
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
               aria-pressed={isFullscreen}

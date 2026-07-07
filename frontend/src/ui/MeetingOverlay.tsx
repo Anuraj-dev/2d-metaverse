@@ -187,7 +187,7 @@ export default function MeetingOverlay({
             <span className="meeting-title">Room meeting</span>
             <div className="meeting-actions">
               <button
-                className={mic ? "on" : "off"}
+                className={`icon-btn ${mic ? "on" : "off"}`}
                 onClick={toggleMic}
                 aria-label={mic ? "Mute microphone" : "Unmute microphone"}
                 aria-pressed={!mic}
@@ -195,7 +195,7 @@ export default function MeetingOverlay({
                 {mic ? <Mic size={18} aria-hidden="true" /> : <MicOff size={18} aria-hidden="true" />}
               </button>
               <button
-                className={cam ? "on" : "off"}
+                className={`icon-btn ${cam ? "on" : "off"}`}
                 onClick={toggleCam}
                 aria-label={cam ? "Turn camera off" : "Turn camera on"}
                 aria-pressed={!cam}

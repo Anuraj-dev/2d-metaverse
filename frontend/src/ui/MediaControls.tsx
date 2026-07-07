@@ -45,7 +45,7 @@ export default function MediaControls() {
   return (
     <div className="media-controls">
       <button
-        className={mic ? "on" : "off"}
+        className={`icon-btn ${mic ? "on" : "off"}`}
         onClick={toggleMic}
         aria-label={mic ? "Mute microphone" : "Unmute microphone"}
         aria-pressed={!mic}
@@ -53,7 +53,7 @@ export default function MediaControls() {
         {mic ? <Mic size={20} aria-hidden="true" /> : <MicOff size={20} aria-hidden="true" />}
       </button>
       <button
-        className={cam ? "on" : "off"}
+        className={`icon-btn ${cam ? "on" : "off"}`}
         onClick={toggleCam}
         aria-label={cam ? "Turn camera off" : "Turn camera on"}
         aria-pressed={!cam}

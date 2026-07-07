@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CircleHelp } from "lucide-react";
 
 const CONTROLS: [string, string][] = [
   ["Move", "WASD / Arrow keys"],
@@ -34,9 +35,10 @@ export default function HelpOverlay() {
       <button
         className="icon-btn help-btn"
         title="Controls (?)"
+        aria-label="Show controls help"
         onClick={() => setOpen(true)}
       >
-        ?
+        <CircleHelp size={18} aria-hidden="true" />
       </button>
       {open && (
         <div className="modal-backdrop" onClick={() => setOpen(false)}>
