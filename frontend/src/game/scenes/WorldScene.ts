@@ -591,20 +591,17 @@ export default class WorldScene extends Phaser.Scene {
       this.cache.tilemap.get(activeMap().key) as { data?: TiledMapLike } | undefined
     )?.data;
     const terrain = raw ? terrainFromTiledMap(raw) : null;
-    const byRoom = new Map<string, Seat[]>();
-    for (const s of this.seats) {
-      const group = byRoom.get(s.roomId) ?? [];
-      if (group.length === 0) byRoom.set(s.roomId, group);
-      group.push(s);
-    }
-    const pad = 24;
-    const rooms = [...byRoom.entries()].map(([id, seats]) => {
-      const x = Math.min(...seats.map((s) => s.rect.x)) - pad;
-      const y = Math.min(...seats.map((s) => s.rect.y)) - pad;
-      const w = Math.max(...seats.map((s) => s.rect.x + s.rect.width)) + pad - x;
-      const h = Math.max(...seats.map((s) => s.rect.y + s.rect.height)) + pad - y;
-      return { id, x, y, w, h };
-    });
+    // Room footprints are the authored roomBounds rects (parsed into
+    // this.roomAreas before this runs) — the same geometry that drives audio
+    // zones and room membership — so the HUD maps show the real map layout,
+    // never a seat-derived approximation.
+    const rooms = this.roomAreas.map((a) => ({
+      id: a.roomId,
+      x: a.rect.x,
+      y: a.rect.y,
+      w: a.rect.width,
+      h: a.rect.height,
+    }));
     // Named areas for the HUD map labels (PRD 20). Hostels are the bounding box of
     // their member rooms; Stage/Arcade come from map geometry. The map consumer
     // resolves id -> display name via AREA_NAMES.
@@ -643,6 +640,7 @@ export default class WorldScene extends Phaser.Scene {
       )
     );
     if (arcadeObjs.length > 0) {
+      const pad = 24;
       const x = Math.min(...arcadeObjs.map((o) => o.x ?? 0)) - pad;
       const y = Math.min(...arcadeObjs.map((o) => o.y ?? 0)) - pad;
       areas.push({

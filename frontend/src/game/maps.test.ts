@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AREA_NAMES } from "@metaverse/shared";
 import { MAPS, DEFAULT_MAP, activeMapKey, activeMap } from "./maps";
 import { roomAreasFromObjects, zoneAt, type TiledObjectLike } from "./audioZones";
 
@@ -412,4 +413,29 @@ describe("campus room audio zones cover the walkable interior", () => {
       expect(interiorTiles).toBeGreaterThan(0);
     });
   }
+});
+
+// The HUD maps (PRD 20) emit room footprints straight from the authored
+// roomBounds layer and label hostels by grouping those ids through AREA_NAMES —
+// so every room id AREA_NAMES references must exist as a roomBounds rect, or a
+// hostel label would silently vanish from the map.
+describe("campus roomBounds ids line up with AREA_NAMES (PRD 20 map labels)", () => {
+  it("every AREA_NAMES member room has an authored roomBounds rect", () => {
+    const json = loadMap("campus") as unknown as {
+      layers: {
+        name: string;
+        objects?: { properties?: { name: string; value: unknown }[] }[];
+      }[];
+    };
+    const authored = new Set(
+      (json.layers.find((l) => l.name === "roomBounds")?.objects ?? []).map(
+        (o) => o.properties?.find((p) => p.name === "roomId")?.value,
+      ),
+    );
+    for (const area of AREA_NAMES) {
+      for (const roomId of area.rooms ?? []) {
+        expect(authored, `area ${area.id} references room ${roomId}`).toContain(roomId);
+      }
+    }
+  });
 });

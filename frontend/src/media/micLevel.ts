@@ -1,25 +1,36 @@
 /**
- * Thin WebAudio transport for the HUD mic-level meter (PRD 20). It attaches an
- * AnalyserNode to the current local mic track and exposes a synchronous `read()`
- * that returns the instantaneous RMS level (0..1). All smoothing/segment decisions
- * live in the pure `game/micMeter` module; this file is glue and stays untested
- * beyond types (no AudioContext in jsdom — it degrades to null there and in e2e's
- * fake-media mode, so the meter simply doesn't render).
+ * Thin WebAudio transport for the HUD mic-level meter (PRD 20). It keeps an
+ * AnalyserNode attached to whichever local mic track is CURRENTLY published —
+ * the private-room track while seated, else the world proximity track — and
+ * exposes a synchronous `read()` that returns the instantaneous RMS level
+ * (0..1). Every read re-resolves the active track, so a walk-to-room handoff
+ * reattaches the analyser to the newly published track (including across the
+ * gap where world audio is already down and the room is still connecting), and
+ * a track that dies in place (`ended`) releases its source node instead of
+ * being polled forever. All smoothing/segment decisions live in the pure
+ * `game/micMeter` module; this file is lifecycle glue over WebAudio, tested
+ * with the track + AudioContext seams mocked (`micLevel.test.ts`). It degrades
+ * to null where WebAudio is absent (jsdom, e2e fake-media) — the meter then
+ * simply doesn't animate.
  */
 import { localAudioTrack } from "./livekit";
 import { getStream } from "./localMedia";
 import { USE_MOCK } from "../net/auth";
 
 export interface MicAnalyser {
-  /** Current RMS level of the mic, 0..1. */
+  /** Current RMS level of the mic, 0..1 (0 while no live track is published). */
   read(): number;
   /** Tear down the analyser + audio context. */
   stop(): void;
 }
 
 function currentTrack(): MediaStreamTrack | null {
-  if (USE_MOCK) return getStream()?.getAudioTracks()[0] ?? null;
-  return localAudioTrack();
+  const track = USE_MOCK
+    ? (getStream()?.getAudioTracks()[0] ?? null)
+    : localAudioTrack();
+  // A track that already ended is stale input (device lost, room torn down) —
+  // treat it as absent so the meter detaches rather than reading a dead source.
+  return track && track.readyState !== "ended" ? track : null;
 }
 
 type Ctor = typeof AudioContext;
@@ -33,23 +44,51 @@ function audioContextCtor(): Ctor | null {
 }
 
 /**
- * Start an analyser over the current local mic track. Returns null when there is no
- * track or no WebAudio (jsdom / fake media) — the caller then renders no meter.
+ * Start an analyser that follows the local mic track. Returns null only when
+ * WebAudio is unavailable (jsdom / fake media) — the caller then renders no
+ * meter. With WebAudio present it starts even if no track is published yet
+ * (e.g. LiveKit still connecting) and attaches as soon as one appears.
  */
 export function startMicAnalyser(): MicAnalyser | null {
-  const track = currentTrack();
   const Ctx = audioContextCtor();
-  if (!track || !Ctx) return null;
+  if (!Ctx) return null;
 
   const ctx = new Ctx();
-  const source = ctx.createMediaStreamSource(new MediaStream([track]));
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
-  source.connect(analyser);
   const buf = new Uint8Array(analyser.fftSize);
+
+  let source: MediaStreamAudioSourceNode | null = null;
+  let attached: MediaStreamTrack | null = null;
+  let stopped = false;
+
+  const detach = () => {
+    attached?.removeEventListener("ended", onEnded);
+    source?.disconnect();
+    source = null;
+    attached = null;
+  };
+  // The attached track dying must release the audio graph immediately, not
+  // wait for the next read — otherwise a dead input is held until unmount.
+  const onEnded = () => detach();
+
+  /** Re-point the source node at whichever local mic track is live right now. */
+  const sync = () => {
+    const track = stopped ? null : currentTrack();
+    if (track === attached) return;
+    detach();
+    if (!track) return;
+    source = ctx.createMediaStreamSource(new MediaStream([track]));
+    source.connect(analyser);
+    track.addEventListener("ended", onEnded);
+    attached = track;
+  };
+  sync();
 
   return {
     read() {
+      sync();
+      if (!attached) return 0;
       analyser.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) {
@@ -59,7 +98,8 @@ export function startMicAnalyser(): MicAnalyser | null {
       return Math.sqrt(sum / buf.length);
     },
     stop() {
-      source.disconnect();
+      stopped = true;
+      detach();
       void ctx.close();
     },
   };
