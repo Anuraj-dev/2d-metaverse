@@ -28,5 +28,6 @@ class EventBus {
  *  Meeting (PRD 10): the server meeting-lifecycle events are mirrored here by the
  *  app shell, incl. 'meeting-chat'{roomId,id,name,text} (participant-scoped chat).
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
- *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' */
+ *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' |
+ *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip) */
 export const bus = new EventBus();

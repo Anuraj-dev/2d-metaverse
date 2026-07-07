@@ -1,0 +1,101 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { bus } from "../game/eventBus";
+
+/**
+ * Persistent chat-panel test: the net layer is a tiny driveable emitter, so we
+ * assert send calls and rendered transcript/collapse/unread state — never Phaser.
+ */
+const netMock = vi.hoisted(() => {
+  const handlers: Record<string, Set<(p: unknown) => void>> = {};
+  const net = {
+    selfId: "me",
+    on: (ev: string, cb: (p: unknown) => void) => {
+      const set = (handlers[ev] ??= new Set());
+      set.add(cb);
+      return () => set.delete(cb);
+    },
+    emit: (ev: string, p?: unknown) => handlers[ev]?.forEach((cb) => cb(p)),
+    chat: vi.fn(),
+    whisper: vi.fn(),
+  };
+  return { handlers, net };
+});
+vi.mock("../net/shared", () => ({ sharedNet: () => netMock.net }));
+
+import ChatBox from "./ChatBox";
+
+beforeEach(() => {
+  netMock.net.chat.mockClear();
+  for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
+});
+afterEach(cleanup);
+
+function receiveChat(id: string, name: string, text: string, scope = "world") {
+  act(() => netMock.net.emit("chat", { id, name, text, scope }));
+}
+
+function enterRoom() {
+  act(() => bus.emit("room-entered", { roomId: "1" }));
+}
+
+/** Submit the chat input's form; throws (no bare `!`) if it isn't mounted. */
+function submitChat(value: string) {
+  const input = screen.getByLabelText("Chat message");
+  fireEvent.change(input, { target: { value } });
+  const form = input.closest("form");
+  if (!form) throw new Error("chat input is not inside a form");
+  fireEvent.submit(form);
+}
+
+describe("ChatBox persistent panel", () => {
+  it("is always visible with an input, defaulting to the All tab", () => {
+    const { container } = render(<ChatBox />);
+    expect(container.querySelector(".mc-chat")).toBeTruthy();
+    expect(screen.getByLabelText("Chat message")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "All" }).className).toContain("active");
+  });
+
+  it("sends a plain message on the world channel", () => {
+    render(<ChatBox />);
+    submitChat("hello world");
+    expect(netMock.net.chat).toHaveBeenCalledWith("hello world", "world");
+  });
+
+  it("renders received messages in the transcript", () => {
+    render(<ChatBox />);
+    receiveChat("p2", "bob", "hi there");
+    expect(screen.getByText("hi there")).toBeTruthy();
+  });
+
+  it("collapses to a slim bar and badges messages received while collapsed", () => {
+    render(<ChatBox />);
+    fireEvent.click(screen.getByLabelText("Collapse chat"));
+    expect(screen.queryByLabelText("Chat message")).toBeNull();
+    receiveChat("p2", "bob", "ping");
+    receiveChat("p2", "bob", "pong");
+    expect(screen.getByLabelText("Open chat, 2 unread")).toBeTruthy();
+  });
+
+  it("clears the unread badge when re-expanded", () => {
+    render(<ChatBox />);
+    fireEvent.click(screen.getByLabelText("Collapse chat"));
+    receiveChat("p2", "bob", "ping");
+    fireEvent.click(screen.getByLabelText("Open chat, 1 unread"));
+    expect(screen.getByLabelText("Chat message")).toBeTruthy();
+  });
+
+  it("exposes and auto-selects the Room tab on room entry", () => {
+    render(<ChatBox />);
+    expect(screen.queryByRole("button", { name: "Room" })).toBeNull();
+    enterRoom();
+    expect(screen.getByRole("button", { name: "Room" }).className).toContain("active");
+  });
+
+  it("routes plain messages to the room channel while on the Room tab", () => {
+    render(<ChatBox />);
+    enterRoom();
+    submitChat("hey room");
+    expect(netMock.net.chat).toHaveBeenCalledWith("hey room", "room");
+  });
+});

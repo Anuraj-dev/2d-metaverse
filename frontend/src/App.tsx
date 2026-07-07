@@ -2,12 +2,11 @@ import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { TriangleAlert } from "lucide-react";
 import Roster from "./ui/Roster";
 import Minimap from "./ui/Minimap";
-import Settings from "./ui/Settings";
+import ControlBar from "./ui/ControlBar";
 import TouchControls from "./ui/TouchControls";
 import HelpOverlay from "./ui/HelpOverlay";
 import SfxBridge from "./ui/SfxBridge";
 import BubbleLayer from "./ui/BubbleLayer";
-import MediaControls from "./ui/MediaControls";
 import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
 import ChatBox from "./ui/ChatBox";
@@ -402,10 +401,8 @@ export default function App() {
       <div className="hud">
         <InteractionHint />
         <BubbleLayer />
-        <MediaControls />
         <Roster />
         <Minimap />
-        <Settings />
         <HelpOverlay />
         <TouchControls />
         <SfxBridge />
@@ -466,6 +463,9 @@ export default function App() {
           <span className="presence-dot" aria-hidden="true" />
           {connected ? "connected" : "connecting…"}
         </div>
+        {/* The single global control bar (mic/cam/settings) — mounted last so it
+            layers above the lazy meeting/arcade overlays (PRD 20). */}
+        <ControlBar />
       </div>
     </div>
   );

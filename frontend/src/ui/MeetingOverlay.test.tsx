@@ -2,15 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { bus } from "../game/eventBus";
 
-const media = vi.hoisted(() => ({
-  roomVideo: {
-    lkRoom: null as unknown,
-    onRoomChanged: vi.fn(() => () => {}),
-    setMicEnabled: vi.fn(),
-    setCamEnabled: vi.fn(),
-  },
-}));
-vi.mock("../media/livekit", () => media);
 vi.mock("./MeetingGrid", () => ({
   default: (props: { participants: { id: string }[] }) => (
     <div data-testid="grid-stub" data-count={props.participants.length} />
@@ -43,8 +34,6 @@ function renderOverlay(revealed: boolean, backdrop: string | null = null) {
 
 afterEach(() => {
   cleanup();
-  media.roomVideo.setMicEnabled.mockClear();
-  media.roomVideo.setCamEnabled.mockClear();
 });
 
 describe("MeetingOverlay", () => {
@@ -90,11 +79,9 @@ describe("MeetingOverlay", () => {
     off();
   });
 
-  it("mic/cam toggles drive the existing room connection", () => {
+  it("no longer renders duplicate mic/cam controls (they live on the global bar)", () => {
     renderOverlay(true);
-    fireEvent.click(screen.getByLabelText("Mute microphone"));
-    expect(media.roomVideo.setMicEnabled).toHaveBeenCalledWith(false);
-    fireEvent.click(screen.getByLabelText("Turn camera off"));
-    expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(false);
+    expect(screen.queryByLabelText("Mute microphone")).toBeNull();
+    expect(screen.queryByLabelText("Turn camera off")).toBeNull();
   });
 });
