@@ -52,6 +52,7 @@ sign-in.
 | `npm test` | Vitest unit tests |
 | `npm run build` | Typecheck + production build |
 | `npm run size` | Bundle-budget check (gzipped entry chunk) |
+| `npm run check:emoji` | Chrome-emoji guard — fails on any emoji in production source |
 
 Root convenience: from the repo root, `npm run lint` / `npm run typecheck` /
 `npm test` run every workspace (shared, backend, frontend) — the typecheck/test
@@ -320,6 +321,37 @@ before reaching for new art.
    time. If code polish ever pushes the entry chunk near the budget, raise it
    *consciously* in `scripts/bundle-budget.mjs` with a justifying comment, never
    silently.
+
+### Icons & typography (PRD 18)
+
+One icon system, one typeface — no emoji in UI chrome.
+
+- **Icons: [lucide](https://lucide.dev/) (`lucide-react`), imported per-icon**
+  (`import { Mic, MicOff } from "lucide-react"`) so the tree-shaker keeps only
+  what's used and the entry-bundle budget holds. Never render an emoji in
+  chrome (toolbars, toasts, modals, help, mock seed lines, CSS `content`);
+  reach for a lucide icon or plain text instead. **User-typed chat content is
+  never touched** — emojis a player types are content, not chrome.
+- **Icon-only buttons carry an `aria-label`** (and `aria-pressed` when they
+  toggle); the decorative `<svg>` is `aria-hidden`. Icon buttons reuse the
+  shared `.icon-btn` style (round HUD affordance) or a small inline-flex
+  `gap` on the button — not per-component one-offs.
+- **Typeface: one self-hosted rounded variable sans — Nunito (OFL)** — at
+  `public/assets/fonts/nunito-variable.woff2`, declared via `@font-face` in
+  `src/index.css` and applied everywhere through the `--font-app` CSS custom
+  property (which carries a system-stack fallback). No third-party font CDN.
+  Chat/console surfaces keep an intentional monospace stack (`--font-mono`).
+  Attribution: `ATTRIBUTIONS.md`.
+- **Phaser canvas text** (nameplates, chat bubbles, loading/world text) uses
+  the same family via `game/uiFont.ts` (`CANVAS_FONT_FAMILY`). `BootScene`
+  awaits `document.fonts.load(...)` before starting the world scene, so canvas
+  text is rasterized on the real face and never flashes the fallback font.
+- **CI guard: `npm run check:emoji`** (`scripts/check-no-chrome-emoji.mjs`)
+  greps production frontend source — tests excluded — for `Extended_Pictographic`
+  codepoints (+ `U+FE0F`, ★/⛶/✕) and fails on any hit, so "emojis everywhere"
+  can't silently regress. Wired into the frontend CI `build` job, same spirit as
+  the prod-dist `__testHook` grep. Typographic marks kept on purpose (arrows
+  ← → ↑, ●, ›) are intentionally not matched.
 
 ### Meetings (portal transition + Meet-style grid)
 

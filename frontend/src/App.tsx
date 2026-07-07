@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { TriangleAlert } from "lucide-react";
 import Roster from "./ui/Roster";
 import Minimap from "./ui/Minimap";
 import Settings from "./ui/Settings";
@@ -369,7 +370,9 @@ export default function App() {
     return (
       <div className="login">
         <div className="login-card">
-          <h1>⚠️ Misconfigured</h1>
+          <h1 className="login-title-icon">
+            <TriangleAlert size={26} aria-hidden="true" /> Misconfigured
+          </h1>
           <p className="login-sub">
             This build has no <code>VITE_SERVER_URL</code>. Set it (and
             <code> VITE_USE_MOCK=0</code>) in your hosting environment.
@@ -459,8 +462,9 @@ export default function App() {
             />
           </Suspense>
         )}
-        <div className={`presence ${connected ? "" : "pending"}`}>
-          {connected ? "🟢 connected" : "🟡 connecting…"}
+        <div className={`presence ${connected ? "" : "pending"}`} role="status">
+          <span className="presence-dot" aria-hidden="true" />
+          {connected ? "connected" : "connecting…"}
         </div>
       </div>
     </div>

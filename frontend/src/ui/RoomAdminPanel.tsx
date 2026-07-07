@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Star } from "lucide-react";
 import type { PlayerState } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
 import { sharedNet } from "../net/shared";
@@ -88,7 +89,9 @@ export default function RoomAdminPanel() {
       <div className="room-admin-bar">
         {view.badge && (
           <span className={`admin-badge ${view.isAdmin ? "is-you" : ""}`}>
-            {view.isAdmin ? "★ " : ""}
+            {view.isAdmin && (
+              <Star className="admin-badge-star" size={13} fill="currentColor" aria-hidden="true" />
+            )}
             {view.badge}
           </span>
         )}

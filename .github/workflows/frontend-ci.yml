@@ -30,6 +30,8 @@ jobs:
         run: npm run build:shared
       - name: Lint
         run: npm run lint
+      - name: No chrome emoji
+        run: npm run check:emoji
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests

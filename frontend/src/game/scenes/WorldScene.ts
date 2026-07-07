@@ -24,6 +24,7 @@ import { interactAction } from "../interaction";
 import { initOnAir, stepOnAir, type OnAirEffect, type OnAirInput, type OnAirState } from "../onAir";
 import { positionsEmitDue, moveSendDue } from "../throttle";
 import { tintForHour } from "../dayNight";
+import { CANVAS_FONT_FAMILY } from "../uiFont";
 import { terrainFromTiledMap, type TiledMapLike } from "../../ui/minimapTerrain";
 
 const ZOOM = 2.2;
@@ -632,7 +633,7 @@ export default class WorldScene extends Phaser.Scene {
 
     const txt = this.add
       .text(0, 0, text, {
-        fontFamily: "sans-serif",
+        fontFamily: CANVAS_FONT_FAMILY,
         fontSize: "9px",
         color: "#10131a",
         align: "center",
@@ -701,7 +702,7 @@ export default class WorldScene extends Phaser.Scene {
     // Minecraft-style gold nameplate with a dark outline, always above the head.
     return this.add
       .text(0, 0, text, {
-        fontFamily: "monospace",
+        fontFamily: CANVAS_FONT_FAMILY,
         fontSize: "10px",
         fontStyle: "bold",
         color: "#ffd24a",

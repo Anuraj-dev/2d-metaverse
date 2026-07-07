@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Users } from "lucide-react";
 import type { PlayerState } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
@@ -45,8 +46,13 @@ export default function Roster() {
 
   return (
     <div className={`roster ${open ? "open" : ""}`}>
-      <button className="roster-head" onClick={() => setOpen((o) => !o)}>
-        👥 {players.length}
+      <button
+        className="roster-head"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`Roster — ${players.length} online`}
+        aria-expanded={open}
+      >
+        <Users size={14} aria-hidden="true" /> {players.length}
       </button>
       {open && (
         <div className="roster-list">

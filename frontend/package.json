@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
+    "check:emoji": "node scripts/check-no-chrome-emoji.mjs",
     "size": "node scripts/bundle-budget.mjs",
     "preview": "vite preview",
     "e2e": "playwright test",

@@ -92,9 +92,9 @@ describe("MeetingOverlay", () => {
 
   it("mic/cam toggles drive the existing room connection", () => {
     renderOverlay(true);
-    fireEvent.click(screen.getByTitle("Mic"));
+    fireEvent.click(screen.getByLabelText("Mute microphone"));
     expect(media.roomVideo.setMicEnabled).toHaveBeenCalledWith(false);
-    fireEvent.click(screen.getByTitle("Camera"));
+    fireEvent.click(screen.getByLabelText("Turn camera off"));
     expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(false);
   });
 });

@@ -4,11 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Self-hosted app typeface (Nunito Variable, OFL). No third-party font
+         CDN; preloaded so the HUD/landing paint on the real face. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Hanken+Grotesk:wght@400;500;600&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      href="/assets/fonts/nunito-variable.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
     />
     <title>hyprverse — step into the metaverse</title>
   </head>

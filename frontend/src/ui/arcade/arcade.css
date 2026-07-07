@@ -67,20 +67,19 @@
   width: 84px;
   accent-color: #7fd1b9;
 }
-.arcade-icon-btn {
+/* Modifier on the shared .icon-btn base (index.css — always loaded; this file
+   is a lazy chunk and must not duplicate the base). Size + palette only. */
+.icon-btn.arcade-icon-btn {
+  width: 30px;
+  height: 30px;
   background: #24304a;
   color: #cdd6ea;
-  border: 1px solid #3a4767;
-  border-radius: 6px;
-  padding: 5px 8px;
-  cursor: pointer;
-  font-size: 0.95rem;
-  line-height: 1;
-}
-.arcade-icon-btn:hover {
-  background: #2f3d5c;
+  border-color: #3a4767;
 }
 .arcade-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: #24304a;
   color: #cdd6ea;
   border: 1px solid #3a4767;

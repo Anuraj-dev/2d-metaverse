@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DoorClosed, Hand } from "lucide-react";
 import { bus } from "../game/eventBus";
 import { sharedNet } from "../net/shared";
 import { CAPACITY_MESSAGE, knockResultMessage } from "../game/roomAccess";
@@ -56,7 +57,7 @@ export default function KnockStatus() {
   if (knock) {
     return (
       <div className="knock-status" role="status">
-        <span className="knock-spinner" aria-hidden="true">✊</span>
+        <span className="knock-spinner" aria-hidden="true"><Hand size={20} /></span>
         <div className="knock-text">
           <strong>Knocking…</strong>
           <span>Waiting for the admin of {knock.name}</span>
@@ -70,7 +71,7 @@ export default function KnockStatus() {
   if (feedback) {
     return (
       <div className="knock-status knock-status-feedback" role="status">
-        <span aria-hidden="true">🚪</span>
+        <span className="knock-status-icon" aria-hidden="true"><DoorClosed size={18} /></span>
         <div className="knock-text">{feedback}</div>
       </div>
     );

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { Maximize, Volume2, VolumeX, X } from "lucide-react";
 import type { ArcadeGame, ArcadeLeaderboard } from "@metaverse/shared";
 import { toSeed } from "../../game/arcade/prng";
 import { fetchLeaderboard, submitScore } from "../../net/arcade";
@@ -169,12 +170,12 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
           <div className="arcade-tools">
             <div className="arcade-sound" title="Arcade sound">
               <button
-                className="arcade-icon-btn"
+                className="icon-btn arcade-icon-btn"
                 onClick={() => setSettings({ muteArcade: !muteArcade })}
                 aria-label={muteArcade ? "Unmute arcade sound" : "Mute arcade sound"}
                 aria-pressed={muteArcade}
               >
-                {muteArcade ? "🔇" : "🔊"}
+                {muteArcade ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
               </button>
               <input
                 className="arcade-vol"
@@ -189,15 +190,15 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
               />
             </div>
             <button
-              className="arcade-icon-btn"
+              className="icon-btn arcade-icon-btn"
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
               aria-pressed={isFullscreen}
             >
-              ⛶
+              <Maximize size={16} aria-hidden="true" />
             </button>
             <button className="arcade-close" onClick={handleClose} aria-label="Close arcade">
-              Esc ✕
+              Esc <X size={16} aria-hidden="true" />
             </button>
           </div>
         </header>

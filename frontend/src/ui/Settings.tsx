@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Bell, Maximize, Settings as SettingsIcon } from "lucide-react";
 import {
   getSettings,
   setSettings,
@@ -30,10 +31,11 @@ export default function Settings() {
     <div className="settings">
       <button
         className="icon-btn"
-        title="Settings"
+        aria-label="Settings"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        ⚙️
+        <SettingsIcon size={18} aria-hidden="true" />
       </button>
       {open && (
         <div className="settings-panel">
@@ -119,9 +121,13 @@ export default function Settings() {
             />
           </label>
           <div className="set-actions">
-            <button onClick={toggleFullscreen}>⛶ Fullscreen</button>
+            <button onClick={toggleFullscreen}>
+              <Maximize size={14} aria-hidden="true" /> Fullscreen
+            </button>
             {perm !== "granted" && (
-              <button onClick={enableNotifs}>🔔 Desktop alerts</button>
+              <button onClick={enableNotifs}>
+                <Bell size={14} aria-hidden="true" /> Desktop alerts
+              </button>
             )}
           </div>
           <div className="set-version">build {__APP_SHA__.slice(0, 7)}</div>

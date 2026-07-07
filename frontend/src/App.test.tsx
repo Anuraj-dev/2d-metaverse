@@ -160,7 +160,7 @@ describe("App shell", () => {
     await act(async () => {
       netMock.net.emit("init", { selfId: SELF });
     });
-    await waitFor(() => expect(screen.getByText(/🟢 connected/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/^connected$/)).toBeTruthy());
     expect(media.worldAudio.start).toHaveBeenCalledWith("1", SELF);
     expect(media.worldAudio.start).toHaveBeenCalledTimes(1);
   });
