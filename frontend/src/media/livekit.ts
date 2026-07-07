@@ -189,6 +189,11 @@ class WorldAudio {
     void this.room?.localParticipant.setMicrophoneEnabled(on);
   }
 
+  /** The local mic MediaStreamTrack while connected (for the HUD level meter). */
+  localAudioTrack(): MediaStreamTrack | null {
+    return localAudioTrackOf(this.room);
+  }
+
   async stop() {
     this.offPositions?.();
     speakingState.clear("world");
@@ -287,6 +292,14 @@ class RoomVideo {
         this.audioEls.delete(p.identity);
         this.emit();
       });
+      // Feed the shared speaking-state seam so the HUD speaking rings light up for
+      // meeting/seated talkers too (identity === playerId), same as the world room.
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        speakingState.setSpeakers(
+          "room",
+          speakers.map((s) => s.identity)
+        );
+      });
       await room.connect(url, token);
       // Respect the player's sticky mic/cam mute (global control bar, PRD 20) so a
       // muted walker stays muted when they sit into a meeting, and vice versa.
@@ -312,14 +325,30 @@ class RoomVideo {
     void this.room?.localParticipant.setCameraEnabled(on);
   }
 
+  /** The local mic MediaStreamTrack while seated (for the HUD level meter). */
+  localAudioTrack(): MediaStreamTrack | null {
+    return localAudioTrackOf(this.room);
+  }
+
   async leave() {
     this.tracks.clear();
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
     this.emit();
+    speakingState.clear("room");
     await this.room?.disconnect();
     this.setRoom(null);
   }
+}
+
+/** Pull the local participant's audio MediaStreamTrack from a room, or null. */
+function localAudioTrackOf(room: LKRoom | null): MediaStreamTrack | null {
+  const pubs = room?.localParticipant.getTrackPublications() ?? [];
+  for (const p of pubs) {
+    const t = p.track?.mediaStreamTrack;
+    if (t && t.kind === "audio") return t;
+  }
+  return null;
 }
 
 /* ----------------------------- Stage broadcast ----------------------------- */
@@ -499,3 +528,12 @@ interface PositionsPayload {
 export const worldAudio = new WorldAudio();
 export const roomVideo = new RoomVideo();
 export const stageVideo = new StageVideo();
+
+/**
+ * The local mic MediaStreamTrack from whichever room currently publishes it —
+ * the room/meeting video when seated, else proximity world audio while walking.
+ * Consumed by the HUD mic-level meter (PRD 20). Null when neither is connected.
+ */
+export function localAudioTrack(): MediaStreamTrack | null {
+  return roomVideo.localAudioTrack() ?? worldAudio.localAudioTrack();
+}

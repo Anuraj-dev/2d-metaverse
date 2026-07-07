@@ -5,6 +5,7 @@ import { setMic, setCam } from "../media/mediaControls";
 import { getMediaPrefs, subscribeMediaPrefs } from "../media/mediaPrefs";
 import { micToastText, camToastText } from "../game/controlBar";
 import Settings from "./Settings";
+import MicMeter from "./MicMeter";
 
 const TOAST_MS = 1600;
 
@@ -59,7 +60,8 @@ export default function ControlBar() {
         ) : (
           <MicOff size={20} aria-hidden="true" />
         )}
-        {/* PRD 20 (part B) mounts the live mic-level meter here while mic is on. */}
+        {/* Live input-level meter, only while the mic is on. */}
+        {prefs.micOn && <MicMeter />}
       </button>
 
       <button

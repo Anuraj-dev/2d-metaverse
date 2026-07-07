@@ -22,12 +22,13 @@ class EventBus {
 /** Game -> UI: 'knocking'{roomId,name} | 'stop-knocking' | 'near-seat'{...} |
  *  'leave-seat' | 'sat'{roomId,seatId} | 'stood' | 'positions'{...} | 'room-entered'{roomId} |
  *  'room-left'{roomId} | 'knock-approved' | 'knock-denied' | 'admin-promoted' |
- *  'world-info'{width,height,rooms,terrain} |
+ *  'world-info'{width,height,rooms,areas,terrain} |
  *  Board tables (PRD 11 p2): 'near-board-seat'{tableId,seat,game,label,occupied} | 'leave-board-seat' |
  *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-move' | 'board-win'
  *  Meeting (PRD 10): the server meeting-lifecycle events are mirrored here by the
  *  app shell, incl. 'meeting-chat'{roomId,id,name,text} (participant-scoped chat).
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' |
- *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip) */
+ *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip)
+ *  HUD (PRD 20): 'speaking'{ids} (active-speaker rings) | 'map-open' | 'map-close' (fullscreen map) */
 export const bus = new EventBus();
