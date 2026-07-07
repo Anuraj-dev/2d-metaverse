@@ -6,6 +6,7 @@ import ControlBar from "./ui/ControlBar";
 import TouchControls from "./ui/TouchControls";
 import HelpOverlay from "./ui/HelpOverlay";
 import SfxBridge from "./ui/SfxBridge";
+import SpeakingBridge from "./ui/SpeakingBridge";
 import BubbleLayer from "./ui/BubbleLayer";
 import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
@@ -406,6 +407,7 @@ export default function App() {
         <HelpOverlay />
         <TouchControls />
         <SfxBridge />
+        <SpeakingBridge />
         <Suspense fallback={null}>
           <RoomAccessLayer />
         </Suspense>

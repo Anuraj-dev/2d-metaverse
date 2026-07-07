@@ -15,8 +15,9 @@ const media = vi.hoisted(() => ({
 }));
 vi.mock("../media/livekit", () => media);
 vi.mock("../net/auth", () => ({ USE_MOCK: false }));
-// Keep the test focused on the bar; Settings has its own suite.
+// Keep the test focused on the bar; Settings + the WebAudio meter are out of scope.
 vi.mock("./Settings", () => ({ default: () => <div data-testid="settings-stub" /> }));
+vi.mock("./MicMeter", () => ({ default: () => null }));
 
 import ControlBar from "./ControlBar";
 

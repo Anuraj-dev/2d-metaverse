@@ -1,8 +1,8 @@
 /**
  * PRD 20 HUD overhaul: the persistent chat panel is discoverable and usable
- * without the old Enter-to-open ritual, and collapses to a slim bar. (The
- * fullscreen-map open/close leg is added with PRD 20 part B.) Bus-hook + DOM only,
- * no sleeps — every wait is a locator condition.
+ * without the old Enter-to-open ritual and collapses to a slim bar; the fullscreen
+ * map opens from the minimap and closes on Esc. Bus-hook + DOM only, no sleeps —
+ * every wait is a locator condition.
  */
 import { test, expect } from "@playwright/test";
 import { signUpAndJoin } from "./helpers";
@@ -33,4 +33,19 @@ test("persistent chat panel: visible on join, sends, and collapses", async ({ pa
   // Re-expand from the slim bar.
   await slim.click();
   await expect(page.locator(".mc-chat")).toBeVisible();
+});
+
+test("fullscreen map opens from the minimap and closes on Esc (view-only)", async ({ page }) => {
+  await signUpAndJoin(page, { map: "campus" });
+
+  // The minimap raster arrives with the one-time world-info snapshot.
+  const minimap = page.getByRole("button", { name: "Open campus map" });
+  await expect(minimap).toBeVisible();
+
+  await minimap.click();
+  await expect(page.getByRole("dialog", { name: "Campus map" })).toBeVisible();
+
+  // Esc closes it instantly.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Campus map" })).toBeHidden();
 });

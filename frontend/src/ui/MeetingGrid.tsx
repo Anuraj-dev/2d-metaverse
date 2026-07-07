@@ -26,7 +26,17 @@ import { Track } from "livekit-client";
 import { motion } from "motion/react";
 import type { MeetingParticipant } from "@metaverse/shared";
 import { roomVideo } from "../media/livekit";
+import { speakingState } from "../media/speakingState";
 import PixelAvatar from "./PixelAvatar";
+
+/** Whether a participant is an active speaker, off the shared media seam (PRD 20). */
+function useSpeaking(playerId: string): boolean {
+  return useSyncExternalStore(
+    (cb) => speakingState.subscribe(() => cb()),
+    () => speakingState.speaking.has(playerId),
+    () => false,
+  );
+}
 
 export interface MeetingGridProps {
   participants: MeetingParticipant[];
@@ -141,11 +151,13 @@ function TileBody({
   morph: boolean;
   children?: React.ReactNode;
 }) {
+  const speaking = useSpeaking(playerId);
   return (
     <motion.div
-      className="meet-tile-inner"
+      className={`meet-tile-inner ${speaking ? "speaking" : ""}`}
       data-testid="meet-tile"
       data-player={playerId}
+      data-speaking={speaking}
       {...(morph ? { layoutId: "meet-tile-self" } : {})}
     >
       {children ?? (

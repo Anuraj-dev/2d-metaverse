@@ -3,15 +3,16 @@
  * active-speaker detection and any consumer that needs speech state.
  *
  * LiveKit rooms push their active-speaker identity set in via `setSpeakers(source,
- * ids)` (the world room now; the stage broadcast room in PRD 17); any number of
- * consumers subscribe to the union across sources. Transport-adjacent but plain
+ * ids)` (the world room; the stage broadcast room in PRD 17; the room/meeting video
+ * room in PRD 20); any number of consumers subscribe to the union across sources —
+ * ambient ducking and now the HUD speaking rings. Transport-adjacent but plain
  * data: string identities (== playerId) in, a `ReadonlySet` out — it makes ZERO
  * mixing, proximity or duck decisions (those are the pure `soundMixer`'s job). The
  * LiveKit event wiring that feeds it (`livekit.ts`) stays untested beyond types per
  * convention; the store's own union/dedupe/clear logic is unit-tested
  * (`speakingState.test.ts`).
  */
-export type SpeakingSource = "world" | "stage";
+export type SpeakingSource = "world" | "stage" | "room";
 
 export class SpeakingState {
   private readonly bySource = new Map<SpeakingSource, ReadonlySet<string>>();
