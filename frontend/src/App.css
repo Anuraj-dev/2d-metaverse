@@ -212,8 +212,30 @@ html, body, #root {
   min-height: 0;
 }
 .lp-intro {
+  position: relative;
   max-width: 560px;
   animation: hv-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Feathered warm-dark scrim behind the copy so contrast never depends on which
+   tile sits underneath (WCAG AA for the smaller text over the busy backdrop).
+   Anchored left, fading right toward the card; soft-masked top/bottom so it
+   reads as atmosphere, not a hard panel — the diorama stays the hero. */
+.lp-intro::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -28px -56px -26px -60px;
+  background: linear-gradient(
+    90deg,
+    rgba(14, 22, 10, 0.86) 0%,
+    rgba(14, 22, 10, 0.78) 42%,
+    rgba(14, 22, 10, 0.46) 72%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
 }
 .lp-kicker {
   margin: 0 0 14px;
@@ -221,8 +243,8 @@ html, body, #root {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #d7f0b0;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+  color: #f0c06a; /* warm amber accent, used only here */
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 .lp-wordmark {
   margin: 0;
@@ -231,8 +253,8 @@ html, body, #root {
   font-size: clamp(56px, 11vw, 132px);
   line-height: 0.9;
   letter-spacing: -0.04em;
-  color: #fbfdf3;
-  text-shadow: 0 4px 22px rgba(0, 0, 0, 0.45);
+  color: #fdfaf1; /* warm white */
+  text-shadow: 0 4px 22px rgba(0, 0, 0, 0.5);
 }
 .lp-tagline {
   margin: 20px 0 0;
@@ -240,8 +262,8 @@ html, body, #root {
   font-size: clamp(16px, 2vw, 21px);
   font-weight: 500;
   line-height: 1.45;
-  color: #eef6e2;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+  color: #f3ecdb; /* warm off-white — no cool cast against the greens */
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
 .lp-meta {
   margin-top: 26px;
@@ -256,8 +278,8 @@ html, body, #root {
   border-radius: 999px;
   font-size: 13px;
   font-weight: 700;
-  color: #f2f8e8;
-  background: rgba(22, 36, 18, 0.42);
+  color: #f3ecdb;
+  background: rgba(14, 22, 10, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.22);
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
