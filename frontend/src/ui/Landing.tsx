@@ -1,16 +1,16 @@
 import { useRef, useState } from "react";
-import { ArrowUpRight } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { ArrowRight } from "lucide-react";
 import { signUp, signIn, USE_MOCK } from "../net/auth";
 import { CHARS } from "../game/chars";
 import Logo from "./Logo";
-import SphereScene from "./SphereScene";
+import CampusHero from "./CampusHero";
 type Mode = "signin" | "signup";
 
 /**
- * Pre-login experience: a deep-space observatory hero built around a wireframe
- * sphere, framed like an instrument viewport, with an inline console-style
- * sign-in. Owns the auth form and signals the parent via onEntered().
+ * Pre-login experience (PRD 19): a pixel-campus diorama hero (CampusHero) with the
+ * auth card floating over it in the app typeface. Owns the auth form and signals
+ * the parent via onEntered(). The auth flow itself is unchanged — this is a
+ * re-theme, not a contract change.
  */
 export default function Landing({
   onEntered,
@@ -28,7 +28,6 @@ export default function Landing({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const reduce = useReducedMotion();
   const userInputRef = useRef<HTMLInputElement>(null);
 
   const submit = async (e?: React.FormEvent) => {
@@ -45,7 +44,7 @@ export default function Landing({
       return;
     }
 
-    if (!u || !password) return setError("Username and passkey are required.");
+    if (!u || !password) return setError("Username and password are required.");
     setBusy(true);
     try {
       if (mode === "signup") await signUp(u, password);
@@ -61,91 +60,48 @@ export default function Landing({
   };
 
   const cta = busy
-    ? "Linking…"
+    ? "Entering…"
     : USE_MOCK
-      ? "Enter the metaverse"
+      ? "Enter the campus"
       : mode === "signup"
         ? "Create account"
         : "Sign in";
 
-  const ease = [0.22, 1, 0.36, 1] as const;
-  const rise = (delay: number) =>
-    reduce
-      ? { initial: false as const }
-      : {
-          initial: { opacity: 0, y: 22 },
-          animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.7, delay, ease },
-        };
-
   return (
     <div className="landing">
-      <SphereScene />
+      <CampusHero />
 
-      {/* instrument viewport frame */}
-      <div className="lp-frame" aria-hidden="true">
-        <span className="lp-bracket tl" />
-        <span className="lp-bracket tr" />
-        <span className="lp-bracket bl" />
-        <span className="lp-bracket br" />
-      </div>
-
-      <motion.nav
-        className="lp-nav"
-        initial={reduce ? false : { opacity: 0, y: -14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease }}
-      >
+      <nav className="lp-nav">
         <Logo />
         <button
           type="button"
           className="lp-nav-cta"
           onClick={() => userInputRef.current?.focus()}
         >
-          Experience Metaverse <ArrowUpRight size={15} aria-hidden="true" />
+          Enter campus <ArrowRight size={15} aria-hidden="true" />
         </button>
-      </motion.nav>
-
-      {/* HUD corner readouts */}
-      <motion.div
-        className="lp-hud lp-hud-tl"
-        {...rise(0.2)}
-      >
-        <span className="lp-tick" /> SECTOR&nbsp;01 · OPEN WORLD
-      </motion.div>
-      <div className="lp-hud lp-hud-br">RA 14ʰ29ᵐ / DEC −62°&nbsp;·&nbsp;EST 2026</div>
+      </nav>
 
       <main className="lp-grid">
         <section className="lp-intro">
-          <motion.p className="lp-kicker" {...rise(0.25)}>
-            a living 2D space station
-          </motion.p>
-          <motion.h1 className="lp-wordmark" {...rise(0.35)}>
-            hyprverse
-          </motion.h1>
-          <motion.p className="lp-tagline" {...rise(0.48)}>
-            Step into the metaverse.
-          </motion.p>
-          <motion.div className="lp-meta" {...rise(0.58)}>
-            <span>walk · talk · gather</span>
-            <span className="lp-meta-dot">●</span>
-            <span>proximity voice &amp; video</span>
-          </motion.div>
+          <p className="lp-kicker">a cozy 2D pixel campus</p>
+          <h1 className="lp-wordmark">hyprverse</h1>
+          <p className="lp-tagline">
+            Walk a little pixel campus, wander over to whoever&apos;s nearby, and
+            talk like you&apos;re all in one room.
+          </p>
+          <div className="lp-meta">
+            <span className="lp-chip">walk · talk · gather</span>
+            <span className="lp-chip">proximity voice &amp; video</span>
+          </div>
         </section>
 
-        <motion.form className="console" onSubmit={submit} {...rise(0.5)}>
-          <div className="console-top">
-            <span className="console-label">
-              {USE_MOCK ? "// guest access" : "// crew access"}
-            </span>
-            <span className="console-status">ONLINE</span>
-          </div>
-
+        <form className="console" onSubmit={submit}>
           <h2 className="console-title">
             {USE_MOCK
-              ? "Pick a callsign"
+              ? "Pick your character"
               : mode === "signup"
-                ? "Register crew"
+                ? "Join the campus"
                 : "Welcome back"}
           </h2>
 
@@ -175,30 +131,30 @@ export default function Landing({
           )}
 
           <label className="field">
-            <span className="field-label">Identifier</span>
+            <span className="field-label">Username</span>
             <input
               ref={userInputRef}
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="callsign"
+              placeholder="your name"
               autoComplete="username"
             />
           </label>
           {!USE_MOCK && (
             <label className="field">
-              <span className="field-label">Passkey</span>
+              <span className="field-label">Password</span>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="your password"
                 autoComplete={mode === "signup" ? "new-password" : "current-password"}
               />
             </label>
           )}
 
-          <div className="field-label avatar-head">Avatar</div>
+          <div className="field-label avatar-head">Choose your character</div>
           <div className="console-avatars">
             {CHARS.map((c) => (
               <button
@@ -214,18 +170,18 @@ export default function Landing({
           </div>
 
           {(error || notice) && (
-            <div className="console-error">{error ?? notice}</div>
+            <div className="console-error" role="alert">{error ?? notice}</div>
           )}
 
           <button type="submit" className="console-submit" disabled={busy}>
             <span>{cta}</span>
-            <span className="console-submit-arrow" aria-hidden="true">→</span>
+            <ArrowRight className="console-submit-arrow" size={18} aria-hidden="true" />
           </button>
 
           <p className="console-foot">
             WASD / arrows move · Shift runs · E sits · ? for help
           </p>
-        </motion.form>
+        </form>
       </main>
     </div>
   );
