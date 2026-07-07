@@ -11,6 +11,7 @@ import { setMediaPrefs } from "../media/mediaPrefs";
 const media = vi.hoisted(() => ({
   worldAudio: { setMicEnabled: vi.fn() },
   roomVideo: { setMicEnabled: vi.fn(), setCamEnabled: vi.fn() },
+  stageVideo: { setMicEnabled: vi.fn(), setCamEnabled: vi.fn() },
 }));
 vi.mock("../media/livekit", () => media);
 vi.mock("../net/auth", () => ({ USE_MOCK: false }));
@@ -25,6 +26,8 @@ beforeEach(() => {
   media.worldAudio.setMicEnabled.mockClear();
   media.roomVideo.setMicEnabled.mockClear();
   media.roomVideo.setCamEnabled.mockClear();
+  media.stageVideo.setMicEnabled.mockClear();
+  media.stageVideo.setCamEnabled.mockClear();
 });
 afterEach(cleanup);
 
@@ -45,9 +48,10 @@ describe("ControlBar", () => {
 
     fireEvent.click(screen.getByLabelText("Mute microphone"));
 
-    // Fans out to proximity voice AND the room/meeting video.
+    // Fans out to proximity voice, the room/meeting video AND the stage broadcast.
     expect(media.worldAudio.setMicEnabled).toHaveBeenCalledWith(false);
     expect(media.roomVideo.setMicEnabled).toHaveBeenCalledWith(false);
+    expect(media.stageVideo.setMicEnabled).toHaveBeenCalledWith(false);
     // Icon/label flips and a bus event fires for the sound mixer's blip.
     expect(screen.getByLabelText("Unmute microphone")).toBeTruthy();
     expect(toggled).toEqual({ on: false });
@@ -56,10 +60,11 @@ describe("ControlBar", () => {
     off();
   });
 
-  it("toggles the camera on the room video and announces it", () => {
+  it("toggles the camera on the room and stage publishers and announces it", () => {
     render(<ControlBar />);
     fireEvent.click(screen.getByLabelText("Turn camera off"));
     expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(false);
+    expect(media.stageVideo.setCamEnabled).toHaveBeenCalledWith(false);
     expect(screen.getByLabelText("Turn camera on")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe("Camera off");
   });

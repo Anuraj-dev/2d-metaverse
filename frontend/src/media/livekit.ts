@@ -417,20 +417,34 @@ class StageVideo {
       });
       await room.connect(url, token);
       if (opts.publish) {
-        await room.localParticipant.setMicrophoneEnabled(true);
-        if (opts.video) {
-          await room.localParticipant.setCameraEnabled(true);
-          const localVideo = room.localParticipant
-            .getTrackPublications()
-            .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;
-          if (localVideo) {
-            this.tracks.set(selfId, localVideo);
-            this.emit();
-          }
-        }
+        // Replay the sticky mic/cam prefs (global control bar, PRD 20) instead of
+        // coming up hot: going on air while muted yields an on-air-but-muted state
+        // that the bar can unmute — the bar stays the single control surface.
+        const wanted = getMediaPrefs();
+        await room.localParticipant.setMicrophoneEnabled(wanted.micOn);
+        if (opts.video && wanted.camOn) await this.applyCam(true);
       }
     } catch (e) {
       console.warn("Stage unavailable:", e);
+    }
+  }
+
+  /**
+   * Enable/disable the performer camera and keep the local self tile in sync
+   * (local tracks never fire TrackSubscribed, so surfacing is done here).
+   */
+  private async applyCam(on: boolean) {
+    const room = this.room;
+    if (!room) return;
+    await room.localParticipant.setCameraEnabled(on);
+    if (!on) return;
+    const { Track } = await import("livekit-client");
+    const localVideo = room.localParticipant
+      .getTrackPublications()
+      .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;
+    if (localVideo) {
+      this.tracks.set(this.selfId, localVideo);
+      this.emit();
     }
   }
 
@@ -449,23 +463,33 @@ class StageVideo {
     this.mode = "performer";
   }
 
-  /** Explicit keyless "Go Live" video: publish cam + mic (adds cam if already on air). */
+  /**
+   * Explicit keyless "Go Live" video: publish cam + mic (adds cam if already on
+   * air). The sticky cam pref wins (PRD 20 one-surface contract): going live with
+   * the bar's camera off comes up video-muted until the bar turns it on.
+   */
   async goLive(spaceId: string, selfId: string) {
     if (this.mode === "performer" && this.room) {
-      await this.room.localParticipant.setCameraEnabled(true);
-      const { Track } = await import("livekit-client");
-      const localVideo = this.room.localParticipant
-        .getTrackPublications()
-        .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;
-      if (localVideo) {
-        this.tracks.set(this.selfId, localVideo);
-        this.emit();
-      }
+      await this.applyCam(getMediaPrefs().camOn);
       return;
     }
     await this.leave();
     await this.open(spaceId, selfId, { publish: true, video: true });
     this.mode = "performer";
+  }
+
+  /**
+   * Global control-bar fan-out (PRD 20). Only a performer publishes — audience
+   * tokens can't publish, so applying a toggle there must stay a no-op rather
+   * than trigger a doomed publish attempt.
+   */
+  setMicEnabled(on: boolean) {
+    if (this.mode !== "performer") return;
+    void this.room?.localParticipant.setMicrophoneEnabled(on);
+  }
+  setCamEnabled(on: boolean) {
+    if (this.mode !== "performer") return;
+    this.applyCam(on).catch((e) => console.warn("Stage camera toggle failed:", e));
   }
 
   /** Stop broadcasting but stay subscribed to the stage as audience. */
