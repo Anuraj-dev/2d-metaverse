@@ -23,7 +23,7 @@ test("frontend build SHA matches backend /health/ready SHA", async ({ page }) =>
   ).toBe(serverSha);
 
   // The same SHA is what operators see in the Settings HUD.
-  await page.getByTitle("Settings").click();
+  await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.locator(".set-version")).toHaveText(
     `build ${frontendSha.slice(0, 7)}`,
   );
