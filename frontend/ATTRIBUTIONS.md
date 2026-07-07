@@ -58,6 +58,7 @@ release.
 | `furniture/*.png` (desk, chair, sofa, plant, water, vending, …) | Top-Down Retro Interior / Office Furniture pixel packs | (respective pack authors) | Free-use pixel furniture; cool office palette. |
 | `furniture/table_round.png` | Project-original | Redrawn in-repo (PRD 12) | Project asset — replaces the prior flat placeholder, matched to the furniture palette. |
 | `furniture/arcade_snake.png`, `furniture/arcade_flappy.png`, `furniture/arcade_2048.png` | Project-original | Generated in-repo (PRD 11, `scripts/gen_arcade_sprites.py`) | Project asset — 32×32 upright arcade cabinets in the cool-office palette, marquee/screen tinted per game (teal/amber/pink). Not derived from any third-party pack. |
+| `landing/campus-hero.png` | Composed in-repo (`scripts/gen_landing_backdrop.py`) from `maps/campus.json` + the `exterior.png` / `floors_walls.png` tilesets and `furniture/*.png` (all attributed above) | (respective pack authors) | Landing diorama backdrop (PRD 19) — a pure composition of already-attributed pack assets: a fixed crop of the real campus map re-rendered to one palette-quantised PNG. No new art authored; inherits the licenses of its source tiles/sprites. |
 
 ## Fonts (`public/assets/fonts/`)
 

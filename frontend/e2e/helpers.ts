@@ -154,7 +154,7 @@ export async function signUpAndJoin(
 
   await page.goto(`/${MAPS[map].query}`);
   await page.getByRole("button", { name: "Sign up" }).click();
-  await page.getByPlaceholder("callsign").fill(user.username);
+  await page.getByPlaceholder("your name").fill(user.username);
   await page.locator('input[type="password"]').fill(user.password);
   await page.locator("button.console-submit").click();
 
@@ -207,7 +207,7 @@ export async function signInAndJoin(
 ): Promise<void> {
   const map = opts.map ?? "campus";
   await page.goto(`/${MAPS[map].query}`);
-  await page.getByPlaceholder("callsign").fill(user.username);
+  await page.getByPlaceholder("your name").fill(user.username);
   await page.locator('input[type="password"]').fill(user.password);
   await page.locator("button.console-submit").click();
   await waitForWorld(page);
