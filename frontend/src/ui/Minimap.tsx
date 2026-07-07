@@ -1,9 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { bus } from "../game/eventBus";
+import { areaLabels } from "../game/mapView";
 import { fitScale } from "./minimapScale";
 import type { TerrainInfo } from "./minimapTerrain";
 
+const FullscreenMap = lazy(() => import("./FullscreenMap"));
+
 interface Room {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface Area {
   id: string;
   x: number;
   y: number;
@@ -14,6 +24,7 @@ interface WorldInfo {
   width: number;
   height: number;
   rooms: Room[];
+  areas?: Area[];
   terrain?: TerrainInfo | null;
 }
 interface Dot {
@@ -21,27 +32,58 @@ interface Dot {
   self: boolean;
   x: number;
   y: number;
+  name?: string | undefined;
+}
+
+function isTypingElsewhere(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.isContentEditable === true
+  );
 }
 
 /** Overview map: the rasterized world terrain (grass, paths, buildings — see
- *  minimapTerrain.ts) + room footprints + live player dots. Driven by the
- *  existing `positions` event and a one-time `world-info` snapshot. The
- *  terrain rasters once per world onto an offscreen canvas (one pixel per
- *  tile) and is blitted per draw; only the dots change per tick. */
+ *  minimapTerrain.ts) + room footprints + area-name labels + live player dots.
+ *  Driven by the existing `positions` event and a one-time `world-info` snapshot.
+ *  Clicking it (or pressing M) opens the lazy fullscreen map (PRD 20). */
 export default function Minimap() {
   const [info, setInfo] = useState<WorldInfo | null>(null);
   const [dots, setDots] = useState<Dot[]>([]);
+  const [open, setOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const offInfo = bus.on("world-info", (p: WorldInfo) => setInfo(p));
     const offPos = bus.on("positions", (p: { players: Dot[] }) =>
-      setDots(p.players.map((d) => ({ id: d.id, self: d.self, x: d.x, y: d.y })))
+      setDots(
+        p.players.map((d) => ({ id: d.id, self: d.self, x: d.x, y: d.y, name: d.name }))
+      )
     );
     return () => {
       offInfo();
       offPos();
     };
+  }, []);
+
+  // Opening captures movement in the scene; closing hands it back.
+  useEffect(() => {
+    bus.emit(open ? "map-open" : "map-close");
+  }, [open]);
+
+  // Keyboard shortcut: M toggles the fullscreen map while playing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingElsewhere()) return;
+      if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
+        setOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // One offscreen pixel per tile; scaled up crisp at draw time.
@@ -95,6 +137,18 @@ export default function Minimap() {
       ctx.strokeRect(r.x, r.y, r.w, r.h);
     }
 
+    // area-name labels (small; the fullscreen map shows them larger)
+    ctx.fillStyle = "#eef2ff";
+    ctx.strokeStyle = "rgba(6,10,20,0.85)";
+    ctx.lineWidth = 2.5 / scale;
+    ctx.font = `${Math.round(9 / scale)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const label of areaLabels(info.areas ?? [])) {
+      ctx.strokeText(label.name, label.cx, label.cy);
+      ctx.fillText(label.name, label.cx, label.cy);
+    }
+
     // players
     for (const d of dots) {
       ctx.beginPath();
@@ -111,8 +165,21 @@ export default function Minimap() {
 
   if (!info) return null;
   return (
-    <div className="minimap">
-      <canvas ref={canvasRef} />
-    </div>
+    <>
+      <button
+        type="button"
+        className="minimap"
+        onClick={() => setOpen(true)}
+        aria-label="Open campus map"
+        aria-haspopup="dialog"
+      >
+        <canvas ref={canvasRef} />
+      </button>
+      {open && (
+        <Suspense fallback={null}>
+          <FullscreenMap info={info} dots={dots} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+    </>
   );
 }

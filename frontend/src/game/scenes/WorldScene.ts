@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import type { BoardUpdatePayload, BoardErrorPayload, Dir, PlayerState } from "@metaverse/shared";
-import { SERVER_EVENTS } from "@metaverse/shared";
+import { SERVER_EVENTS, AREA_NAMES } from "@metaverse/shared";
+import { speakingRingIds } from "../speakingRings";
 import {
   boardSeatOccupants,
   canTakeBoardSeat,
@@ -119,6 +120,12 @@ export default class WorldScene extends Phaser.Scene {
   private currentDoor: string | null = null;
   private currentSeat: Seat | null = null;
   private seated = false;
+  // Speaking rings (PRD 20): ids from the shared active-speaker seam, drawn as a
+  // green foot glow under whichever of those players is currently on screen.
+  private speakingIds = new Set<string>();
+  private speakingGfx!: Phaser.GameObjects.Graphics;
+  // Fullscreen map open (PRD 20): movement keys are captured while it is up.
+  private mapOpen = false;
   private boardSeats: BoardSeat[] = [];
   private currentBoardSeat: BoardSeat | null = null;
   private boardSeated = false;
@@ -229,6 +236,8 @@ export default class WorldScene extends Phaser.Scene {
     this.emitWorldInfo(map);
 
     this.playerLabel = this.makeLabel("You");
+    // Below sprites (which depth-sort by y) so a speaking ring reads as a floor glow.
+    this.speakingGfx = this.add.graphics().setDepth(1);
 
     // Phaser enables the keyboard plugin by default (game config `input.keyboard`),
     // so it is present once the scene boots in a browser; guard rather than assert
@@ -544,6 +553,13 @@ export default class WorldScene extends Phaser.Scene {
     bus.on("locate", (p: { id: string }) => this.locate(p.id));
     bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p));
     bus.on("do-interact", () => (this.interactQueued = true));
+    // Speaking rings (PRD 20): the active-speaker set from the shared media seam.
+    bus.on("speaking", (p: { ids: string[] }) => {
+      this.speakingIds = new Set(p.ids);
+    });
+    // Fullscreen map (PRD 20): capture movement while it is open.
+    bus.on("map-open", () => (this.mapOpen = true));
+    bus.on("map-close", () => (this.mapOpen = false));
     // Stage on-air confirm prompt (PRD 17): the HUD returns the player's choice.
     bus.on("stage-confirm", () => this.applyOnAir({ type: "confirm" }));
     bus.on("stage-decline", () => this.applyOnAir({ type: "decline" }));
@@ -575,24 +591,71 @@ export default class WorldScene extends Phaser.Scene {
       this.cache.tilemap.get(activeMap().key) as { data?: TiledMapLike } | undefined
     )?.data;
     const terrain = raw ? terrainFromTiledMap(raw) : null;
-    const byRoom = new Map<string, Seat[]>();
-    for (const s of this.seats) {
-      const group = byRoom.get(s.roomId) ?? [];
-      if (group.length === 0) byRoom.set(s.roomId, group);
-      group.push(s);
+    // Room footprints are the authored roomBounds rects (parsed into
+    // this.roomAreas before this runs) — the same geometry that drives audio
+    // zones and room membership — so the HUD maps show the real map layout,
+    // never a seat-derived approximation.
+    const rooms = this.roomAreas.map((a) => ({
+      id: a.roomId,
+      x: a.rect.x,
+      y: a.rect.y,
+      w: a.rect.width,
+      h: a.rect.height,
+    }));
+    // Named areas for the HUD map labels (PRD 20). Hostels are the bounding box of
+    // their member rooms; Stage/Arcade come from map geometry. The map consumer
+    // resolves id -> display name via AREA_NAMES.
+    const roomById = new Map(rooms.map((r) => [r.id, r]));
+    const areas: { id: string; x: number; y: number; w: number; h: number }[] = [];
+    for (const a of AREA_NAMES) {
+      if (!a.rooms || a.rooms.length === 0) continue;
+      const rs = a.rooms.flatMap((id) => {
+        const r = roomById.get(id);
+        return r ? [r] : [];
+      });
+      if (rs.length === 0) continue;
+      const x = Math.min(...rs.map((r) => r.x));
+      const y = Math.min(...rs.map((r) => r.y));
+      areas.push({
+        id: a.id,
+        x,
+        y,
+        w: Math.max(...rs.map((r) => r.x + r.w)) - x,
+        h: Math.max(...rs.map((r) => r.y + r.h)) - y,
+      });
     }
-    const pad = 24;
-    const rooms = [...byRoom.entries()].map(([id, seats]) => {
-      const x = Math.min(...seats.map((s) => s.rect.x)) - pad;
-      const y = Math.min(...seats.map((s) => s.rect.y)) - pad;
-      const w = Math.max(...seats.map((s) => s.rect.x + s.rect.width)) + pad - x;
-      const h = Math.max(...seats.map((s) => s.rect.y + s.rect.height)) + pad - y;
-      return { id, x, y, w, h };
-    });
+    if (this.stageZone) {
+      areas.push({
+        id: "stage",
+        x: this.stageZone.x,
+        y: this.stageZone.y,
+        w: this.stageZone.width,
+        h: this.stageZone.height,
+      });
+    }
+    const arcadeObjs = (map.getObjectLayer("interactables")?.objects ?? []).filter((o) =>
+      o.properties?.some(
+        (p: { name: string; value: unknown }) =>
+          p.name === "interactType" && p.value === "arcade"
+      )
+    );
+    if (arcadeObjs.length > 0) {
+      const pad = 24;
+      const x = Math.min(...arcadeObjs.map((o) => o.x ?? 0)) - pad;
+      const y = Math.min(...arcadeObjs.map((o) => o.y ?? 0)) - pad;
+      areas.push({
+        id: "arcade",
+        x,
+        y,
+        w: Math.max(...arcadeObjs.map((o) => (o.x ?? 0) + (o.width ?? 0))) + pad - x,
+        h: Math.max(...arcadeObjs.map((o) => (o.y ?? 0) + (o.height ?? 0))) + pad - y,
+      });
+    }
     bus.emit("world-info", {
       width: map.widthInPixels,
       height: map.heightInPixels,
       rooms,
+      areas,
       terrain,
     });
   }
@@ -719,6 +782,7 @@ export default class WorldScene extends Phaser.Scene {
     this.keepLockedRoomsClosed();
     this.updateRemotes();
     this.updateLabels();
+    this.drawSpeakingRings();
     this.updateChatBubbles(time);
     this.checkZones();
     this.checkRoomMembership();
@@ -728,7 +792,7 @@ export default class WorldScene extends Phaser.Scene {
 
   private handleMovement(time: number) {
     const body = this.player;
-    if (this.seated || this.boardSeated || isTyping()) {
+    if (this.seated || this.boardSeated || this.mapOpen || isTyping()) {
       body.setVelocity(0, 0);
       if (!this.seated && !this.boardSeated) {
         this.player.anims.stop();
@@ -786,6 +850,22 @@ export default class WorldScene extends Phaser.Scene {
     this.remotes.forEach((r) =>
       r.label.setPosition(r.sprite.x, r.sprite.y - 20).setDepth(9999)
     );
+  }
+
+  /** Green foot glow under every active speaker currently on screen (PRD 20). The
+   *  pure `speakingRingIds` decides who; this only draws. */
+  private drawSpeakingRings() {
+    const present = new Set<string>([this.net.selfId, ...this.remotes.keys()]);
+    const rings = speakingRingIds(this.speakingIds, present);
+    this.speakingGfx.clear();
+    if (rings.size === 0) return;
+    this.speakingGfx.lineStyle(2.5, 0x7ee787, 0.95);
+    for (const id of rings) {
+      const sprite =
+        id === this.net.selfId ? this.player : this.remotes.get(id)?.sprite;
+      if (!sprite) continue;
+      this.speakingGfx.strokeEllipse(sprite.x, sprite.y + 8, 34, 16);
+    }
   }
 
   private checkZones() {
@@ -1159,6 +1239,8 @@ export default class WorldScene extends Phaser.Scene {
       {
         id: this.net.selfId,
         self: true,
+        // `name` (bus-only, PRD 20) powers the fullscreen-map hover labels.
+        name: "You",
         x: this.player.x,
         y: this.player.y,
         zone: zoneAt(this.roomAreas, this.player.x, this.player.y + 8),
@@ -1167,6 +1249,7 @@ export default class WorldScene extends Phaser.Scene {
       ...[...this.remotes].map(([id, r]) => ({
         id,
         self: false,
+        name: r.name,
         x: r.sprite.x,
         y: r.sprite.y,
         zone: zoneAt(this.roomAreas, r.sprite.x, r.sprite.y + 8),

@@ -63,6 +63,39 @@ export const BOARD_MATCH_TTL_SECONDS = 8 * 60 * 60;
 export const CHAT_SCOPES = ["world", "room"] as const;
 
 /**
+ * Named campus areas (PRD 20). The single source of truth for human-readable
+ * place names, consumed by the HUD map labels here and by in-world signage in
+ * PRD 22. `rooms` lists the private-room ids an area groups (the two hostels);
+ * areas without `rooms` (Stage, Game Arcade) are located from map geometry. This
+ * is a constants addition — no wire-shape change.
+ */
+export interface AreaName {
+  /** Stable area key (used to resolve a display name from map-derived rects). */
+  readonly id: string;
+  /** Human-readable label shown on the map (and future world signage). */
+  readonly name: string;
+  /** Private-room ids grouped under this area, if room-based. */
+  readonly rooms?: readonly string[];
+}
+
+export const AREA_NAMES: readonly AreaName[] = [
+  { id: "mandakini", name: "Mandakini Hostel", rooms: ["1", "2", "3"] },
+  { id: "cauvery", name: "Cauvery Hostel", rooms: ["4", "5", "6"] },
+  { id: "stage", name: "Stage" },
+  { id: "arcade", name: "Game Arcade" },
+] as const;
+
+/** Display name for an area id, or undefined for an unknown id. */
+export function areaNameForId(id: string): string | undefined {
+  return AREA_NAMES.find((a) => a.id === id)?.name;
+}
+
+/** The area name a given private-room id belongs to, or undefined. */
+export function areaNameForRoom(roomId: string): string | undefined {
+  return AREA_NAMES.find((a) => a.rooms?.includes(roomId))?.name;
+}
+
+/**
  * Terminal outcome of a knock, delivered to the knocker (PRD 14). `canceled` is
  * client-initiated and never sent back, so it is not on the wire.
  */

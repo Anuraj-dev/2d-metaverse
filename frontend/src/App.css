@@ -652,11 +652,65 @@ html, body, #root {
   border-radius: 10px;
   backdrop-filter: blur(8px);
   line-height: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
 }
+.minimap:hover { filter: brightness(1.08); }
+.minimap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .minimap canvas {
   display: block;
   border-radius: 6px;
   image-rendering: pixelated;
+}
+
+/* ---------- Fullscreen map (PRD 20) ---------- */
+.fullmap-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 8, 16, 0.72);
+  backdrop-filter: blur(3px);
+}
+.fullmap-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  max-width: 92vw;
+  max-height: 92vh;
+}
+.fullmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 4px 10px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.fullmap-close { width: 32px; height: 32px; }
+.fullmap-canvas {
+  display: block;
+  border-radius: 8px;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+.fullmap-tip {
+  position: fixed;
+  transform: translate(-50%, -140%);
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(6, 8, 16, 0.92);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* ---------- Chat (persistent docked panel, PRD 20) ---------- */
@@ -978,10 +1032,29 @@ html, body, #root {
 }
 /* Mic/cam/share ride the shared .icon-btn base (index.css); size + accents only. */
 .control-bar .control-btn {
+  position: relative;
   width: 42px;
   height: 42px;
   background: #2a3146;
 }
+/* Live mic-level meter: a row of segments across the bottom of the mic button. */
+.mic-meter {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 5px;
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+}
+.mic-seg {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.08s linear;
+}
+.mic-seg.on { background: #7ee787; }
 .control-bar .control-btn.off { background: #5a2030; }
 .control-bar .control-share {
   background: #232838;
@@ -1534,6 +1607,11 @@ html, body, #root {
   font-weight: 700;
   font-size: 15px;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+/* Active-speaker ring on a meeting tile (PRD 20), shared green with the world ring. */
+.meet-tile-inner.speaking {
+  box-shadow: 0 0 0 2px #7ee787, 0 0 14px rgba(126, 231, 135, 0.55);
+  border-radius: 10px;
 }
 .meeting-actions {
   display: flex;
