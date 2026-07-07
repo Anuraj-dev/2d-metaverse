@@ -437,7 +437,13 @@ class StageVideo {
     const room = this.room;
     if (!room) return;
     await room.localParticipant.setCameraEnabled(on);
-    if (!on) return;
+    if (!on) {
+      // Retract the surfaced self preview immediately (as the off-air path does):
+      // StageScreen renders the cached track while live, so leaving it in place
+      // would keep a stale "You (live)" tile up after a bar cam-off.
+      if (this.tracks.delete(this.selfId)) this.emit();
+      return;
+    }
     const { Track } = await import("livekit-client");
     const localVideo = room.localParticipant
       .getTrackPublications()

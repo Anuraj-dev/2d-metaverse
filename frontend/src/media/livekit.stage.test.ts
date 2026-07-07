@@ -131,6 +131,27 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
     off();
   });
 
+  it("cam-off from the bar retracts the self tile; cam back on re-surfaces exactly one", async () => {
+    let tracks: RoomTrack[] = [];
+    const off = stageVideo.onTracks((t) => (tracks = t));
+    await stageVideo.goLive("1", "self");
+    expect(tracks.filter((t) => t.self)).toHaveLength(1);
+
+    // Bar cam-off: the stale "You (live)" preview must drop from the snapshot.
+    stageVideo.setCamEnabled(false);
+    await vi.waitFor(() => {
+      expect(lk.localParticipant.setCameraEnabled).toHaveBeenLastCalledWith(false);
+      expect(tracks.some((t) => t.self)).toBe(false);
+    });
+
+    // Bar cam-on: the self tile comes back — exactly once, no double-add.
+    stageVideo.setCamEnabled(true);
+    await vi.waitFor(() => {
+      expect(tracks.filter((t) => t.self)).toHaveLength(1);
+    });
+    off();
+  });
+
   it("audience mode ignores bar toggles (its token cannot publish)", async () => {
     await stageVideo.joinAsAudience("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
