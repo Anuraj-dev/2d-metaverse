@@ -21,6 +21,7 @@ import {
   type RoomMode,
 } from "./mediaLogic";
 import { speakingState } from "./speakingState";
+import { getMediaPrefs } from "./mediaPrefs";
 
 /**
  * Identities whose live stage audio the local client is currently subscribed to
@@ -156,7 +157,9 @@ class WorldAudio {
         );
       });
       await room.connect(url, token);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      // Respect the player's sticky mute (global control bar, PRD 20) instead of
+      // force-unmuting on every world (re)join.
+      await room.localParticipant.setMicrophoneEnabled(getMediaPrefs().micOn);
     } catch (e) {
       console.warn("World audio unavailable:", e);
     }
@@ -285,8 +288,11 @@ class RoomVideo {
         this.emit();
       });
       await room.connect(url, token);
-      await room.localParticipant.setCameraEnabled(true);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      // Respect the player's sticky mic/cam mute (global control bar, PRD 20) so a
+      // muted walker stays muted when they sit into a meeting, and vice versa.
+      const wanted = getMediaPrefs();
+      await room.localParticipant.setCameraEnabled(wanted.camOn);
+      await room.localParticipant.setMicrophoneEnabled(wanted.micOn);
       const localVideo = room.localParticipant
         .getTrackPublications()
         .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;

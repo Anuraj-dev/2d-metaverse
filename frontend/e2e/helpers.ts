@@ -497,7 +497,7 @@ export async function sitAtSeat(
   }
 }
 
-/** Open chat with Enter, type, send (chat closes itself after submit). */
+/** Focus the persistent chat input (Enter), type, send. The panel stays open. */
 export async function sendChat(page: Page, text: string): Promise<void> {
   await page.keyboard.press("Enter");
   const input = page.locator(".mc-chat form.mc-input input");

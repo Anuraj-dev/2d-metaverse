@@ -13,14 +13,12 @@
  * Lazy-loaded (motion + LiveKit components stay out of the entry chunk).
  */
 import { useEffect, useState } from "react";
-import { Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import "@livekit/components-styles";
 import { SERVER_EVENTS, type MeetingChatMessage, type MeetingParticipant } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
 import { EMPTY_MEETING_CHAT, appendMeetingChat } from "../game/meetingChat";
 import { sharedNet } from "../net/shared";
-import { roomVideo } from "../media/livekit";
 import MeetingGrid from "./MeetingGrid";
 import MeetingChatPanel from "./MeetingChatPanel";
 
@@ -103,8 +101,6 @@ export default function MeetingOverlay({
   seat,
   onBurstCovered,
 }: MeetingOverlayProps) {
-  const [mic, setMic] = useState(true);
-  const [cam, setCam] = useState(true);
   const selfChar = localStorage.getItem("avatar") ?? undefined;
 
   // In-meeting chat (PRD 10). Owned here because the overlay is mounted only for
@@ -120,17 +116,6 @@ export default function MeetingOverlay({
       setChat((prev) => appendMeetingChat(prev, message, selfId));
     });
   }, [selfId]);
-
-  const toggleMic = () => {
-    const on = !mic;
-    setMic(on);
-    roomVideo.setMicEnabled(on);
-  };
-  const toggleCam = () => {
-    const on = !cam;
-    setCam(on);
-    roomVideo.setCamEnabled(on);
-  };
 
   const origin = seat ?? { sx: window.innerWidth / 2, sy: window.innerHeight / 2 };
 
@@ -185,23 +170,9 @@ export default function MeetingOverlay({
         >
           <header className="meeting-topbar">
             <span className="meeting-title">Room meeting</span>
+            {/* Mic/cam live on the single global control bar (PRD 20); the overlay
+                keeps only its Leave control. */}
             <div className="meeting-actions">
-              <button
-                className={`icon-btn ${mic ? "on" : "off"}`}
-                onClick={toggleMic}
-                aria-label={mic ? "Mute microphone" : "Unmute microphone"}
-                aria-pressed={!mic}
-              >
-                {mic ? <Mic size={18} aria-hidden="true" /> : <MicOff size={18} aria-hidden="true" />}
-              </button>
-              <button
-                className={`icon-btn ${cam ? "on" : "off"}`}
-                onClick={toggleCam}
-                aria-label={cam ? "Turn camera off" : "Turn camera on"}
-                aria-pressed={!cam}
-              >
-                {cam ? <Video size={18} aria-hidden="true" /> : <VideoOff size={18} aria-hidden="true" />}
-              </button>
               <button className="leave" onClick={() => bus.emit("do-stand")} title="Leave meeting">
                 Leave
               </button>

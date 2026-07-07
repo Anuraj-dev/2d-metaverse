@@ -241,6 +241,11 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   // WorldScene emits the domain events; the mixer picks the clip.
   "stage-on-air": { clip: "meeting_join", channel: "sfx" },
   "stage-off-air": { clip: "meeting_leave", channel: "sfx" },
+  // Global control bar (PRD 20): mic/cam toggles. The bar stays audio-agnostic —
+  // it emits these domain events and this table decides the blip. Reuse the soft
+  // door click as a quiet toggle confirmation (fewer, better clips — no filler).
+  "mic-toggle": { clip: "door_close", channel: "sfx" },
+  "cam-toggle": { clip: "door_close", channel: "sfx" },
 };
 
 export function cueForEvent(event: string): SoundCue | null {

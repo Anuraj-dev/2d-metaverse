@@ -35,6 +35,6 @@ test("happy path: signup → join → move → door → enter → sit → chat",
   const message = `hello from ${user.username}`;
   await sendChat(page, message);
   await expect(
-    page.locator(".mc-log .mc-line").filter({ hasText: message }),
+    page.locator(".mc-list .mc-line").filter({ hasText: message }),
   ).toBeVisible();
 });

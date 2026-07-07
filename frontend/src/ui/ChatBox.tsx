@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Lock } from "lucide-react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Lock, MessageSquare, ChevronDown } from "lucide-react";
 import { LIMITS, type ChatMessage, type PlayerState } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
+import {
+  chatPanelReducer,
+  initialChatPanelState,
+  type ChatTab,
+} from "../game/chatPanel";
 
 /** A line in the transcript. Whispers and system notices are always shown
  *  regardless of the active channel; world/room chat is filtered by tab. */
@@ -18,8 +23,6 @@ interface Player {
 }
 
 const MAX_ENTRIES = 120;
-const LOG_LINES = 10;
-const FADE_MS = 5000;
 const WHISPER_RE = /^\/(?:w|whisper|msg|tell)\s+(\S+)\s+([\s\S]+)$/i;
 const WHISPER_NAME_RE = /^(\/(?:w|whisper|msg|tell)\s+)(\S*)$/i;
 const REPLY_RE = /^\/r(?:eply)?\s+([\s\S]+)$/i;
@@ -33,7 +36,7 @@ const HELP: string[] = [
   "/all <msg> — send to the whole world",
   "/room <msg> — send to your private area",
   "/help — show this list",
-  "Enter or T opens chat · Esc closes",
+  "Enter or T focuses chat · Esc returns to the game",
 ];
 
 function isTypingElsewhere(): boolean {
@@ -47,51 +50,50 @@ function isTypingElsewhere(): boolean {
 }
 
 /**
- * Minecraft-style chat. The input is hidden during play and opens on Enter / T
- * (empty) or "/" (a command). When closed, a faded transcript of recent lines
- * floats bottom-left and fades after a few seconds. An All / Private filter
- * appears inside a private area (auto-selected on entry). Supports /w whispers
- * with Tab name-completion, /r reply, /all and /room overrides, and /help.
+ * Persistent, docked chat panel (PRD 20). Always visible bottom-left with All /
+ * Room tabs (Room auto-enables on room entry); the transcript no longer fades. The
+ * panel collapses to a slim bar with an unread badge. The input is always present:
+ * game keys work until it is focused (click, or Enter / T / "/" while playing) and
+ * blurring it (Esc, or clicking away) returns keys to the game — the same
+ * native-focus gate WorldScene reads. Supports /w whispers with Tab name-completion,
+ * /r reply, /all and /room overrides, and /help. All panel state (collapsed / tab /
+ * unread / room-availability) lives in the pure `game/chatPanel` reducer.
  */
 export default function ChatBox() {
+  const [panel, dispatch] = useReducer(chatPanelReducer, initialChatPanelState);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"all" | "private">("all");
-  const [inPrivate, setInPrivate] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [selfId, setSelfId] = useState(sharedNet().selfId);
-  const [faded, setFaded] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const openRef = useRef(open);
+  const collapsedRef = useRef(panel.collapsed);
+  const roomRef = useRef(panel.roomAvailable);
+  const tabRef = useRef(panel.tab);
   const selfIdRef = useRef(selfId);
   const lastWhisper = useRef<{ id: string; name: string } | null>(null);
   const completeRef = useRef<{ base: string; idx: number } | null>(null);
-  const fadeTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    openRef.current = open;
-  }, [open]);
+    collapsedRef.current = panel.collapsed;
+  }, [panel.collapsed]);
+  useEffect(() => {
+    roomRef.current = panel.roomAvailable;
+    tabRef.current = panel.tab;
+  }, [panel.roomAvailable, panel.tab]);
   useEffect(() => {
     selfIdRef.current = selfId;
   }, [selfId]);
 
-  const push = (e: Entry) => {
+  const push = (e: Entry) =>
     setEntries((prev) => [...prev.slice(-(MAX_ENTRIES - 1)), e]);
-    setFaded(false);
-    window.clearTimeout(fadeTimer.current);
-    if (!openRef.current)
-      fadeTimer.current = window.setTimeout(() => setFaded(true), FADE_MS);
-  };
 
-  function openInput(initial: string) {
+  /** Expand the panel (if needed) and focus the input for typing. */
+  function focusInput(initial?: string) {
     completeRef.current = null;
-    setText(initial);
-    setOpen(true);
-    setFaded(false);
-    window.clearTimeout(fadeTimer.current);
+    if (initial !== undefined) setText(initial);
+    dispatch({ type: "expand" });
     requestAnimationFrame(() => {
       const el = inputRef.current;
       if (!el) return;
@@ -99,14 +101,6 @@ export default function ChatBox() {
       const n = el.value.length;
       el.setSelectionRange(n, n);
     });
-  }
-
-  function closeInput() {
-    setOpen(false);
-    setText("");
-    completeRef.current = null;
-    inputRef.current?.blur();
-    fadeTimer.current = window.setTimeout(() => setFaded(true), FADE_MS);
   }
 
   // ---- network + world wiring (mounted once; reads live values via refs) ----
@@ -128,9 +122,10 @@ export default function ChatBox() {
       setPlayers((prev) => prev.filter((e) => e.id !== p.id))
     );
 
-    const offChat = net.on("chat", (m: ChatMessage) =>
-      push({ kind: "chat", id: m.id, name: m.name, text: m.text, scope: m.scope })
-    );
+    const offChat = net.on("chat", (m: ChatMessage) => {
+      push({ kind: "chat", id: m.id, name: m.name, text: m.text, scope: m.scope });
+      if (m.id !== selfIdRef.current) dispatch({ type: "message" });
+    });
     const offWhisper = net.on(
       "whisper",
       (m: { from: string; fromName: string; toName: string; text: string }) => {
@@ -139,6 +134,7 @@ export default function ChatBox() {
         } else {
           lastWhisper.current = { id: m.from, name: m.fromName };
           push({ kind: "win", fromName: m.fromName, text: m.text });
+          dispatch({ type: "message" });
         }
       }
     );
@@ -146,15 +142,13 @@ export default function ChatBox() {
       push({ kind: "sys", text: "Couldn't deliver your whisper — they may have left." })
     );
 
-    const offEnter = bus.on("room-entered", () => {
-      setInPrivate(true);
-      setTab("private");
-    });
-    const offLeftRoom = bus.on("room-left", () => {
-      setInPrivate(false);
-      setTab("all");
-    });
-    const offFocus = bus.on("focus-chat", () => openInput(""));
+    const offEnter = bus.on("room-entered", () =>
+      dispatch({ type: "room-available", available: true })
+    );
+    const offLeftRoom = bus.on("room-left", () =>
+      dispatch({ type: "room-available", available: false })
+    );
+    const offFocus = bus.on("focus-chat", () => focusInput(""));
 
     return () => {
       offInit();
@@ -166,30 +160,30 @@ export default function ChatBox() {
       offEnter();
       offLeftRoom();
       offFocus();
-      window.clearTimeout(fadeTimer.current);
     };
   }, []);
 
-  // Tell the toast/sound layer whether the input is up.
+  // Tell the toast/sound layer whether chat is visible (expanded == "read").
   useEffect(() => {
-    bus.emit("chat-visibility", { open });
-  }, [open]);
+    bus.emit("chat-visibility", { open: !panel.collapsed });
+  }, [panel.collapsed]);
 
   // keep the transcript pinned to the newest line
   useEffect(() => {
-    listRef.current?.scrollTo(0, listRef.current.scrollHeight);
-  }, [entries, open]);
+    const el = listRef.current;
+    el?.scrollTo?.(0, el.scrollHeight);
+  }, [entries, panel.collapsed]);
 
-  // Global hotkeys to OPEN the input while playing.
+  // Global hotkeys: focus the input (expanding first) while playing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (openRef.current || isTypingElsewhere()) return;
+      if (isTypingElsewhere()) return;
       if (e.key === "Enter" || e.key === "t" || e.key === "T") {
         e.preventDefault();
-        openInput("");
+        focusInput(collapsedRef.current ? "" : undefined);
       } else if (e.key === "/") {
         e.preventDefault();
-        openInput("/");
+        focusInput("/");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -233,7 +227,7 @@ export default function ChatBox() {
       if (a) return void net.chat(a[1] ?? "", "world");
       const rm = t.match(ROOM_RE);
       if (rm) {
-        if (inPrivate) net.chat(rm[1] ?? "", "room");
+        if (panel.roomAvailable) net.chat(rm[1] ?? "", "room");
         else push({ kind: "sys", text: "You're not in a private area." });
         return;
       }
@@ -242,13 +236,14 @@ export default function ChatBox() {
     }
 
     // plain message — route by the active channel
-    net.chat(t, tab === "private" && inPrivate ? "room" : "world");
+    net.chat(t, panel.tab === "room" && panel.roomAvailable ? "room" : "world");
   };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSend(text);
-    closeInput();
+    setText("");
+    completeRef.current = null;
   };
 
   // Tab-completion for whisper targets (cycles through matches).
@@ -271,7 +266,7 @@ export default function ChatBox() {
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      closeInput();
+      inputRef.current?.blur(); // hand movement keys back to the game
     } else if (e.key === "Tab") {
       e.preventDefault();
       cycleComplete();
@@ -291,9 +286,9 @@ export default function ChatBox() {
   const visible = useMemo(
     () =>
       entries.filter((e) =>
-        e.kind === "chat" ? (tab === "private" ? e.scope !== "world" : true) : true
+        e.kind === "chat" ? (panel.tab === "room" ? e.scope !== "world" : true) : true
       ),
-    [entries, tab]
+    [entries, panel.tab]
   );
 
   const renderLine = (e: Entry, i: number) => {
@@ -324,88 +319,107 @@ export default function ChatBox() {
     );
   };
 
+  const selectTab = (tab: ChatTab) => dispatch({ type: "select-tab", tab });
+
+  if (panel.collapsed) {
+    const badge = panel.unread > 99 ? "99+" : String(panel.unread);
+    return (
+      <button
+        type="button"
+        className="mc-collapsed"
+        onClick={() => dispatch({ type: "expand" })}
+        aria-label={
+          panel.unread > 0 ? `Open chat, ${panel.unread} unread` : "Open chat"
+        }
+      >
+        <MessageSquare size={15} aria-hidden="true" />
+        <span>Chat</span>
+        {panel.unread > 0 && <span className="mc-badge">{badge}</span>}
+      </button>
+    );
+  }
+
   return (
-    <>
-      {!open && visible.length > 0 && (
-        <div className={`mc-log ${faded ? "faded" : ""}`} aria-hidden="true">
-          {visible.slice(-LOG_LINES).map(renderLine)}
-        </div>
-      )}
+    <div className="mc-chat">
+      <div className="mc-tabs">
+        <button
+          type="button"
+          className={panel.tab === "all" ? "active" : ""}
+          onClick={() => selectTab("all")}
+        >
+          All
+        </button>
+        {panel.roomAvailable && (
+          <button
+            type="button"
+            className={panel.tab === "room" ? "active" : ""}
+            onClick={() => selectTab("room")}
+          >
+            <Lock size={12} aria-hidden="true" /> Room
+          </button>
+        )}
+        <button
+          type="button"
+          className="mc-collapse"
+          onClick={() => dispatch({ type: "collapse" })}
+          aria-label="Collapse chat"
+        >
+          <ChevronDown size={16} aria-hidden="true" />
+        </button>
+      </div>
 
-      {open && (
-        <div className="mc-chat">
-          <div className="mc-tabs">
+      <div className="mc-list" ref={listRef}>
+        {visible.length === 0 ? (
+          <div className="mc-empty">
+            {panel.tab === "room"
+              ? "Private area — only people here see these messages."
+              : "Say hi to the space…  (type /help for commands)"}
+          </div>
+        ) : (
+          visible.map(renderLine)
+        )}
+      </div>
+
+      {suggestions.length > 0 && (
+        <div className="mc-suggest">
+          {suggestions.map((p) => (
             <button
+              key={p.id}
               type="button"
-              className={tab === "all" ? "active" : ""}
-              onClick={() => setTab("all")}
-            >
-              All
-            </button>
-            {inPrivate && (
-              <button
-                type="button"
-                className={tab === "private" ? "active" : ""}
-                onClick={() => setTab("private")}
-              >
-                <Lock size={12} aria-hidden="true" /> Private
-              </button>
-            )}
-          </div>
-
-          <div className="mc-list" ref={listRef}>
-            {visible.length === 0 ? (
-              <div className="mc-empty">
-                {tab === "private"
-                  ? "Private area — only people here see these messages."
-                  : "Say hi to the space…  (type /help for commands)"}
-              </div>
-            ) : (
-              visible.map(renderLine)
-            )}
-          </div>
-
-          {suggestions.length > 0 && (
-            <div className="mc-suggest">
-              {suggestions.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="mc-chip"
-                  onMouseDown={(ev) => {
-                    ev.preventDefault();
-                    setText(`/w ${p.name} `);
-                    completeRef.current = null;
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))}
-              <span className="mc-suggest-hint">Tab to complete</span>
-            </div>
-          )}
-
-          <form className="mc-input" onSubmit={submit}>
-            <span className="mc-prompt">
-              {tab === "private" ? <Lock size={13} aria-hidden="true" /> : "›"}
-            </span>
-            <input
-              ref={inputRef}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
+              className="mc-chip"
+              onMouseDown={(ev) => {
+                ev.preventDefault();
+                setText(`/w ${p.name} `);
                 completeRef.current = null;
+                inputRef.current?.focus();
               }}
-              onKeyDown={onInputKey}
-              maxLength={LIMITS.chatTextMax}
-              placeholder={
-                tab === "private" ? "Message this area…" : "Message everyone…"
-              }
-            />
-          </form>
+            >
+              {p.name}
+            </button>
+          ))}
+          <span className="mc-suggest-hint">Tab to complete</span>
         </div>
       )}
-    </>
+
+      <form className="mc-input" onSubmit={submit}>
+        <span className="mc-prompt">
+          {panel.tab === "room" ? <Lock size={13} aria-hidden="true" /> : "›"}
+        </span>
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            completeRef.current = null;
+          }}
+          onKeyDown={onInputKey}
+          maxLength={LIMITS.chatTextMax}
+          aria-label="Chat message"
+          placeholder={
+            panel.tab === "room" ? "Message this area…" : "Message everyone…"
+          }
+        />
+      </form>
+    </div>
   );
 }

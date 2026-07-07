@@ -52,7 +52,7 @@ async function expectChatSeen(
   sender: string,
   message: string,
 ): Promise<void> {
-  const line = observer.locator(".mc-log .mc-line").filter({ hasText: message });
+  const line = observer.locator(".mc-list .mc-line").filter({ hasText: message });
   await expect(line).toBeVisible();
   await expect(line).toContainText(`<${sender}>`);
 }

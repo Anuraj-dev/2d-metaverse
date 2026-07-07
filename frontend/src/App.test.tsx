@@ -78,7 +78,7 @@ vi.mock("./ui/HelpOverlay", () => ({ default: () => null }));
 vi.mock("./ui/SfxBridge", () => ({ default: () => null }));
 vi.mock("./ui/RoomAccessLayer", () => ({ default: () => null }));
 vi.mock("./ui/BubbleLayer", () => ({ default: () => null }));
-vi.mock("./ui/MediaControls", () => ({ default: () => null }));
+vi.mock("./ui/ControlBar", () => ({ default: () => null }));
 vi.mock("./ui/InteractionHint", () => ({ default: () => null }));
 vi.mock("./ui/InteractableModal", () => ({ default: () => null }));
 vi.mock("./ui/StageScreen", () => ({ default: () => null }));

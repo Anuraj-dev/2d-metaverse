@@ -659,30 +659,40 @@ html, body, #root {
   image-rendering: pixelated;
 }
 
-/* ---------- Chat (Minecraft-style) ---------- */
-.mc-log {
+/* ---------- Chat (persistent docked panel, PRD 20) ---------- */
+/* Collapsed slim bar: bottom-left, click to expand. Carries an unread badge. */
+.mc-collapsed {
   position: absolute;
   left: 16px;
-  bottom: 18px;
-  max-width: min(46vw, 460px);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  pointer-events: none;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.45;
-  transition: opacity 0.6s ease;
-  z-index: 6;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 8px 14px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+  z-index: 7;
 }
-.mc-log.faded { opacity: 0; }
-.mc-log .mc-line {
-  width: fit-content;
-  max-width: 100%;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: rgba(6, 8, 16, 0.5);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+.mc-collapsed:hover { filter: brightness(1.1); }
+.mc-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #06122b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .mc-chat {
@@ -726,6 +736,14 @@ html, body, #root {
   background: rgba(110, 168, 254, 0.18);
   border-color: rgba(110, 168, 254, 0.5);
   color: #cfe0ff;
+}
+/* Collapse chevron sits at the right edge of the tab row. */
+.mc-tabs .mc-collapse {
+  margin-left: auto;
+  padding: 4px 6px;
+  border-radius: 8px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .mc-list {
@@ -804,7 +822,7 @@ html, body, #root {
 .knock-status {
   position: absolute;
   left: 50%;
-  bottom: 96px;
+  bottom: 150px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -938,35 +956,71 @@ html, body, #root {
   text-shadow: 0 1px 2px #000;
 }
 
-/* ---------- Media controls ---------- */
-.media-controls {
+/* ---------- Global control bar (PRD 20) ---------- */
+/* One persistent bar, bottom-center on every surface. z-index sits above the
+   lazy meeting (20) and arcade (60) overlays so mic/cam/settings are always
+   reachable. */
+.control-bar {
   position: absolute;
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  align-items: center;
   gap: 10px;
   background: var(--panel);
   border: 1px solid var(--line);
   padding: 8px 12px;
   border-radius: 30px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  z-index: 100;
 }
-/* Mic/cam toggles ride the shared .icon-btn base (index.css); size + accents only. */
-.media-controls .icon-btn {
+/* Mic/cam/share ride the shared .icon-btn base (index.css); size + accents only. */
+.control-bar .control-btn {
   width: 42px;
   height: 42px;
   background: #2a3146;
 }
-.media-controls .icon-btn.off { background: #5a2030; }
-.media-controls .leave {
-  border: none;
-  border-radius: 21px;
-  padding: 0 16px;
-  font-size: 13px;
-  font-weight: 700;
-  background: #ff6b6b;
-  color: #fff;
-  cursor: pointer;
+.control-bar .control-btn.off { background: #5a2030; }
+.control-bar .control-share {
+  background: #232838;
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.control-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--line);
+}
+/* Settings gear lives inside the bar; its panel opens upward. */
+.control-bar .settings { position: static; top: auto; left: auto; }
+.control-bar .settings-panel {
+  top: auto;
+  bottom: calc(100% + 12px);
+  left: auto;
+  right: 0;
+}
+/* Transient, politely-announced toggle toast, floating just above the bar. */
+.control-toast {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink);
+  pointer-events: none;
+}
+.control-toast:empty { display: none; }
+.control-toast:not(:empty) {
+  background: rgba(10, 13, 24, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Icon buttons / Settings / Help ---------- */
@@ -1118,10 +1172,21 @@ html, body, #root {
   touch-action: none;
 }
 
+/* On the touch-joystick layout (mobile landscape) the joystick owns the
+   bottom-left corner, so lift the chat panel/slim-bar clear above it and cap the
+   transcript height; the control bar (bottom-center) sits between the joystick
+   (left) and the action button (right). */
+@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse) {
+  .mc-chat,
+  .mc-collapsed { bottom: 156px; }
+  .mc-list { height: 128px; }
+}
+
 /* ---------- Interaction hint ---------- */
+/* Sits above the global control bar (PRD 20) so the two never overlap. */
 .interact-hint {
   position: absolute;
-  bottom: 70px;
+  bottom: 92px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -1473,14 +1538,6 @@ html, body, #root {
 .meeting-actions {
   display: flex;
   gap: 8px;
-}
-/* Mic/cam toggles ride the shared .icon-btn base (index.css); accents only. */
-.meeting-actions .icon-btn {
-  background: rgba(20, 26, 40, 0.9);
-  color: #fff;
-}
-.meeting-actions .icon-btn.off {
-  background: #5a2030;
 }
 .meeting-actions .leave {
   min-width: 44px;
