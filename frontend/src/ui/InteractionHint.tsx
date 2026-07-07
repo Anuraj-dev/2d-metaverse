@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Keyboard } from "lucide-react";
 import { bus } from "../game/eventBus";
 import type { InteractableType } from "../game/interactables";
 
@@ -46,5 +47,10 @@ export default function InteractionHint() {
   }, []);
 
   if (!hint) return null;
-  return <div className="interact-hint">{hint}</div>;
+  return (
+    <div className="interact-hint">
+      <Keyboard className="interact-hint-icon" size={15} aria-hidden="true" />
+      {hint}
+    </div>
+  );
 }

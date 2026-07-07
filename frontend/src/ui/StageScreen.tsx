@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CircleStop, Mic, Video } from "lucide-react";
 import { bus } from "../game/eventBus";
 import { stageVideo } from "../media/livekit";
 import type { RoomTrack } from "../media/livekit";
@@ -107,7 +108,7 @@ export default function StageScreen() {
           <div className="stage-onair-sub">Your voice broadcasts to everyone in the space.</div>
           <div className="stage-onair-actions">
             <button className="stage-btn-go" onClick={() => bus.emit("stage-confirm")}>
-              🎙 Go on air
+              <Mic size={16} aria-hidden="true" /> Go on air
             </button>
             <button className="stage-btn-cancel" onClick={() => bus.emit("stage-decline")}>
               Not now
@@ -119,7 +120,7 @@ export default function StageScreen() {
       {nearPresenter && !isLive && (
         <div className="stage-presenter-panel">
           <button className="stage-btn-go" onClick={() => void handleGoLive()}>
-            🎥 Go Live (video)
+            <Video size={16} aria-hidden="true" /> Go Live (video)
           </button>
           {error && <span className="stage-error">{error}</span>}
         </div>
@@ -128,7 +129,7 @@ export default function StageScreen() {
       {isLive && (
         <div className="stage-presenter-panel">
           <button className="stage-btn-stop" onClick={() => void handleStopLive()}>
-            ⏹ Stop Broadcast
+            <CircleStop size={16} aria-hidden="true" /> Stop Broadcast
           </button>
         </div>
       )}

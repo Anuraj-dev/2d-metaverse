@@ -219,7 +219,7 @@ export class MockNet implements Net {
         this.bus.emit(SERVER_EVENTS.chat, {
           id: "npc1",
           name: NAMES[0],
-          text: "hey! 👋",
+          text: "hey there!",
           scope: s,
         }),
       800
@@ -245,7 +245,7 @@ export class MockNet implements Net {
             fromName: target.name,
             to: this.selfId,
             toName: this.name,
-            text: "(psst) got your whisper 🤫",
+            text: "(psst) got your whisper",
           }),
         900
       );

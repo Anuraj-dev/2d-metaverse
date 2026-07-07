@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CameraOff } from "lucide-react";
 import { bus } from "../game/eventBus";
 import { onLocalStream, startCamera, stopCamera } from "../media/localMedia";
 import { roomVideo, type RoomTrack } from "../media/livekit";
@@ -125,7 +126,9 @@ function MockBubble({ positions }: { positions: ScreenPos[] }) {
         {stream ? (
           <video ref={videoRef} autoPlay playsInline muted className="bubble-media" />
         ) : (
-          <div className="bubble-fallback">📷</div>
+          <div className="bubble-fallback" aria-label="Camera off" role="img">
+            <CameraOff size={22} aria-hidden="true" />
+          </div>
         )}
       </div>
       <div className="bubble-name">You</div>

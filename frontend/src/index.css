@@ -1,3 +1,24 @@
 /* Global reset — app styling lives in App.css */
+
+/* App typeface: one self-hosted, rounded variable sans (Nunito, OFL-1.1) used
+   across the whole app — HUD, panels, overlays, landing, and in-canvas Phaser
+   text. Self-hosted as a single variable-font file (no third-party CDN); the
+   `--font-app` custom property carries a system-stack fallback so the UI stays
+   readable before the woff2 loads. Attribution: frontend/ATTRIBUTIONS.md. */
+@font-face {
+  font-family: "Nunito Variable";
+  src: url("/assets/fonts/nunito-variable.woff2") format("woff2");
+  font-weight: 200 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-app: "Nunito Variable", ui-rounded, "Segoe UI", system-ui,
+    -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  /* Intentional monospace stack for chat/console surfaces (no CDN). */
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }

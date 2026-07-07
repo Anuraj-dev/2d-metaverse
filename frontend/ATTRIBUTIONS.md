@@ -59,6 +59,20 @@ release.
 | `furniture/table_round.png` | Project-original | Redrawn in-repo (PRD 12) | Project asset — replaces the prior flat placeholder, matched to the furniture palette. |
 | `furniture/arcade_snake.png`, `furniture/arcade_flappy.png`, `furniture/arcade_2048.png` | Project-original | Generated in-repo (PRD 11, `scripts/gen_arcade_sprites.py`) | Project asset — 32×32 upright arcade cabinets in the cool-office palette, marquee/screen tinted per game (teal/amber/pink). Not derived from any third-party pack. |
 
+## Fonts (`public/assets/fonts/`)
+
+The app typeface (PRD 18) is one self-hosted variable font — no third-party font
+CDN. Applied app-wide via the `--font-app` CSS custom property (HUD, panels,
+overlays, landing, and in-canvas Phaser text).
+
+| File | Font | Author | License |
+| --- | --- | --- | --- |
+| `fonts/nunito-variable.woff2` | [Nunito](https://fonts.google.com/specimen/Nunito) (variable, weight axis, Latin subset) | Vernon Adams, Cyreal, Jacques Le Bailly (The Nunito Project Authors) | [SIL Open Font License 1.1 (OFL-1.1)](https://openfontlicense.org/) — source: [googlefonts/nunito](https://github.com/googlefonts/nunito), redistributed via [Fontsource](https://fontsource.org/fonts/nunito). |
+
+The UI-chrome icons are [lucide](https://lucide.dev/) (`lucide-react`, ISC
+license), imported per-icon from source — not shipped under `public/assets/`, so
+listed here only for provenance.
+
 ## How to add a row
 
 When you curate a new asset: pick only what you use, optimize it (see the README

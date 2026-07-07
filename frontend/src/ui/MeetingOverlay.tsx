@@ -13,6 +13,7 @@
  * Lazy-loaded (motion + LiveKit components stay out of the entry chunk).
  */
 import { useEffect, useState } from "react";
+import { Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import "@livekit/components-styles";
 import { SERVER_EVENTS, type MeetingChatMessage, type MeetingParticipant } from "@metaverse/shared";
@@ -185,11 +186,21 @@ export default function MeetingOverlay({
           <header className="meeting-topbar">
             <span className="meeting-title">Room meeting</span>
             <div className="meeting-actions">
-              <button className={mic ? "on" : "off"} onClick={toggleMic} title="Mic">
-                {mic ? "🎙️" : "🔇"}
+              <button
+                className={mic ? "on" : "off"}
+                onClick={toggleMic}
+                aria-label={mic ? "Mute microphone" : "Unmute microphone"}
+                aria-pressed={!mic}
+              >
+                {mic ? <Mic size={18} aria-hidden="true" /> : <MicOff size={18} aria-hidden="true" />}
               </button>
-              <button className={cam ? "on" : "off"} onClick={toggleCam} title="Camera">
-                {cam ? "📹" : "🚫"}
+              <button
+                className={cam ? "on" : "off"}
+                onClick={toggleCam}
+                aria-label={cam ? "Turn camera off" : "Turn camera on"}
+                aria-pressed={!cam}
+              >
+                {cam ? <Video size={18} aria-hidden="true" /> : <VideoOff size={18} aria-hidden="true" />}
               </button>
               <button className="leave" onClick={() => bus.emit("do-stand")} title="Leave meeting">
                 Leave

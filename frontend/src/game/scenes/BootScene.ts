@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { FRAME_W, FRAME_H } from "../avatar";
 import { CHARS } from "../chars";
 import { activeMap } from "../maps";
+import { CANVAS_FONT_FAMILY, CANVAS_FONT_PRIMARY } from "../uiFont";
 
 const BASE = "/assets";
 
@@ -14,7 +15,7 @@ export default class BootScene extends Phaser.Scene {
     const loadBar = this.add
       .text(this.scale.width / 2, this.scale.height / 2, "Loading…", {
         color: "#e6e9f0",
-        fontFamily: "monospace",
+        fontFamily: CANVAS_FONT_FAMILY,
         fontSize: "16px",
       })
       .setOrigin(0.5);
@@ -53,6 +54,17 @@ export default class BootScene extends Phaser.Scene {
   }
 
   create() {
-    this.scene.start("world");
+    // Wait for the self-hosted app webfont before starting the world, so
+    // in-canvas text (nameplates, chat bubbles) is created on the real face
+    // and never flashes the fallback font (Phaser rasterizes text at creation).
+    const startWorld = () => this.scene.start("world");
+    const fonts = document.fonts as FontFaceSet | undefined;
+    if (fonts?.load) {
+      void fonts
+        .load(`16px "${CANVAS_FONT_PRIMARY}"`)
+        .then(startWorld, startWorld);
+    } else {
+      startWorld();
+    }
   }
 }

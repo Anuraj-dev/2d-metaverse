@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Lock } from "lucide-react";
 import { LIMITS, type ChatMessage, type PlayerState } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
@@ -48,7 +49,7 @@ function isTypingElsewhere(): boolean {
 /**
  * Minecraft-style chat. The input is hidden during play and opens on Enter / T
  * (empty) or "/" (a command). When closed, a faded transcript of recent lines
- * floats bottom-left and fades after a few seconds. An All / 🔒 Private filter
+ * floats bottom-left and fades after a few seconds. An All / Private filter
  * appears inside a private area (auto-selected on entry). Supports /w whispers
  * with Tab name-completion, /r reply, /all and /room overrides, and /help.
  */
@@ -347,7 +348,7 @@ export default function ChatBox() {
                 className={tab === "private" ? "active" : ""}
                 onClick={() => setTab("private")}
               >
-                🔒 Private
+                <Lock size={12} aria-hidden="true" /> Private
               </button>
             )}
           </div>
@@ -386,7 +387,9 @@ export default function ChatBox() {
           )}
 
           <form className="mc-input" onSubmit={submit}>
-            <span className="mc-prompt">{tab === "private" ? "🔒" : "›"}</span>
+            <span className="mc-prompt">
+              {tab === "private" ? <Lock size={13} aria-hidden="true" /> : "›"}
+            </span>
             <input
               ref={inputRef}
               value={text}

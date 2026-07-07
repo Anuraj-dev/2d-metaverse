@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { bus } from "../game/eventBus";
 import { setCamEnabled, setMicEnabled } from "../media/localMedia";
 import { roomVideo } from "../media/livekit";
@@ -43,11 +44,21 @@ export default function MediaControls() {
 
   return (
     <div className="media-controls">
-      <button className={mic ? "on" : "off"} onClick={toggleMic} title="Mic">
-        {mic ? "🎙️" : "🔇"}
+      <button
+        className={mic ? "on" : "off"}
+        onClick={toggleMic}
+        aria-label={mic ? "Mute microphone" : "Unmute microphone"}
+        aria-pressed={!mic}
+      >
+        {mic ? <Mic size={20} aria-hidden="true" /> : <MicOff size={20} aria-hidden="true" />}
       </button>
-      <button className={cam ? "on" : "off"} onClick={toggleCam} title="Camera">
-        {cam ? "📹" : "🚫"}
+      <button
+        className={cam ? "on" : "off"}
+        onClick={toggleCam}
+        aria-label={cam ? "Turn camera off" : "Turn camera on"}
+        aria-pressed={!cam}
+      >
+        {cam ? <Video size={20} aria-hidden="true" /> : <VideoOff size={20} aria-hidden="true" />}
       </button>
       <button className="leave" onClick={() => bus.emit("do-stand")}>
         Leave seat

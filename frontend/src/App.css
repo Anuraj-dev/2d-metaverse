@@ -14,7 +14,7 @@ html, body, #root {
   height: 100%;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-app);
   overflow: hidden;
 }
 
@@ -35,6 +35,13 @@ html, body, #root {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
 }
 .login-card h1 { margin: 0 0 4px; font-size: 30px; }
+.login-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #ffcf6b;
+}
 .login-sub { color: var(--muted); margin: 0 0 20px; }
 .login-card input,
 .login-card button {
@@ -88,9 +95,11 @@ html, body, #root {
   --ink: #06070d;
   --ice: 200, 222, 255;
   --signal: 255, 180, 84;
-  --display: "Syne", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --body: "Hanken Grotesk", system-ui, sans-serif;
+  /* Landing now consumes the app font (PRD 18); the full landing re-theme is
+     PRD 19. Mono stays an intentional system stack (CDN font trio removed). */
+  --display: var(--font-app);
+  --mono: var(--font-mono);
+  --body: var(--font-app);
 
   position: fixed;
   inset: 0;
@@ -232,6 +241,9 @@ html, body, #root {
   color: #eef3ff;
 }
 .lp-nav-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--mono);
   font-size: 12px;
   letter-spacing: 0.14em;
@@ -532,6 +544,9 @@ html, body, #root {
   position: absolute;
   top: 14px;
   right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -539,6 +554,13 @@ html, body, #root {
   font-size: 12px;
   color: var(--accent2);
 }
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent2);
+}
+.presence.pending .presence-dot { background: #e8c468; }
 
 /* ---------- Roster ---------- */
 .roster {
@@ -551,6 +573,9 @@ html, body, #root {
   gap: 6px;
 }
 .roster-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -666,6 +691,9 @@ html, body, #root {
   border-bottom: 1px solid var(--line);
 }
 .mc-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
@@ -738,6 +766,8 @@ html, body, #root {
   border-top: 1px solid var(--line);
 }
 .mc-prompt {
+  display: inline-flex;
+  align-items: center;
   padding: 0 4px 0 13px;
   color: var(--accent);
   font-size: 14px;
@@ -771,7 +801,8 @@ html, body, #root {
   border-radius: 14px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
-.knock-spinner { font-size: 22px; animation: knock-bob 0.9s ease-in-out infinite; }
+.knock-spinner { display: inline-flex; color: var(--accent); animation: knock-bob 0.9s ease-in-out infinite; }
+.knock-status-icon { display: inline-flex; color: var(--muted); }
 @keyframes knock-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 .knock-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .knock-text span { color: var(--muted); font-size: 12px; }
@@ -809,8 +840,9 @@ html, body, #root {
   border-radius: 999px;
   font-size: 13px;
 }
-.admin-badge { color: var(--muted); }
+.admin-badge { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .admin-badge.is-you { color: var(--accent2); font-weight: 700; }
+.admin-badge-star { flex: none; }
 .allow-all { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); }
 .room-admin-note {
   font-size: 12px;
@@ -878,7 +910,11 @@ html, body, #root {
   display: block;
 }
 .bubble-fallback {
-  font-size: 22px;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
 }
 .bubble-name {
   font-size: 10px;
@@ -908,6 +944,9 @@ html, body, #root {
   font-size: 18px;
   cursor: pointer;
   background: #2a3146;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
 }
 .media-controls button.off { background: #5a2030; }
 .media-controls .leave {
@@ -985,6 +1024,10 @@ html, body, #root {
 }
 .set-actions button {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--line);
   background: #232838;
   color: var(--ink);
@@ -1081,13 +1124,16 @@ html, body, #root {
   bottom: 70px;
   left: 50%;
   transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: var(--panel);
   border: 1px solid var(--line);
   padding: 8px 16px;
   border-radius: 20px;
   font-size: 13px;
 }
-.interact-hint::before { content: "⌨️  "; }
+.interact-hint-icon { color: var(--muted); flex: none; }
 
 /* ---------- Interactable modal ---------- */
 .interactable-modal {
@@ -1099,7 +1145,12 @@ html, body, #root {
   max-width: 90vw;
   text-align: center;
 }
-.interactable-modal-icon { font-size: 34px; margin-bottom: 6px; }
+.interactable-modal-icon {
+  display: flex;
+  justify-content: center;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
 .interactable-modal h3 { margin: 0 0 14px; }
 .interactable-modal-content {
   background: #0b0d13;
@@ -1215,6 +1266,13 @@ html, body, #root {
   outline: none;
 }
 .stage-key-input:focus { border-color: var(--accent); }
+.stage-btn-go,
+.stage-btn-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 .stage-btn-go {
   padding: 10px 24px;
   border-radius: 10px;
@@ -1425,6 +1483,9 @@ html, body, #root {
   color: #fff;
   cursor: pointer;
   font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .meeting-actions button.off {
   background: #5a2030;

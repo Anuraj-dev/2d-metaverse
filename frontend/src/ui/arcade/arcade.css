@@ -68,6 +68,9 @@
   accent-color: #7fd1b9;
 }
 .arcade-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: #24304a;
   color: #cdd6ea;
   border: 1px solid #3a4767;
@@ -81,6 +84,9 @@
   background: #2f3d5c;
 }
 .arcade-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: #24304a;
   color: #cdd6ea;
   border: 1px solid #3a4767;

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { ArrowUpRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { signUp, signIn, USE_MOCK } from "../net/auth";
 import { CHARS } from "../game/chars";
@@ -101,7 +102,7 @@ export default function Landing({
           className="lp-nav-cta"
           onClick={() => userInputRef.current?.focus()}
         >
-          Experience Metaverse <span aria-hidden="true">↗</span>
+          Experience Metaverse <ArrowUpRight size={15} aria-hidden="true" />
         </button>
       </motion.nav>
 
