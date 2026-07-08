@@ -218,6 +218,26 @@ describe("meeting manager", () => {
     ]);
   });
 
+  it("keeps the countdown alive when a queued stand executes after the player has re-seated", async () => {
+    const { manager, broadcasts, setSnapshot } = makeManager();
+    setSnapshot({ occupants: ["a", "b"], seated: ["a", "b"] });
+    manager.dispatch(ROOM, { type: "sit", playerId: "b" });
+    await manager.settle();
+
+    setSnapshot({ occupants: ["a", "b"], seated: ["a", "b"] });
+    manager.dispatch(ROOM, { type: "stand", playerId: "a" });
+    manager.dispatch(ROOM, { type: "sit", playerId: "a" });
+    await manager.settle();
+
+    await vi.advanceTimersByTimeAsync(COUNTDOWN_MS);
+    await manager.settle();
+
+    expect(broadcasts.map((broadcast) => broadcast.event)).toEqual([
+      "meeting-countdown",
+      "meeting-started",
+    ]);
+  });
+
   describe("in-meeting chat", () => {
     /** Drive a room to a live meeting of [a, b]. */
     async function startMeeting(manager: MeetingManager, setSnapshot: (s: RoomMeetingSnapshot) => void) {

@@ -85,8 +85,10 @@ export function meetingTransition(
     case "countdown": {
       switch (event.type) {
         case "stand":
+          if (allSeated(snapshot)) return stay(state);
           return { state: IDLE_MEETING, effects: [{ type: "countdown-canceled", reason: "stand" }] };
         case "enter":
+          if (allSeated(snapshot)) return stay(state);
           return { state: IDLE_MEETING, effects: [{ type: "countdown-canceled", reason: "unseated-entry" }] };
         case "leave":
           if (allSeated(snapshot)) return stay(state);

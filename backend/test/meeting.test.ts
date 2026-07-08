@@ -100,10 +100,20 @@ describe("idle", () => {
 });
 
 describe("countdown", () => {
+  it("keeps counting when a queued stand observes a still-all-seated snapshot", () => {
+    const result = meetingTransition(countdown, stand("a"), snap(["a", "b"], ["a", "b"]));
+    expect(result.state).toEqual(countdown);
+    expect(result.effects).toEqual([]);
+  });
   it("cancels when anyone stands", () => {
     const result = meetingTransition(countdown, stand("a"), snap(["a", "b"], ["b"]));
     expect(result.state).toEqual(IDLE_MEETING);
     expect(result.effects).toEqual([{ type: "countdown-canceled", reason: "stand" }]);
+  });
+  it("keeps counting when a queued enter observes a still-all-seated snapshot", () => {
+    const result = meetingTransition(countdown, enter("c"), snap(["a", "b", "c"], ["a", "b", "c"]));
+    expect(result.state).toEqual(countdown);
+    expect(result.effects).toEqual([]);
   });
   it("cancels when someone enters the room unseated", () => {
     const result = meetingTransition(countdown, enter("c"), snap(["a", "b", "c"], ["a", "b"]));
@@ -232,6 +242,18 @@ describe("full scenarios", () => {
     ]);
     expect(state).toEqual(active("a", "b", "c"));
     expect(log).toEqual(["countdown-canceled", "countdown-started", "meeting-started"]);
+  });
+
+  it("survives a rapid stand then re-sit and still starts the meeting", () => {
+    const { state, log } = run(IDLE_MEETING, [
+      [sit("b"), snap(["a", "b"], ["a", "b"])],
+      // The queued stand observes the post-resit room, so it must not cancel.
+      [stand("a"), snap(["a", "b"], ["a", "b"])],
+      [sit("a"), snap(["a", "b"], ["a", "b"])],
+      [elapsed, snap(["a", "b"], ["a", "b"])],
+    ]);
+    expect(state).toEqual(active("a", "b"));
+    expect(log).toEqual(["countdown-started", "meeting-started"]);
   });
 
   it("two sit, meet, one leaves, a latecomer joins, then everyone leaves", () => {
