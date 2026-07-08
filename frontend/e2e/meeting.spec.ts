@@ -112,6 +112,20 @@ test("two players sit → countdown → meeting grid for both; one stands → ba
     await expect(pageB.getByTestId("meeting-chat-list")).toContainText("hi from A");
     await expect(pageA.getByTestId("meeting-chat-list")).toContainText("hi from A");
 
+    // Screen share (PRD 23): the control-bar share button is enabled inside a
+    // meeting; clicking it attempts to publish. Media is refused in this harness,
+    // so we assert the publish INTENT through the bus hook (the established
+    // LiveKit e2e boundary — no real track, no media-quality assertion).
+    const shareAttempt = pageA.evaluate(() => {
+      const hook = window.__testHook;
+      if (!hook) throw new Error("E2E test hook missing on window (build with VITE_E2E_HOOK=1)");
+      return hook.waitForEvent("screen-share-on");
+    });
+    const shareBtn = pageA.getByRole("button", { name: "Share your screen" });
+    await expect(shareBtn).toBeEnabled();
+    await shareBtn.click();
+    await shareAttempt;
+
     // B leaves via the meeting's Leave control (stand): a per-person portal
     // out. B lands back in the world with the game loop AWAKE; the meeting
     // continues for A alone.

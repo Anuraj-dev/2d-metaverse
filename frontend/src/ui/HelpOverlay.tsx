@@ -32,14 +32,18 @@ export default function HelpOverlay() {
 
   return (
     <>
-      <button
-        className="icon-btn help-btn"
-        title="Controls (?)"
-        aria-label="Show controls help"
-        onClick={() => setOpen(true)}
-      >
-        <CircleHelp size={18} aria-hidden="true" />
-      </button>
+      {/* Hidden while the modal is open so the floating pill never paints over
+          the card (PRD 23 fix); the modal owns its own close controls. */}
+      {!open && (
+        <button
+          className="icon-btn help-btn"
+          title="Controls (?)"
+          aria-label="Show controls help"
+          onClick={() => setOpen(true)}
+        >
+          <CircleHelp size={18} aria-hidden="true" />
+        </button>
+      )}
       {open && (
         <div className="modal-backdrop" onClick={() => setOpen(false)}>
           <div className="help-modal" onClick={(e) => e.stopPropagation()}>

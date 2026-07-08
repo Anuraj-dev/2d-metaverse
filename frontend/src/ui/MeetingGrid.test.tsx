@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { charForPlayer } from "../game/chars";
 
 /**
@@ -69,5 +69,24 @@ describe("MeetingGrid (roster fallback — media unavailable)", () => {
     render(<MeetingGrid participants={[{ id: "me", name: "raja" }]} selfId="me" />);
     expect(screen.getAllByTestId("meet-tile")).toHaveLength(1);
     expect(screen.getByText("raja (you)")).toBeTruthy();
+  });
+
+  it("starts in symmetric-grid mode and focuses a tile on click (PRD 23)", () => {
+    render(<MeetingGrid participants={roster} selfId="me" />);
+    expect(screen.getByTestId("meeting-stage").getAttribute("data-mode")).toBe("grid");
+
+    const bobTile = screen
+      .getAllByTestId("meet-tile")
+      .find((tile) => tile.getAttribute("data-player") === "p2");
+    if (!bobTile) throw new Error("bob tile not rendered");
+    fireEvent.click(bobTile);
+
+    // Now in focus mode: bob is the focus tile, the others form the filmstrip.
+    expect(screen.getByTestId("meeting-stage").getAttribute("data-mode")).toBe("focus");
+    const focused = screen
+      .getAllByTestId("meet-tile")
+      .find((tile) => tile.getAttribute("data-focused") === "true");
+    expect(focused?.getAttribute("data-player")).toBe("p2");
+    expect(screen.getByTestId("meeting-filmstrip")).toBeTruthy();
   });
 });

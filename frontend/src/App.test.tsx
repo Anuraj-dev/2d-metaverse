@@ -78,7 +78,6 @@ vi.mock("./ui/HelpOverlay", () => ({ default: () => null }));
 vi.mock("./ui/SfxBridge", () => ({ default: () => null }));
 vi.mock("./ui/SpeakingBridge", () => ({ default: () => null }));
 vi.mock("./ui/RoomAccessLayer", () => ({ default: () => null }));
-vi.mock("./ui/BubbleLayer", () => ({ default: () => null }));
 vi.mock("./ui/ControlBar", () => ({ default: () => null }));
 vi.mock("./ui/InteractionHint", () => ({ default: () => null }));
 vi.mock("./ui/InteractableModal", () => ({ default: () => null }));
@@ -180,7 +179,7 @@ describe("App shell", () => {
     render(<App />);
     await enterAndInit();
     await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
-    await waitFor(() => expect(media.roomVideo.join).toHaveBeenCalledWith("D", SELF));
+    await waitFor(() => expect(media.roomVideo.join).toHaveBeenCalledWith("D"));
     expect(media.worldAudio.stop).toHaveBeenCalled();
   });
 
@@ -505,7 +504,7 @@ describe("App shell", () => {
       expect(media.stageVideo.leave).toHaveBeenCalled();
     });
     // op1 had already started, so it ran to completion after the gate opened…
-    expect(media.roomVideo.join).toHaveBeenCalledWith("D", SELF);
+    expect(media.roomVideo.join).toHaveBeenCalledWith("D");
     // …but the queued op2 was dropped by the disposed guard.
     expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
 
