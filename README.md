@@ -1,6 +1,6 @@
 # 2D Metaverse
 
-A Gather/Zep-style 2D metaverse: walk a styled office space, talk with proximity
+A Gather/Zep-style 2D metaverse: walk a styled office campus, talk with proximity
 audio, and enter key-gated meeting rooms with seated video calls.
 
 This repository is an **npm-workspaces monorepo** with three packages:
