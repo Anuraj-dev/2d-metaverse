@@ -242,10 +242,12 @@ class RoomVideo {
 
   async join(roomId: string) {
     if (this.room) return;
+    // Definitely assigned when the try completes normally (the catch returns).
+    let room: LKRoom;
     try {
       const { token, url } = await fetchToken(roomRoomName(roomId));
       const { Room, RoomEvent, Track } = await import("livekit-client");
-      const room = new Room({
+      room = new Room({
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -285,13 +287,26 @@ class RoomVideo {
         );
       });
       await room.connect(url, token);
-      // Respect the player's sticky mic/cam mute (global control bar, PRD 20) so a
-      // muted walker stays muted when they sit into a meeting, and vice versa.
+    } catch (e) {
+      // A failed token fetch/connect must not leave the dead Room behind: a
+      // non-null `lkRoom` short-circuits every later join() and keeps
+      // MeetingGrid on the LiveKit path instead of the roster fallback. Unwind
+      // through leave() so `setRoom(null)` notifies onRoomChanged subscribers
+      // and the next join() retries with a fresh connection.
+      console.warn("Room video unavailable:", e);
+      await this.leave();
+      return;
+    }
+    // Respect the player's sticky mic/cam mute (global control bar, PRD 20) so a
+    // muted walker stays muted when they sit into a meeting, and vice versa.
+    // Pref application failures (e.g. a getUserMedia denial) must NOT tear down
+    // the connected room — the meeting still works receive-only.
+    try {
       const wanted = getMediaPrefs();
       await room.localParticipant.setCameraEnabled(wanted.camOn);
       await room.localParticipant.setMicrophoneEnabled(wanted.micOn);
     } catch (e) {
-      console.warn("Room video unavailable:", e);
+      console.warn("Applying media prefs to room failed:", e);
     }
   }
 
