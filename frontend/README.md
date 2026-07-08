@@ -205,10 +205,22 @@ you share an *audio zone*.
   **binary, immediate cutover at the threshold**: no muffling or attenuation-through-walls.
 - **Wiring**: each client derives its own and every remote's zone locally from the
   already-broadcast positions (the scene stamps a `zone` onto each player in the
-  `positions` payload). `mediaLogic.computeVolumes` then prices each subscribed remote
-  with `zoneVolume`, and `livekit.ts` applies it to the `<audio>` elements. There is
+  `positions` payload). `mediaLogic.computeZonedVolumes` prices each subscribed remote
+  with `zoneVolume` (`computeVolumes` is a thin wrapper over it, unchanged for existing
+  callers), and `livekit.ts` applies the result to the `<audio>` elements. There is
   **no wire-format change and no new per-frame network traffic** — positions are
   already shared, and the server is not involved.
+- **Volume ramp (PRD 21).** The audible gain applied to a remote's `<audio>` element
+  is NOT the raw target — it glides toward it with a `~500ms` exponential ramp
+  (`mediaLogic.rampVolume`/`rampVolumes`, tunable via `VOICE_RAMP_MS`) so a
+  conversation doesn't pump up/down in audible steps as either party walks. The ramp
+  keys off `ZonedVolume.zoneKey` (the `${myZone}|${theirZone}` pairing): unchanged
+  between ticks ⇒ glide (same-zone distance falloff); changed ⇒ **snap instantly** —
+  this is the privacy invariant (doorway/room-boundary cuts must never leak through a
+  half-second glide) and it is explicitly tested. The `audio-volumes` bus event (used
+  by `SfxBridge`'s speech duck and the E2E zone-isolation spec) still carries the
+  **unramped target**, not the smoothed applied gain — the decision itself hasn't
+  changed, only what actually reaches the speaker.
 - Seated meetings are a separate, already-watertight path (a per-room LiveKit room with
   seat-gated tokens); this model governs only the open-world proximity layer.
 
@@ -279,6 +291,28 @@ and every scene-scale transition — zone crossing, meeting, sliders — **fades
 `ui/settings.ts` store; the Settings panel exposes master/music/effects/ambient
 sliders + mute. **Game logic stays audio-agnostic** — it emits domain events; the
 bridge decides what they sound like.
+
+**Music scheduler (PRD 21).** The single looping `music_bed.ogg` is retired in
+favor of a small curated pool (`MUSIC_TRACKS`, currently 3 tracks) played the way
+Minecraft plays music: one track to completion, then a randomized multi-minute
+silence gap (`MUSIC_GAP_MIN_MS`/`MUSIC_GAP_MAX_MS`, tunable), then the next —
+never an immediate repeat. The scheduler is a pure, deterministic state machine
+in `soundMixer.ts` (`initMusicScheduler`/`musicSchedulerTick`/`musicTrackEnded`),
+seeded through the same mulberry32 PRNG convention as the arcade games
+(`game/arcade/prng.ts`) so a seed reproduces the same track order + gap lengths.
+It is deliberately NOT a countdown for the "track" phase — a track's real
+duration lives in its audio file, not the pure module — the glue (`sfx.ts`) calls
+`musicTrackEnded` off the `<audio>` element's native `ended` event instead, so
+there is no drift or duration bookkeeping. Only the silence-gap phase is
+time-driven, and it **freezes during a meeting** (`paused` param) and resumes
+exactly where it left off, matching "music behavior in meetings is unchanged."
+The outdoor ambience keeps sounding under a silence gap — only the music target
+goes to zero (`loopTargets`'s `musicPlaying` gate). Default `musicVolume` was
+lowered (0.4 → 0.2) so the pool sits under conversation rather than being the
+first thing a new player mutes; existing players' saved slider values are
+untouched. Track sourcing is curation, not composition (locked audio
+direction) — see `scripts/curate_audio.py` → `curate_music_pool` and
+`ATTRIBUTIONS.md`.
 
 **Speech-driven ducking (PRD 15).** The music + ambient beds duck hard (to
 `DUCK_FACTOR`, ~0.12) whenever conversation is actually happening — not on mere

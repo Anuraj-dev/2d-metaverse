@@ -105,23 +105,148 @@ export function computeVolumes(
   cutoff: number = AUDIO_CUTOFF,
   mutedIds?: Iterable<string>
 ): Map<string, number> | null {
+  const zoned = computeZonedVolumes(players, selfId, subscribedIds, cutoff, mutedIds);
+  if (!zoned) return null;
+  const out = new Map<string, number>();
+  for (const [id, z] of zoned) out.set(id, z.volume);
+  return out;
+}
+
+/**
+ * A remote's target world-audio volume plus the zone-transition signal the
+ * ramp layer (`rampVolume`) needs (PRD 21).
+ */
+export interface ZonedVolume {
+  /** The zone-aware target volume — identical to what `computeVolumes` returns. */
+  volume: number;
+  /**
+   * `${myZone}|${theirZone}` — identifies the zone pairing `volume` was
+   * computed under. Comparing this tick-to-tick is how the ramp layer tells
+   * "same-zone distance changed" (glide) from "the zone gate itself moved"
+   * (snap): an unchanged key means any volume delta is same-zone falloff;
+   * a changed key means a room/outdoor boundary was crossed since the last
+   * tick, and the privacy invariant requires an instant cut, never a ~500ms
+   * glide (see decisions.md — zone/door cuts stay instant).
+   */
+  zoneKey: string;
+  /**
+   * True when `volume` was NOT decided by the zone/distance model — the
+   * stage-performer proximity dedupe, or a subscribed remote with no known
+   * position yet. These are state cutovers, not spatial changes, and must
+   * always apply instantly regardless of `zoneKey`.
+   */
+  instant: boolean;
+}
+
+/**
+ * `computeVolumes`, but also reporting the zone-transition signal each
+ * remote's volume was computed under. `computeVolumes` is a thin wrapper over
+ * this — the two can never drift apart because there is only one computation.
+ */
+export function computeZonedVolumes(
+  players: MediaPos[],
+  selfId: string,
+  subscribedIds: Iterable<string>,
+  cutoff: number = AUDIO_CUTOFF,
+  mutedIds?: Iterable<string>
+): Map<string, ZonedVolume> | null {
   const me = players.find((pl) => pl.id === selfId || pl.self);
   if (!me) return null;
   const myZone = me.zone ?? OUTDOOR_ZONE;
   const muted = new Set(mutedIds ?? []);
-  const out = new Map<string, number>();
+  const out = new Map<string, ZonedVolume>();
   for (const id of subscribedIds) {
     if (muted.has(id)) {
-      out.set(id, 0);
+      out.set(id, { volume: 0, zoneKey: `${myZone}|${id}`, instant: true });
       continue;
     }
     const other = players.find((pl) => pl.id === id);
     if (!other) {
-      out.set(id, 0);
+      out.set(id, { volume: 0, zoneKey: `${myZone}|${id}`, instant: true });
       continue;
     }
+    const theirZone = other.zone ?? OUTDOOR_ZONE;
     const d = Math.hypot(other.x - me.x, other.y - me.y);
-    out.set(id, zoneVolume(myZone, other.zone ?? OUTDOOR_ZONE, d, cutoff));
+    out.set(id, {
+      volume: zoneVolume(myZone, theirZone, d, cutoff),
+      zoneKey: `${myZone}|${theirZone}`,
+      instant: false,
+    });
+  }
+  return out;
+}
+
+/* ------------------------------ Volume ramp -------------------------------- */
+/**
+ * Time constant (ms) for the same-zone proximity volume ramp (PRD 21): the
+ * applied volume glides toward its target with an exponential decay of this
+ * time constant, so a conversation doesn't pump up/down in audible steps as
+ * either party walks. Zone/door cuts bypass the ramp entirely (`rampVolume`) —
+ * this only smooths in-zone distance-driven changes. One tunable knob, per
+ * the PRD's "starting point" framing for the 500ms figure.
+ */
+export const VOICE_RAMP_MS = 500;
+
+/** Per-remote ramp state the transport carries across positions ticks. */
+export interface VolumeRampState {
+  /** The last applied (post-ramp) volume, 0..1 — what actually reaches the
+   * `<audio>` element, as opposed to `ZonedVolume.volume`, the raw target. */
+  applied: number;
+  /** The `zoneKey` of the tick that produced `applied` (see `ZonedVolume`). */
+  zoneKey: string;
+}
+
+/**
+ * Advance one remote's applied world-audio volume by one frame toward its
+ * target — same family as `soundMixer.ts`'s `fadeStep`/`duckStep` pure
+ * envelope steps, but exponential (a fixed *time constant*, not a fixed
+ * *duration*): each frame moves the remaining gap to the target by a factor
+ * of `exp(-dtMs / rampMs)`, so the ramp is exactly frame-rate independent
+ * (two half-steps compose to the same result as one full step) and never
+ * overshoots.
+ *
+ * Snaps straight to `target.volume` instead of ramping when:
+ *  - there is no prior state (a newly-subscribed remote — nothing to glide
+ *    from, matches the pre-ramp instant-assignment behaviour);
+ *  - `target.instant` is set (a state cutover, not a spatial change); or
+ *  - `target.zoneKey` differs from the prior tick's — the zone gate moved
+ *    (room entry/exit, room-to-room) and the privacy invariant requires an
+ *    instant cut, never a glide, so a private conversation can never leak
+ *    through a half-second ramp at the doorway.
+ */
+export function rampVolume(
+  prev: VolumeRampState | undefined,
+  target: ZonedVolume,
+  dtMs: number,
+  rampMs: number = VOICE_RAMP_MS
+): VolumeRampState {
+  if (!prev || target.instant || prev.zoneKey !== target.zoneKey) {
+    return { applied: target.volume, zoneKey: target.zoneKey };
+  }
+  if (rampMs <= 0) {
+    return { applied: target.volume, zoneKey: target.zoneKey };
+  }
+  // Negative dt (clock skew) is treated as zero elapsed time — no movement —
+  // matching fadeStep/duckStep's dt clamping.
+  const factor = Math.exp(-Math.max(0, dtMs) / rampMs);
+  const applied = target.volume + (prev.applied - target.volume) * factor;
+  return { applied, zoneKey: target.zoneKey };
+}
+
+/**
+ * Advance every subscribed remote's ramp state one frame. Ids no longer
+ * present in `targets` (unsubscribed remotes) are dropped, not carried
+ * forward, so ramp state never leaks past a subscription's lifetime.
+ */
+export function rampVolumes(
+  prev: ReadonlyMap<string, VolumeRampState>,
+  targets: ReadonlyMap<string, ZonedVolume>,
+  dtMs: number,
+  rampMs: number = VOICE_RAMP_MS
+): Map<string, VolumeRampState> {
+  const out = new Map<string, VolumeRampState>();
+  for (const [id, target] of targets) {
+    out.set(id, rampVolume(prev.get(id), target, dtMs, rampMs));
   }
   return out;
 }

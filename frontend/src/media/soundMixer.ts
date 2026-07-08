@@ -7,6 +7,7 @@
  * mocked.
  */
 import type { Settings } from "../ui/settings";
+import { nextFloat, nextInt, toSeed } from "../game/arcade/prng";
 
 export type Channel = "music" | "sfx" | "ambient" | "arcade";
 
@@ -117,27 +118,34 @@ export function speechActive(
 /**
  * World-state inputs that gate the persistent loops — lifecycle, not settings.
  * `outdoors` is derived from the local player's audio zone (OUTDOOR_ZONE vs a
- * room id); `meeting` spans portal-in → portal-out.
+ * room id); `meeting` spans portal-in → portal-out; `musicPlaying` is whether
+ * the music scheduler (PRD 21, below) currently has an active track — false
+ * during a between-tracks silence gap.
  */
 export interface LoopWorld {
   outdoors: boolean;
   meeting: boolean;
+  musicPlaying: boolean;
 }
 
 /**
  * Base (un-ducked) target gains for the two persistent loops given settings +
  * world state: the outdoor ambience only sounds outdoors (rooms are aurally
- * private — no birdsong through walls), and both world loops fall silent for the
- * duration of a meeting. These are the "scene" targets the glue fades toward at
- * LOOP_FADE_MS; the speech duck (`duckStep`) is a separate, faster envelope the
- * glue multiplies on top of the faded base — it never hard-cuts either.
+ * private — no birdsong through walls), it keeps playing under a music silence
+ * gap (PRD 21 — "the outdoor ambience continues underneath"), and both world
+ * loops fall silent for the duration of a meeting. The music target is ALSO
+ * silent whenever the scheduler is between tracks (`!musicPlaying`), so a gap
+ * reads as quiet rather than a paused loop. These are the "scene" targets the
+ * glue fades toward at LOOP_FADE_MS; the speech duck (`duckStep`) is a
+ * separate, faster envelope the glue multiplies on top of the faded base — it
+ * never hard-cuts either.
  */
 export function loopTargets(
   v: MixerVolumes,
   world: LoopWorld
 ): { music: number; ambient: number } {
   return {
-    music: world.meeting ? 0 : channelGain(v, "music"),
+    music: world.meeting || !world.musicPlaying ? 0 : channelGain(v, "music"),
     ambient: world.meeting || !world.outdoors ? 0 : channelGain(v, "ambient"),
   };
 }
@@ -280,4 +288,116 @@ export function footstepDue(
     return { play: true, state: { lastStepAt: now } };
   }
   return { play: false, state };
+}
+
+// ── Music scheduler (PRD 21: curated calm pool + Minecraft-style silence gaps) ──
+//
+// The single looping music bed is replaced by a small pool of curated calm
+// tracks: play one to completion, then a randomized multi-minute silence gap
+// (only the outdoor ambience keeps sounding under it), then the next — never
+// repeating the track that just played. This is a pure, deterministic state
+// machine: randomness flows through a serializable `rngSeed` (mulberry32, the
+// same convention as the arcade PRNG — never `Math.random`), so replaying a
+// seed reproduces the same track order and gap lengths.
+//
+// The "track" phase is deliberately NOT a countdown: a track's real duration
+// lives in its audio file, not in this pure module, so the glue (sfx.ts) tells
+// the scheduler a track finished by calling `musicTrackEnded` off the
+// `<audio>` element's native `ended` event — exact, no drift, no need to know
+// durations here. Only the silence-gap phase is time-driven (`musicSchedulerTick`).
+
+/** The curated calm-music pool (PRD 21). Ids resolve to
+ * `public/assets/audio/<id>.ogg` via sfx.ts, same as every other clip. */
+export const MUSIC_TRACKS: readonly string[] = ["music_calm_1", "music_calm_2", "music_calm_3"];
+
+/** Silence-gap bounds between tracks — "multi-minute", Minecraft-style, so the
+ * music stays a treat rather than a loop players reach to mute. Tunable here. */
+export const MUSIC_GAP_MIN_MS = 90_000; // 1.5 min
+export const MUSIC_GAP_MAX_MS = 240_000; // 4 min
+
+export type MusicPhase = "track" | "gap";
+
+/** The music scheduler's serializable state. */
+export interface MusicSchedulerState {
+  phase: MusicPhase;
+  /** The track id playing (phase "track") or last played (phase "gap") — kept
+   * so the next pick never immediately repeats it. Null only before the very
+   * first pick. */
+  trackId: string | null;
+  /** ms of silence remaining — meaningful only in phase "gap"; unused (0) in
+   * phase "track", whose end is signalled by `musicTrackEnded`, not a timer. */
+  remainingMs: number;
+  /** Carried mulberry32 seed (see game/arcade/prng.ts) — the scheduler's only
+   * source of randomness. */
+  rngSeed: number;
+}
+
+function gapDurationFrom(rand01: number): number {
+  return MUSIC_GAP_MIN_MS + rand01 * (MUSIC_GAP_MAX_MS - MUSIC_GAP_MIN_MS);
+}
+
+function pickNextTrack(
+  tracks: readonly string[],
+  exclude: string | null,
+  seed: number
+): { trackId: string; seed: number } {
+  const pool = tracks.length > 1 ? tracks.filter((t) => t !== exclude) : tracks;
+  const { value, seed: nextSeed } = nextInt(seed, pool.length);
+  const trackId = pool[value];
+  if (trackId === undefined) {
+    // Unreachable: `value` is drawn in [0, pool.length) and pool.length > 0 is
+    // guaranteed by every caller (musicSchedulerTick checks tracks.length,
+    // initMusicScheduler's caller owns a non-empty MUSIC_TRACKS). Throwing
+    // guard instead of a non-null assertion, per repo convention.
+    throw new Error("soundMixer: pickNextTrack drew an out-of-range index (unreachable)");
+  }
+  return { trackId, seed: nextSeed };
+}
+
+/**
+ * Start a fresh scheduler in a silence gap — the very first track arrives
+ * after one gap, the same cadence as every later cycle (no track blares the
+ * instant the app loads).
+ */
+export function initMusicScheduler(rngSeed: number): MusicSchedulerState {
+  const { value, seed } = nextFloat(toSeed(rngSeed));
+  return { phase: "gap", trackId: null, remainingMs: gapDurationFrom(value), rngSeed: seed };
+}
+
+/**
+ * Advance the scheduler by `dtMs` of wall-clock time. Only the silence-gap
+ * phase is time-driven: it counts down and, on reaching zero, picks the next
+ * track (never an immediate repeat when 2+ tracks exist) and switches to
+ * phase "track". The "track" phase itself does not advance here — see
+ * `musicTrackEnded`.
+ *
+ * `paused` freezes the clock entirely — meetings silence the music
+ * (`loopTargets`) but must not "spend" gap time while a meeting is on
+ * (PRD 21: music behaviour in meetings is unchanged from before, and resumes
+ * exactly where it left off after).
+ */
+export function musicSchedulerTick(
+  state: MusicSchedulerState,
+  dtMs: number,
+  paused: boolean,
+  tracks: readonly string[] = MUSIC_TRACKS
+): MusicSchedulerState {
+  if (paused || state.phase !== "gap" || dtMs <= 0 || tracks.length === 0) return state;
+  const remaining = state.remainingMs - dtMs;
+  if (remaining > 0) return { ...state, remainingMs: remaining };
+  const picked = pickNextTrack(tracks, state.trackId, state.rngSeed);
+  return { phase: "track", trackId: picked.trackId, remainingMs: 0, rngSeed: picked.seed };
+}
+
+/**
+ * The glue calls this when the currently-playing track's `<audio>` element
+ * fires its native `ended` event — "play one track to completion" (PRD 21).
+ * Starts the next silence gap, its duration drawn from the scheduler's seeded
+ * PRNG. A no-op outside phase "track" (defensive — the glue should only ever
+ * call this while a track is actually playing).
+ */
+export function musicTrackEnded(state: MusicSchedulerState): MusicSchedulerState {
+  if (state.phase !== "track") return state;
+  const { value, seed } = nextFloat(state.rngSeed);
+  return { phase: "gap", trackId: state.trackId, remainingMs: gapDurationFrom(value), rngSeed: seed };
 }

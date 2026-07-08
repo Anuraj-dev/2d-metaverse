@@ -15,7 +15,14 @@ import {
   DUCK_RELEASE_MS,
   LOOP_FADE_MS,
   VOICE_THRESHOLD,
+  initMusicScheduler,
+  musicSchedulerTick,
+  musicTrackEnded,
+  MUSIC_TRACKS,
+  MUSIC_GAP_MIN_MS,
+  MUSIC_GAP_MAX_MS,
   type MixerVolumes,
+  type MusicSchedulerState,
 } from "./soundMixer";
 import { getSettings } from "../ui/settings";
 
@@ -103,8 +110,8 @@ describe("channelGain", () => {
 describe("volumesFromSettings (persistence round-trip)", () => {
   it("mirrors the persisted default settings shape", () => {
     const v = volumesFromSettings(getSettings());
-    // defaults: master .6, music .4, sfx .7, ambient .5, arcade .8
-    expect(channelGain(v, "music")).toBeCloseTo(0.6 * 0.4);
+    // defaults: master .6, music .2 (PRD 21: lowered from .4), sfx .7, ambient .5, arcade .8
+    expect(channelGain(v, "music")).toBeCloseTo(0.6 * 0.2);
     expect(channelGain(v, "sfx")).toBeCloseTo(0.6 * 0.7);
     expect(channelGain(v, "ambient")).toBeCloseTo(0.6 * 0.5);
     expect(channelGain(v, "arcade")).toBeCloseTo(0.6 * 0.8);
@@ -197,11 +204,11 @@ describe("footstepDue", () => {
   });
 });
 
-describe("loopTargets (base loop lifecycle: outdoors / meeting — un-ducked)", () => {
+describe("loopTargets (base loop lifecycle: outdoors / meeting / musicPlaying — un-ducked)", () => {
   const vols = { ...base, music: 0.8, ambient: 0.6 };
-  const world = { outdoors: true, meeting: false };
+  const world = { outdoors: true, meeting: false, musicPlaying: true };
 
-  it("outdoors, no meeting: both loops at their channel gains", () => {
+  it("outdoors, no meeting, a track playing: both loops at their channel gains", () => {
     expect(loopTargets(vols, world)).toEqual({ music: 0.8, ambient: 0.6 });
   });
 
@@ -220,9 +227,17 @@ describe("loopTargets (base loop lifecycle: outdoors / meeting — un-ducked)", 
   });
 
   it("meeting wins even while outdoors", () => {
-    expect(loopTargets(vols, { outdoors: true, meeting: true })).toEqual({
+    expect(loopTargets(vols, { outdoors: true, meeting: true, musicPlaying: true })).toEqual({
       music: 0,
       ambient: 0,
+    });
+  });
+
+  it("a silence gap (no active track) mutes the music but not the outdoor ambience", () => {
+    // PRD 21: "the outdoor ambience continues underneath" a between-tracks gap.
+    expect(loopTargets(vols, { ...world, musicPlaying: false })).toEqual({
+      music: 0,
+      ambient: 0.6,
     });
   });
 
@@ -235,6 +250,125 @@ describe("loopTargets (base loop lifecycle: outdoors / meeting — un-ducked)", 
     expect(loopTargets({ ...vols, muted: true }, world)).toEqual({
       music: 0,
       ambient: 0,
+    });
+  });
+});
+
+describe("music scheduler (PRD 21: curated calm pool + Minecraft-style silence gaps)", () => {
+  const TRACKS = ["a", "b", "c"];
+
+  describe("initMusicScheduler", () => {
+    it("starts in a silence gap, no track yet", () => {
+      const s = initMusicScheduler(1);
+      expect(s.phase).toBe("gap");
+      expect(s.trackId).toBeNull();
+      expect(s.remainingMs).toBeGreaterThanOrEqual(MUSIC_GAP_MIN_MS);
+      expect(s.remainingMs).toBeLessThanOrEqual(MUSIC_GAP_MAX_MS);
+    });
+
+    it("is deterministic from its seed", () => {
+      expect(initMusicScheduler(42)).toEqual(initMusicScheduler(42));
+    });
+
+    it("different seeds (usually) produce different gap lengths", () => {
+      expect(initMusicScheduler(1).remainingMs).not.toBe(initMusicScheduler(2).remainingMs);
+    });
+  });
+
+  describe("musicSchedulerTick (gap countdown)", () => {
+    it("counts down the gap without transitioning while time remains", () => {
+      const s = initMusicScheduler(1);
+      const next = musicSchedulerTick(s, 1000, false, TRACKS);
+      expect(next.phase).toBe("gap");
+      expect(next.remainingMs).toBe(s.remainingMs - 1000);
+    });
+
+    it("transitions gap -> track once the countdown elapses, picking a track", () => {
+      const s: MusicSchedulerState = { phase: "gap", trackId: null, remainingMs: 500, rngSeed: 7 };
+      const next = musicSchedulerTick(s, 500, false, TRACKS);
+      expect(next.phase).toBe("track");
+      expect(next.trackId).not.toBeNull();
+      expect(TRACKS).toContain(next.trackId);
+    });
+
+    it("never repeats the track that just played (no-immediate-repeat)", () => {
+      // Sweep a wide range of seeds so the PRNG's raw pick would sometimes
+      // land on the excluded track if the exclusion were not applied.
+      for (let seed = 1; seed <= 200; seed++) {
+        const s: MusicSchedulerState = { phase: "gap", trackId: "a", remainingMs: 10, rngSeed: seed };
+        const next = musicSchedulerTick(s, 10, false, TRACKS);
+        expect(next.trackId).not.toBe("a");
+      }
+    });
+
+    it("does not advance while paused (meeting), even past the countdown", () => {
+      const s: MusicSchedulerState = { phase: "gap", trackId: null, remainingMs: 100, rngSeed: 3 };
+      const next = musicSchedulerTick(s, 10_000, true, TRACKS);
+      expect(next).toEqual(s);
+    });
+
+    it("resumes exactly where it left off after pausing", () => {
+      const s = initMusicScheduler(9);
+      const paused = musicSchedulerTick(s, 30_000, true, TRACKS); // frozen
+      expect(paused).toEqual(s);
+      const resumed = musicSchedulerTick(paused, 1000, false, TRACKS);
+      expect(resumed.remainingMs).toBe(s.remainingMs - 1000);
+    });
+
+    it("does not advance the track phase (time-driven only in gap)", () => {
+      const s: MusicSchedulerState = { phase: "track", trackId: "a", remainingMs: 0, rngSeed: 1 };
+      expect(musicSchedulerTick(s, 999_999, false, TRACKS)).toEqual(s);
+    });
+
+    it("is a no-op with zero/negative dt", () => {
+      const s = initMusicScheduler(1);
+      expect(musicSchedulerTick(s, 0, false, TRACKS)).toEqual(s);
+      expect(musicSchedulerTick(s, -50, false, TRACKS)).toEqual(s);
+    });
+  });
+
+  describe("musicTrackEnded (track -> gap, seeded gap length)", () => {
+    it("starts a silence gap after a track completes", () => {
+      const s: MusicSchedulerState = { phase: "track", trackId: "a", remainingMs: 0, rngSeed: 11 };
+      const next = musicTrackEnded(s);
+      expect(next.phase).toBe("gap");
+      expect(next.trackId).toBe("a"); // remembered so the next pick excludes it
+      expect(next.remainingMs).toBeGreaterThanOrEqual(MUSIC_GAP_MIN_MS);
+      expect(next.remainingMs).toBeLessThanOrEqual(MUSIC_GAP_MAX_MS);
+    });
+
+    it("is a no-op outside phase 'track' (defensive)", () => {
+      const s: MusicSchedulerState = { phase: "gap", trackId: "a", remainingMs: 500, rngSeed: 11 };
+      expect(musicTrackEnded(s)).toEqual(s);
+    });
+
+    it("gap length is deterministic from the carried seed", () => {
+      const s: MusicSchedulerState = { phase: "track", trackId: "a", remainingMs: 0, rngSeed: 99 };
+      expect(musicTrackEnded(s)).toEqual(musicTrackEnded(s));
+    });
+  });
+
+  describe("full cycle (determinism + rotation)", () => {
+    it("replaying the same seed through many cycles reproduces the same track order + gap lengths", () => {
+      function run(seed: number): { trackId: string | null; remainingMs: number }[] {
+        let s = initMusicScheduler(seed);
+        const log: { trackId: string | null; remainingMs: number }[] = [];
+        for (let i = 0; i < 12; i++) {
+          s = musicSchedulerTick(s, s.remainingMs || 1, false, TRACKS);
+          if (s.phase === "track") {
+            log.push({ trackId: s.trackId, remainingMs: s.remainingMs });
+            s = musicTrackEnded(s);
+          }
+        }
+        return log;
+      }
+      expect(run(123)).toEqual(run(123));
+    });
+
+    it("MUSIC_TRACKS names a small curated pool (2-3 tracks per PRD 21)", () => {
+      expect(MUSIC_TRACKS.length).toBeGreaterThanOrEqual(2);
+      expect(MUSIC_TRACKS.length).toBeLessThanOrEqual(3);
+      expect(new Set(MUSIC_TRACKS).size).toBe(MUSIC_TRACKS.length); // no dupes
     });
   });
 });
