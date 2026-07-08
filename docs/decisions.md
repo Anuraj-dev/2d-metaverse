@@ -64,3 +64,6 @@
 
 ## 2026-07-09 — Sonnet-5 experiment (this repo): high codes, low scouts
 **Why:** Test cost-efficiency + correctness vs Opus coders. Agent defs `.claude/agents/sonnet-coder-high.md` / `sonnet-scout-low.md`; log per task in memory `sonnet-experiment`. Early signal: coder cost ≈ Opus, low-effort scouts flaky on broad exploration briefs.
+
+## 2026-07-09 — Browser QA runs on headless Playwright, not Claude-in-Chrome
+**Why:** Claude-in-Chrome automates background tabs (`visibilityState: hidden`), which pauses Phaser's rAF loop — avatars can't move, so world interactions are untestable. Headless Playwright pages (repo's own tooling, fake media devices) against prod work identically to the e2e suite. Also: prod is reachable ONLY via https://space.raja-dev.me — backend CORS rejects the `*.vercel.app` deployment URLs, and `2d-metaverse.vercel.app` is an unrelated third-party app (rejected: testing via Vercel URLs).
