@@ -85,11 +85,13 @@ describe("ChatBox persistent panel", () => {
     expect(screen.getByLabelText("Chat message")).toBeTruthy();
   });
 
-  it("exposes and auto-selects the Room tab on room entry", () => {
+  it("exposes and auto-selects the Room tab, labeled with the room's registry name, on entry", () => {
     render(<ChatBox />);
-    expect(screen.queryByRole("button", { name: "Room" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Room/ })).toBeNull();
     enterRoom();
-    expect(screen.getByRole("button", { name: "Room" }).className).toContain("active");
+    // Room "1" resolves to its hostel display name via AREA_NAMES (PRD 22).
+    const tab = screen.getByRole("button", { name: "Mandakini Hostel · Room 1" });
+    expect(tab.className).toContain("active");
   });
 
   it("routes plain messages to the room channel while on the Room tab", () => {

@@ -421,15 +421,16 @@ interactables_objs = [
             {"name": "content",      "type": "string",
              "value": (
                  "Welcome to Hyprverse Campus!\n\n"
-                 "  HQ (north)       — meeting rooms D, E, F\n"
-                 "  Auditorium (NE)  — presentations & broadcast\n"
-                 "  Plaza (center)   — open collaboration\n"
-                 "  Cafe (SW)        — social lounge\n"
-                 "  Coworking (SE)   — open desk pods\n"
-                 "  Hostel (south)   — private rooms 1, 2, 3\n"
-                 "  Arcade (south)   — Snake, Flappy, 2048\n\n"
+                 "  Cauvery Hostel (north)  — Rooms 4, 5, 6\n"
+                 "  Stage (NE)              — presentations & broadcast\n"
+                 "  Plaza (center)          — open collaboration\n"
+                 "  Cafe (SW)               — social lounge\n"
+                 "  Coworking (SE)          — open desk pods\n"
+                 "  Mandakini Hostel (south)— Rooms 1, 2, 3\n"
+                 "  Game Arcade (south)     — Snake, Flappy, 2048\n"
+                 "                            + Tic-Tac-Toe & Connect 4\n\n"
                  "Tip: head south past coworking for\n"
-                 "the arcade — or portal across the park!"
+                 "the Game Arcade — or portal across the park!"
              )},
         ],
     },
@@ -444,10 +445,10 @@ interactables_objs = [
              "value": (
                  "Today's Agenda\n"
                  "──────────────\n"
-                 "10:00  Sprint planning  (Room D)\n"
+                 "10:00  Sprint planning  (Cauvery Hostel · Room 4)\n"
                  "12:00  Lunch break\n"
                  "14:00  Campus tour\n"
-                 "16:00  All-hands meeting\n\n"
+                 "16:00  All-hands meeting  (Stage)\n\n"
                  "Private rooms: knock and the admin lets you in"
              )},
         ],
@@ -637,11 +638,19 @@ furn("f_plant_big",     86, 107, True)
 furn("f_sofa",          80, 106, True)  # a lounge bench facing the cabinets
 furn("f_sofa_small",    83, 106, True)
 
-# ── Board-game tables (PRD 11 phase 2) ────────────────────────────────────
-# Two two-seat tables in the SW plaza. tableId + game must match the shared
-# BOARD_TABLES registry; each seat opens a server-authoritative match. The board
-# itself renders in a React HUD panel — the map only carries the solid table
-# sprite and the two opposite seats.
+# ── Board-game tables (PRD 11 phase 2; relocated into the arcade, PRD 22) ──
+# Two two-seat tables. tableId + game must match the shared BOARD_TABLES
+# registry; each seat opens a server-authoritative match. The board itself
+# renders in a React HUD panel — the map only carries the solid table sprite and
+# the two opposite seats.
+#
+# PRD 22 moves them from the old SW-plaza corner into the SW corner of the Game
+# Arcade hall interior (cols 68-86, rows 95-107), so every game lives in one
+# named place. They sit west of the x=78-81 door corridor and south of the
+# cabinet row (row 96), clear of both the doorway descent and the cabinet
+# approach strips. The hall stays a PUBLIC non-room area (no roomBounds), so the
+# tables remain ungated, never arm the meeting trigger, and spectating still
+# works — exactly as in the open plaza before.
 board_seats = []
 
 
@@ -664,8 +673,51 @@ def board_table(table_id, game, label, cx, ty):
         })
 
 
-board_table("ttt-1", "tictactoe", "Tic-Tac-Toe", 37, 51)
-board_table("c4-1",  "connect4",  "Connect 4",   43, 51)
+# Two tables stacked in the arcade's SW corner (seats at cx±2 stay on interior
+# floor; centre tile carries the solid table sprite). cx=72 → seats at 70/74.
+board_table("ttt-1", "tictactoe", "Tic-Tac-Toe", 72, 102)
+board_table("c4-1",  "connect4",  "Connect 4",   72, 105)
+
+# ── SIGNAGE / WAYFINDING (PRD 22) ─────────────────────────────────────────────
+# In-world naming: building name banners over each area's entrance and a small
+# set of directional signposts at major junctions. The text mirrors the shared
+# AREA_NAMES registry (the single source of truth) — keep these strings aligned
+# with `shared/src/constants.ts` if a name ever changes. Signs are decorative,
+# non-colliding objects; WorldScene renders the wooden sprite (f_sign_banner /
+# f_sign_post) plus a crisp text label pulled from each object's `text` property.
+signs_objs = []
+
+
+def sign(name, variant, tx, ty, text):
+    """A wayfinding sign at tile (tx,ty). `variant` picks the sprite:
+    "banner" (wide building nameplate) or "post" (directional signpost). The
+    point is the sprite's ground anchor (bottom-centre); text is baked as a
+    property, not into the PNG, so names stay crisp and registry-aligned."""
+    signs_objs.append({
+        "id": 60000 + len(signs_objs), "name": name,
+        "x": tx * TS + TS // 2, "y": ty * TS + TS,
+        "width": 0, "height": 0,
+        "point": True, "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "variant", "type": "string", "value": variant},
+            {"name": "text",    "type": "string", "value": text},
+        ],
+    })
+
+
+# Building name banners over each entrance, on the side players approach from.
+sign("banner_cauvery",  "banner", 54, 25, "Cauvery Hostel")    # HQ south doors (rooms 4-6)
+sign("banner_stage",    "banner", 98, 45, "Stage")             # auditorium south door
+sign("banner_mandakini","banner", 31, 99, "Mandakini Hostel")  # hostel north facade (rooms 1-3)
+sign("banner_arcade",   "banner", 79, 93, "Game Arcade")       # arcade hall north doorway
+# "Board Games" corner sign inside the arcade, by the two relocated tables.
+sign("sign_boardgames", "banner", 72, 100, "Board Games")
+
+# Directional signposts at major junctions (arrows point the way).
+sign("post_plaza", "post", 66, 47,
+     "Cauvery Hostel  ↑\nStage  →\nGame Arcade  ↓")
+sign("post_south", "post", 81, 90, "Game Arcade  ↓")
+sign("post_hostel", "post", 36, 92, "Mandakini Hostel  ↓")
 
 # ── Tilemap JSON ──────────────────────────────────────────────────────────
 tilemap = {
@@ -678,8 +730,8 @@ tilemap = {
     "type": "map",
     "version": "1.10",
     "tiledversion": "1.10.2",
-    "nextlayerid": 14,
-    "nextobjectid": 50004,
+    "nextlayerid": 15,
+    "nextobjectid": 60100,
     "tilesets": [
         {
             "firstgid": 1, "name": "floors_walls",
@@ -721,6 +773,8 @@ tilemap = {
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": interactables_objs},
         {"id": 11, "name": "stage",        "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": stage_objs},
+        {"id": 14, "name": "signs",        "type": "objectgroup", "visible": True,
+         "opacity": 1, "x": 0, "y": 0, "draworder": "topdown", "objects": signs_objs},
         {"id": 5,  "name": "spawn",       "type": "objectgroup", "visible": True,
          "opacity": 1, "x": 0, "y": 0, "draworder": "topdown",
          "objects": [spawn_obj]},
@@ -744,4 +798,5 @@ print(f"  furniture objects: {len(furniture)}")
 print(f"  rooms: {len(door_zones)} doorZones, {len(room_bounds)} roomBounds, {len(seats_objs)} seats")
 print(f"  interactables: {len(interactables_objs)} objects")
 print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen)")
+print(f"  signs: {len(signs_objs)} objects (banners + directional posts)")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")

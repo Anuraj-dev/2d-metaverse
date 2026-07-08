@@ -11,6 +11,7 @@ import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
 import ChatBox from "./ui/ChatBox";
 import ChatToast from "./ui/ChatToast";
+import RoomToast from "./ui/RoomToast";
 import Landing from "./ui/Landing";
 import MeetingCountdown from "./ui/MeetingCountdown";
 import { ARCADE_GAMES, SERVER_EVENTS, type ArcadeGame, type BoardUpdatePayload } from "@metaverse/shared";
@@ -415,6 +416,7 @@ export default function App() {
         </Suspense>
         <ChatBox />
         <ChatToast />
+        <RoomToast />
         {meeting.status === "countdown" && <MeetingCountdown durationMs={meeting.durationMs} />}
         {arcade && (
           <Suspense fallback={null}>

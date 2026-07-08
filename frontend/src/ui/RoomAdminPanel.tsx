@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Star } from "lucide-react";
-import type { PlayerState } from "@metaverse/shared";
+import { roomDisplayName, type PlayerState } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
 import { sharedNet } from "../net/shared";
 import { adminPanelView, type AdminRef, type Requester, type RoomOpenState } from "../game/roomAccess";
@@ -86,6 +86,7 @@ export default function RoomAdminPanel() {
   const net = sharedNet();
   return (
     <div className="room-admin">
+      <div className="room-admin-name">{roomDisplayName(roomId)}</div>
       <div className="room-admin-bar">
         {view.badge && (
           <span className={`admin-badge ${view.isAdmin ? "is-you" : ""}`}>

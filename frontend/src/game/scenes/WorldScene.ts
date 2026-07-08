@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { BoardUpdatePayload, BoardErrorPayload, Dir, PlayerState } from "@metaverse/shared";
-import { SERVER_EVENTS, AREA_NAMES } from "@metaverse/shared";
+import { SERVER_EVENTS, AREA_NAMES, roomDisplayName } from "@metaverse/shared";
 import { speakingRingIds } from "../speakingRings";
 import {
   boardSeatOccupants,
@@ -232,6 +232,7 @@ export default class WorldScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     this.buildFurniture();
+    this.buildSigns(map);
     this.setupAmbience(map);
     this.emitWorldInfo(map);
 
@@ -284,7 +285,9 @@ export default class WorldScene extends Phaser.Scene {
     for (const o of doorObjs) {
       const roomId = prop(o, "roomId") ?? "";
       const rect = rectOf(o);
-      this.doors.push({ roomId, name: o.name || `Room ${roomId}`, rect });
+      // Registry-driven display name (e.g. "Cauvery Hostel · Room 4") so the
+      // knock UI names the actual room, not the raw `room_4_door` object name.
+      this.doors.push({ roomId, name: roomDisplayName(roomId), rect });
 
       // Animated door sprite, bottom-anchored IN the doorway gap so the leaf
       // fills the opening and the lintel rises above the wall row (PRD 12
@@ -392,6 +395,41 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     this.physics.add.collider(this.player, solids);
+  }
+
+  /**
+   * Wayfinding signage (PRD 22): building name banners + directional posts
+   * authored in the map's `signs` object layer. Each object anchors a wooden
+   * sprite at its ground point and a crisp text label drawn from its `text`
+   * property (kept aligned with the shared AREA_NAMES registry). Signs are
+   * decorative — no collision, no gameplay wiring.
+   */
+  private buildSigns(map: Phaser.Tilemaps.Tilemap) {
+    const signObjs = map.getObjectLayer("signs")?.objects ?? [];
+    for (const o of signObjs) {
+      const text = prop(o, "text");
+      if (!text) continue;
+      const variant = prop(o, "variant") === "post" ? "post" : "banner";
+      const x = o.x ?? 0;
+      const y = o.y ?? 0;
+      // Sprites anchor at the ground (bottom-centre) and depth-sort by y like
+      // other props; the label rides on the plank face.
+      const img = this.add
+        .image(x, y, variant === "post" ? "f_sign_post" : "f_sign_banner")
+        .setOrigin(0.5, 1)
+        .setDepth(y);
+      const plankMidY = variant === "post" ? y - img.height + 12 : y - img.height / 2;
+      this.add
+        .text(x, plankMidY, text, {
+          fontFamily: CANVAS_FONT_FAMILY,
+          fontSize: "10px",
+          color: "#f4ead6",
+          align: "center",
+          resolution: 2,
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(y + 1);
+    }
   }
 
   /** A slow, subtle pivot from the base so plants/trees sway in a breeze. */
