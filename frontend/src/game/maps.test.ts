@@ -312,6 +312,62 @@ describe("campus board-game tables (PRD 11 phase 2)", () => {
       expect(table, `missing solid table sprite for ${tableId}`).toBeDefined();
     }
   });
+
+  it("relocates both board tables into the Game Arcade hall (PRD 22)", () => {
+    // Arcade hall interior: cols 68-86, rows 95-107 → px x 1088-1392, y 1520-1728.
+    const seats = objects("board_seats");
+    expect(seats).toHaveLength(4);
+    for (const s of seats) {
+      expect(s.x ?? 0, `${s.name} inside arcade x`).toBeGreaterThan(1088);
+      expect(s.x ?? 0, `${s.name} inside arcade x`).toBeLessThan(1392);
+      expect(s.y ?? 0, `${s.name} inside arcade y`).toBeGreaterThan(1520);
+      expect(s.y ?? 0, `${s.name} inside arcade y`).toBeLessThan(1728);
+    }
+  });
+});
+
+describe("campus wayfinding signage (PRD 22)", () => {
+  interface TiledObject {
+    name: string;
+    x?: number;
+    y?: number;
+    properties?: { name: string; value: unknown }[];
+  }
+  function signs(): TiledObject[] {
+    const json = loadMap("campus") as unknown as {
+      layers: { name: string; objects?: TiledObject[] }[];
+    };
+    return json.layers.find((l) => l.name === "signs")?.objects ?? [];
+  }
+  function prop(o: TiledObject, name: string): unknown {
+    return o.properties?.find((p) => p.name === name)?.value;
+  }
+
+  it("authors a signs object layer", () => {
+    expect(signs().length).toBeGreaterThan(0);
+  });
+
+  it("every sign carries a non-empty text and a known variant sprite", () => {
+    for (const s of signs()) {
+      expect(String(prop(s, "text")).length, `${s.name} text`).toBeGreaterThan(0);
+      expect(["banner", "post"], `${s.name} variant`).toContain(prop(s, "variant"));
+    }
+  });
+
+  it("names each building with its AREA_NAMES label", () => {
+    const texts = signs().map((s) => String(prop(s, "text")));
+    for (const area of AREA_NAMES) {
+      expect(texts, `banner for ${area.name}`).toContain(area.name);
+    }
+  });
+
+  it("includes a Board Games corner sign inside the arcade", () => {
+    const boardSign = signs().find((s) => String(prop(s, "text")) === "Board Games");
+    expect(boardSign).toBeDefined();
+    // In the arcade hall interior (px x 1088-1392, y 1520-1728).
+    expect(boardSign?.x ?? 0).toBeGreaterThan(1088);
+    expect(boardSign?.y ?? 0).toBeGreaterThan(1520);
+  });
 });
 
 // Regression guard for the audio-zone bug: a room whose `roomBounds` rect does

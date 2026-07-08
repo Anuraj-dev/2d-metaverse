@@ -891,6 +891,30 @@ html, body, #root {
      the entry-approval prompt stays visible during a meeting (PRD 23 fix). */
   z-index: 110;
 }
+/* Room-entry toast (PRD 22): brief "Entered <room>" cue near the top. */
+.room-toast {
+  position: absolute;
+  left: 50%;
+  top: 74px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(90vw, 360px);
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text, #f4ead6);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 105;
+  animation: room-toast-in 0.2s ease-out;
+}
+.room-toast svg { color: var(--accent); }
+.room-toast strong { font-weight: 700; }
+@keyframes room-toast-in { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
 .knock-spinner { display: inline-flex; color: var(--accent); animation: knock-bob 0.9s ease-in-out infinite; }
 .knock-status-icon { display: inline-flex; color: var(--muted); }
 @keyframes knock-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
@@ -922,6 +946,16 @@ html, body, #root {
   /* Above the meeting overlay (z-20) + control bar (z-100) so the admin's
      approve/deny prompt is reachable while the meeting overlay is open. */
   z-index: 110;
+}
+.room-admin-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  padding: 3px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
 }
 .room-admin-bar {
   display: flex;

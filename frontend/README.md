@@ -586,6 +586,22 @@ sprite in `scripts/gen_campus.py` (`board_table(...)`), regenerate the map, and
 extend the board-tables assertions in `game/maps.test.ts`; (4) the socket events,
 manager, and panel are game-agnostic — no changes needed there.
 
+### Naming & wayfinding signage (PRD 22)
+
+Place names are owned by one registry — `AREA_NAMES` in `shared/src/constants.ts`
+(`roomDisplayName(id)` builds "Mandakini Hostel · Room 1" etc.). Every UI surface
+that shows a room (entry toast `RoomToast`, chat Room tab, knock card, room-admin
+panel) resolves names through it, and the backend seed (`backend/src/seed.ts`)
+aligns `rooms.name` to the same strings. In-world signage is authored in
+`scripts/gen_campus.py`: a `signs` object layer (`sign(name, variant, tx, ty,
+text)`) carries building banners + directional posts; `WorldScene.buildSigns`
+draws the wooden sprite plus a crisp text label (text is a map property, not baked
+into art, so a rename never re-exports a PNG). Sign sprites come from
+`scripts/gen_signs.py` (`f_sign_banner` / `f_sign_post`, + BootScene keys + an
+ATTRIBUTIONS row). **To rename an area or add a sign:** edit `AREA_NAMES`, mirror
+the string in `gen_campus.py`'s `sign(...)` calls, regenerate the map, and keep
+`shared` constants.test + `game/maps.test.ts` (signs layer) green.
+
 ### Tests
 
 All tests run in a single vitest step (jsdom) — no extra pipeline stages.

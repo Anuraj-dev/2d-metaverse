@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { AREA_NAMES, areaNameForId, areaNameForRoom } from "./constants.js";
+import {
+  AREA_NAMES,
+  areaNameForId,
+  areaNameForRoom,
+  roomDisplayName,
+  BOARD_TABLES,
+  gameForTable,
+} from "./constants.js";
+
+/** Every private room the world gates behind a door (seeded ids 1-6). */
+const GATED_ROOM_IDS = ["1", "2", "3", "4", "5", "6"] as const;
 
 describe("AREA_NAMES registry", () => {
   it("names the two hostels and the standalone areas", () => {
@@ -26,5 +36,22 @@ describe("AREA_NAMES registry", () => {
   it("resolves a display name by area id", () => {
     expect(areaNameForId("stage")).toBe("Stage");
     expect(areaNameForId("arcade")).toBe("Game Arcade");
+  });
+
+  it("builds a full room display name from area + room number", () => {
+    expect(roomDisplayName("1")).toBe("Mandakini Hostel · Room 1");
+    expect(roomDisplayName("4")).toBe("Cauvery Hostel · Room 4");
+    // Total fallback for an id that belongs to no area.
+    expect(roomDisplayName("99")).toBe("Room 99");
+  });
+
+  it("names every gated room and every board table (no silent unnamed area)", () => {
+    for (const id of GATED_ROOM_IDS) {
+      expect(areaNameForRoom(id), `room ${id} has a hostel`).toBeDefined();
+      expect(roomDisplayName(id)).toContain(`Room ${id}`);
+    }
+    for (const table of BOARD_TABLES) {
+      expect(gameForTable(table.id), `table ${table.id} has a game`).toBeDefined();
+    }
   });
 });

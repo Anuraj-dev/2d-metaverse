@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Lock, MessageSquare, ChevronDown } from "lucide-react";
-import { LIMITS, type ChatMessage, type PlayerState } from "@metaverse/shared";
+import { LIMITS, roomDisplayName, type ChatMessage, type PlayerState } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
 import {
@@ -65,6 +65,8 @@ export default function ChatBox() {
   const [text, setText] = useState("");
   const [players, setPlayers] = useState<Player[]>([]);
   const [selfId, setSelfId] = useState(sharedNet().selfId);
+  // Registry display name of the room the player is in, shown on the Room tab.
+  const [roomName, setRoomName] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -142,12 +144,14 @@ export default function ChatBox() {
       push({ kind: "sys", text: "Couldn't deliver your whisper — they may have left." })
     );
 
-    const offEnter = bus.on("room-entered", () =>
-      dispatch({ type: "room-available", available: true })
-    );
-    const offLeftRoom = bus.on("room-left", () =>
-      dispatch({ type: "room-available", available: false })
-    );
+    const offEnter = bus.on("room-entered", (p: { roomId: string }) => {
+      setRoomName(roomDisplayName(p.roomId));
+      dispatch({ type: "room-available", available: true });
+    });
+    const offLeftRoom = bus.on("room-left", () => {
+      setRoomName(null);
+      dispatch({ type: "room-available", available: false });
+    });
     const offFocus = bus.on("focus-chat", () => focusInput(""));
 
     return () => {
@@ -354,8 +358,9 @@ export default function ChatBox() {
             type="button"
             className={panel.tab === "room" ? "active" : ""}
             onClick={() => selectTab("room")}
+            title={roomName ?? "Room"}
           >
-            <Lock size={12} aria-hidden="true" /> Room
+            <Lock size={12} aria-hidden="true" /> {roomName ?? "Room"}
           </button>
         )}
         <button

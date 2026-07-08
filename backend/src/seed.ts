@@ -12,21 +12,21 @@ const rooms = [
   // Hostel wing rooms (map: campus.json south, PRD 13). Capacities 5/8/12 — seat
   // ids/coords mirror the seats objectgroup the generator authors for rooms 1-3.
   {
-    id: "1", name: "Hostel Room 1",
+    id: "1", name: "Mandakini Hostel · Room 1",
     doorZone: { x: 720, y: 1600, width: 32, height: 16 },
     seats: [
       { id: 0, x: 712, y: 1640, facing: "down" }, { id: 1, x: 744, y: 1640, facing: "down" }, { id: 2, x: 776, y: 1640, facing: "down" }, { id: 3, x: 728, y: 1704, facing: "up" }, { id: 4, x: 760, y: 1704, facing: "up" }
     ]
   },
   {
-    id: "2", name: "Hostel Room 2",
+    id: "2", name: "Mandakini Hostel · Room 2",
     doorZone: { x: 512, y: 1600, width: 32, height: 16 },
     seats: [
       { id: 0, x: 488, y: 1640, facing: "down" }, { id: 1, x: 520, y: 1640, facing: "down" }, { id: 2, x: 552, y: 1640, facing: "down" }, { id: 3, x: 584, y: 1640, facing: "down" }, { id: 4, x: 488, y: 1704, facing: "up" }, { id: 5, x: 520, y: 1704, facing: "up" }, { id: 6, x: 552, y: 1704, facing: "up" }, { id: 7, x: 584, y: 1704, facing: "up" }
     ]
   },
   {
-    id: "3", name: "Hostel Room 3",
+    id: "3", name: "Mandakini Hostel · Room 3",
     doorZone: { x: 272, y: 1600, width: 32, height: 16 },
     seats: [
       { id: 0, x: 216, y: 1656, facing: "down" }, { id: 1, x: 248, y: 1656, facing: "down" }, { id: 2, x: 280, y: 1656, facing: "down" }, { id: 3, x: 312, y: 1656, facing: "down" }, { id: 4, x: 344, y: 1656, facing: "down" }, { id: 5, x: 376, y: 1656, facing: "down" }, { id: 6, x: 216, y: 1720, facing: "up" }, { id: 7, x: 248, y: 1720, facing: "up" }, { id: 8, x: 280, y: 1720, facing: "up" }, { id: 9, x: 312, y: 1720, facing: "up" }, { id: 10, x: 344, y: 1720, facing: "up" }, { id: 11, x: 376, y: 1720, facing: "up" }
@@ -34,7 +34,7 @@ const rooms = [
   },
   // Campus HQ rooms (map: campus.json, 120×90 tiles, 16px/tile)
   {
-    id: "4", name: "Campus Room D",
+    id: "4", name: "Cauvery Hostel · Room 4",
     doorZone: { x: 576, y: 176, width: 32, height: 16 },
     seats: [
       { id: 0, x: 568, y: 104, facing: "right" }, { id: 1, x: 632, y: 104, facing: "left" },
@@ -42,7 +42,7 @@ const rooms = [
     ]
   },
   {
-    id: "5", name: "Campus Room E",
+    id: "5", name: "Cauvery Hostel · Room 5",
     doorZone: { x: 784, y: 176, width: 32, height: 16 },
     seats: [
       { id: 0, x: 776, y: 104, facing: "right" }, { id: 1, x: 840, y: 104, facing: "left" },
@@ -50,7 +50,7 @@ const rooms = [
     ]
   },
   {
-    id: "6", name: "Campus Room F",
+    id: "6", name: "Cauvery Hostel · Room 6",
     doorZone: { x: 1008, y: 176, width: 32, height: 16 },
     seats: [
       { id: 0, x: 1000, y: 104, facing: "right" }, { id: 1, x: 1064, y: 104, facing: "left" },

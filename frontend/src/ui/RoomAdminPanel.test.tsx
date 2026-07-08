@@ -56,6 +56,9 @@ describe("RoomAdminPanel over the meeting overlay (PRD 23)", () => {
     fire("room-open-state", { roomId: "1", allowAll: false, atCapacity: false });
     fire("knock-pending", { roomId: "1", knocks: [{ id: "k1", name: "Zoe" }] });
 
+    // The panel names the room via the AREA_NAMES registry (PRD 22)…
+    expect(screen.getByText("Mandakini Hostel · Room 1")).toBeTruthy();
+
     // The approve/deny prompt is present…
     const approve = screen.getByRole("button", { name: "Approve" });
     expect(approve).toBeTruthy();

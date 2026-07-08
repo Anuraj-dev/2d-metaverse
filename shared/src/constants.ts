@@ -96,6 +96,19 @@ export function areaNameForRoom(roomId: string): string | undefined {
 }
 
 /**
+ * Full human-readable label for a private room, combining its hostel/area name
+ * with the room number — e.g. "Mandakini Hostel · Room 1". Every UI surface that
+ * shows a room to a player (entry toast, chat Room tab, knock/admin panels,
+ * roster) resolves the name through here so the whole app agrees, and the
+ * backend seed aligns `rooms.name` to the same string. Falls back to a bare
+ * "Room <id>" for any id not grouped under an area (keeps callers total).
+ */
+export function roomDisplayName(roomId: string): string {
+  const area = areaNameForRoom(roomId);
+  return area ? `${area} · Room ${roomId}` : `Room ${roomId}`;
+}
+
+/**
  * Terminal outcome of a knock, delivered to the knocker (PRD 14). `canceled` is
  * client-initiated and never sent back, so it is not on the wire.
  */
