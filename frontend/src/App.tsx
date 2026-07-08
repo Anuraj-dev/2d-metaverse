@@ -7,7 +7,6 @@ import TouchControls from "./ui/TouchControls";
 import HelpOverlay from "./ui/HelpOverlay";
 import SfxBridge from "./ui/SfxBridge";
 import SpeakingBridge from "./ui/SpeakingBridge";
-import BubbleLayer from "./ui/BubbleLayer";
 import InteractionHint from "./ui/InteractionHint";
 import InteractableModal from "./ui/InteractableModal";
 import ChatBox from "./ui/ChatBox";
@@ -219,7 +218,7 @@ export default function App() {
         if (p.playerId && p.playerId === selfId) {
           transition(async () => {
             await worldAudio.stop();
-            await roomVideo.join(p.roomId, selfId);
+            await roomVideo.join(p.roomId);
           });
         }
       }
@@ -401,7 +400,6 @@ export default function App() {
       </Suspense>
       <div className="hud">
         <InteractionHint />
-        <BubbleLayer />
         <Roster />
         <Minimap />
         <HelpOverlay />

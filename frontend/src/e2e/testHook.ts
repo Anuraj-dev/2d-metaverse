@@ -55,6 +55,10 @@ const TRACKED_EVENTS = [
   "portal-phase-a-done",
   "meeting-grid-visible",
   "meeting-grid-hidden",
+  // Screen share (PRD 23): the control bar's publish intent (fires even when the
+  // e2e harness refuses the LiveKit token — asserts "publish attempted").
+  "screen-share-on",
+  "screen-share-off",
 ] as const;
 
 /** High-frequency events kept out of the bounded event log (state-only).

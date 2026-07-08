@@ -14,13 +14,39 @@
  */
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { Users } from "lucide-react";
 import "@livekit/components-styles";
 import { SERVER_EVENTS, type MeetingChatMessage, type MeetingParticipant } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
-import { EMPTY_MEETING_CHAT, appendMeetingChat } from "../game/meetingChat";
+import { emptyMeetingChat, appendMeetingChat, setMeetingChatOpen } from "../game/meetingChat";
 import { sharedNet } from "../net/shared";
 import MeetingGrid from "./MeetingGrid";
 import MeetingChatPanel from "./MeetingChatPanel";
+
+/** Session-remembered meeting-chat open preference (default open). */
+const CHAT_OPEN_KEY = "meeting-chat-open";
+function readChatOpenPref(): boolean {
+  try {
+    return sessionStorage.getItem(CHAT_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+function writeChatOpenPref(open: boolean): void {
+  try {
+    sessionStorage.setItem(CHAT_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // Session storage unavailable (private mode) — the reducer still tracks it.
+  }
+}
+
+/** mm:ss elapsed clock for the top bar. */
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 export interface MeetingOverlayProps {
   backdrop: string | null;
@@ -108,7 +134,7 @@ export default function MeetingOverlay({
   // unmount, so it's ephemeral and a latecomer gets no backlog — no manual reset.
   // The server owns scoping (per-participant relay), so a line only arrives when
   // we're a participant; we mirror it on the bus for e2e/HUD observability.
-  const [chat, setChat] = useState(EMPTY_MEETING_CHAT);
+  const [chat, setChat] = useState(() => emptyMeetingChat(readChatOpenPref()));
   useEffect(() => {
     const net = sharedNet();
     return net.on(SERVER_EVENTS.meetingChat, (message: MeetingChatMessage) => {
@@ -116,6 +142,21 @@ export default function MeetingOverlay({
       setChat((prev) => appendMeetingChat(prev, message, selfId));
     });
   }, [selfId]);
+  const toggleChat = () =>
+    setChat((prev) => {
+      const next = setMeetingChatOpen(prev, !prev.open);
+      writeChatOpenPref(next.open);
+      return next;
+    });
+
+  // Elapsed timer: starts ticking when the grid reveals; mm:ss in the top bar.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!revealed) return;
+    const start = Date.now();
+    const id = window.setInterval(() => setElapsed(Date.now() - start), 1000);
+    return () => window.clearInterval(id);
+  }, [revealed]);
 
   const origin = seat ?? { sx: window.innerWidth / 2, sy: window.innerHeight / 2 };
 
@@ -168,10 +209,25 @@ export default function MeetingOverlay({
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
         >
+          {/* Decluttered top bar (PRD 23): room name, participant count, elapsed
+              timer, Leave. Mic/cam live on the single global control bar (PRD 20)
+              — the overlay owns no media buttons. */}
           <header className="meeting-topbar">
-            <span className="meeting-title">Room meeting</span>
-            {/* Mic/cam live on the single global control bar (PRD 20); the overlay
-                keeps only its Leave control. */}
+            <span className="meeting-title">Meeting</span>
+            <div className="meeting-meta">
+              <span className="meeting-count" data-testid="meeting-count">
+                <Users size={14} aria-hidden="true" />
+                <span>{participants.length}</span>
+              </span>
+              <span
+                className="meeting-timer"
+                data-testid="meeting-timer"
+                role="timer"
+                aria-label="Meeting elapsed time"
+              >
+                {formatElapsed(elapsed)}
+              </span>
+            </div>
             <div className="meeting-actions">
               <button className="leave" onClick={() => bus.emit("do-stand")} title="Leave meeting">
                 Leave
@@ -180,7 +236,13 @@ export default function MeetingOverlay({
           </header>
           <div className="meeting-body">
             <MeetingGrid participants={participants} selfId={selfId} selfChar={selfChar} />
-            <MeetingChatPanel lines={chat.lines} onSend={(text) => sharedNet().meetingChat(text)} />
+            <MeetingChatPanel
+              lines={chat.lines}
+              onSend={(text) => sharedNet().meetingChat(text)}
+              open={chat.open}
+              unread={chat.unread}
+              onToggle={toggleChat}
+            />
           </div>
         </motion.div>
       )}

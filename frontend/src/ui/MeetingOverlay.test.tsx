@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { SERVER_EVENTS, type MeetingChatMessage } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
 
 vi.mock("./MeetingGrid", () => ({
@@ -9,7 +10,10 @@ vi.mock("./MeetingGrid", () => ({
 }));
 // The overlay owns its chat subscription now; stub the net so it mounts without
 // a live socket (the send/receive path is covered by MeetingChatPanel + e2e).
-const net = vi.hoisted(() => ({ on: vi.fn(() => () => {}), meetingChat: vi.fn() }));
+const net = vi.hoisted(() => ({
+  on: vi.fn(() => () => {}) as unknown as Mock<(event: string, cb: (m: unknown) => void) => () => void>,
+  meetingChat: vi.fn(),
+}));
 vi.mock("../net/shared", () => ({ sharedNet: () => net }));
 
 import MeetingOverlay from "./MeetingOverlay";
@@ -34,7 +38,18 @@ function renderOverlay(revealed: boolean, backdrop: string | null = null) {
 
 afterEach(() => {
   cleanup();
+  net.on.mockClear();
+  // Session-remembered chat-open pref must not leak across cases.
+  sessionStorage.clear();
 });
+
+/** Grab the overlay's registered meeting-chat handler and feed it a message. */
+function deliverChat(text: string, id = "p2", name = "bob"): void {
+  const call = net.on.mock.calls.find((c) => c[0] === SERVER_EVENTS.meetingChat);
+  const handler = call?.[1] as ((m: MeetingChatMessage) => void) | undefined;
+  if (!handler) throw new Error("meeting-chat handler not registered");
+  act(() => handler({ roomId: "1", id, name, text }));
+}
 
 describe("MeetingOverlay", () => {
   it("shows the warp burst (no grid) before the reveal", () => {
@@ -83,5 +98,39 @@ describe("MeetingOverlay", () => {
     renderOverlay(true);
     expect(screen.queryByLabelText("Mute microphone")).toBeNull();
     expect(screen.queryByLabelText("Turn camera off")).toBeNull();
+  });
+
+  it("shows a decluttered top bar: participant count + elapsed timer (PRD 23)", () => {
+    renderOverlay(true);
+    expect(screen.getByTestId("meeting-count").textContent).toContain("2");
+    expect(screen.getByTestId("meeting-timer").textContent).toBe("0:00");
+  });
+
+  it("toggles the chat panel closed and badges unread arrivals (PRD 23)", () => {
+    renderOverlay(true);
+    // Default open.
+    expect(screen.getByTestId("meeting-chat")).toBeTruthy();
+    // Close it — the panel collapses to a launcher.
+    fireEvent.click(screen.getByTestId("meeting-chat-close"));
+    expect(screen.queryByTestId("meeting-chat")).toBeNull();
+    const launcher = screen.getByTestId("meeting-chat-open");
+    expect(launcher).toBeTruthy();
+    // A message arriving while closed bumps the unread badge…
+    deliverChat("hi there");
+    expect(screen.getByTestId("meeting-chat-open").textContent).toContain("1");
+    // …and reopening clears it.
+    fireEvent.click(screen.getByTestId("meeting-chat-open"));
+    expect(screen.getByTestId("meeting-chat")).toBeTruthy();
+    expect(screen.queryByTestId("meeting-chat-open")).toBeNull();
+  });
+
+  it("remembers the closed chat preference for the session", () => {
+    renderOverlay(true);
+    fireEvent.click(screen.getByTestId("meeting-chat-close"));
+    cleanup();
+    // A fresh overlay in the same session honours the remembered closed state.
+    renderOverlay(true);
+    expect(screen.queryByTestId("meeting-chat")).toBeNull();
+    expect(screen.getByTestId("meeting-chat-open")).toBeTruthy();
   });
 });

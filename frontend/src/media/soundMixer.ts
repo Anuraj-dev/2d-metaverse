@@ -246,6 +246,10 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   // door click as a quiet toggle confirmation (fewer, better clips — no filler).
   "mic-toggle": { clip: "door_close", channel: "sfx" },
   "cam-toggle": { clip: "door_close", channel: "sfx" },
+  // Screen share (PRD 23): the control bar emits this domain event on start/stop;
+  // reuse the door open/close clicks as a quiet toggle confirmation.
+  "screen-share-on": { clip: "door_open", channel: "sfx" },
+  "screen-share-off": { clip: "door_close", channel: "sfx" },
 };
 
 export function cueForEvent(event: string): SoundCue | null {

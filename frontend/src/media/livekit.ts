@@ -1,7 +1,7 @@
 /**
  * LiveKit client layer (matches Codex's backend).
  *  - World room  `world:<spaceId>`  : mic only, volume scaled by 2D distance (proximity audio).
- *  - Private room `room:<roomId>`   : cam + mic, remote video surfaced for avatar bubbles.
+ *  - Private room `room:<roomId>`   : cam + mic + screen share, rendered by the meeting grid.
  * LiveKit participant identity === playerId, so positions/seat events map 1:1 to tracks.
  */
 // `livekit-client` is loaded dynamically (only when audio/video is actually used)
@@ -213,16 +213,16 @@ export interface RoomTrack {
 
 class RoomVideo {
   private room: LKRoom | null = null;
-  private listeners = new Set<(tracks: RoomTrack[]) => void>();
   private roomListeners = new Set<() => void>();
-  private tracks = new Map<string, MediaStreamTrack>();
+  private shareListeners = new Set<() => void>();
   private audioEls = new Map<string, HTMLAudioElement>();
-  private selfId = "";
+  private sharing = false;
 
   /**
    * The underlying LiveKit Room, surfaced for the meeting grid
-   * (@livekit/components-react needs the Room object, not raw tracks).
-   * Null while not seated / media unavailable — the grid then falls back to
+   * (@livekit/components-react needs the Room object, not raw tracks — the grid
+   * reads camera + screen-share tracks straight off it via `useTracks`). Null
+   * while not seated / media unavailable — the grid then falls back to
    * roster-only tiles.
    */
   get lkRoom(): LKRoom | null {
@@ -240,26 +240,8 @@ class RoomVideo {
     this.roomListeners.forEach((cb) => cb());
   }
 
-  onTracks(cb: (tracks: RoomTrack[]) => void) {
-    this.listeners.add(cb);
-    cb(this.snapshot());
-    return () => this.listeners.delete(cb);
-  }
-  private snapshot(): RoomTrack[] {
-    return [...this.tracks].map(([identity, track]) => ({
-      identity,
-      track,
-      self: identity === this.selfId,
-    }));
-  }
-  private emit() {
-    const snap = this.snapshot();
-    this.listeners.forEach((cb) => cb(snap));
-  }
-
-  async join(roomId: string, selfId: string) {
+  async join(roomId: string) {
     if (this.room) return;
-    this.selfId = selfId;
     try {
       const { token, url } = await fetchToken(roomRoomName(roomId));
       const { Room, RoomEvent, Track } = await import("livekit-client");
@@ -271,15 +253,13 @@ class RoomVideo {
         },
       });
       this.setRoom(room);
+      // Remote camera + screen-share video is subscribed by the SDK and read
+      // directly off the Room by the meeting grid (MeetingGrid `useTracks`); this
+      // layer only routes room audio (attach) — the video sinks are intentionally
+      // no-ops here.
       wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
-        surfaceVideo: (id, t) => {
-          this.tracks.set(id, t);
-          this.emit();
-        },
-        dropVideo: (id) => {
-          this.tracks.delete(id);
-          this.emit();
-        },
+        surfaceVideo: () => {},
+        dropVideo: () => {},
         attachAudio: (id, el) => this.audioEls.set(id, el),
         detachAudio: (id) => {
           this.audioEls.get(id)?.remove();
@@ -287,10 +267,14 @@ class RoomVideo {
         },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
-        this.tracks.delete(p.identity);
         this.audioEls.get(p.identity)?.remove();
         this.audioEls.delete(p.identity);
-        this.emit();
+      });
+      // A browser-initiated "Stop sharing" unpublishes the screen-share track
+      // without going through our toggle — reflect it so the control bar's
+      // sharing state stays truthful (PRD 23, user story 3).
+      room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
+        if (pub.source === Track.Source.ScreenShare) this.setSharing(false);
       });
       // Feed the shared speaking-state seam so the HUD speaking rings light up for
       // meeting/seated talkers too (identity === playerId), same as the world room.
@@ -306,13 +290,6 @@ class RoomVideo {
       const wanted = getMediaPrefs();
       await room.localParticipant.setCameraEnabled(wanted.camOn);
       await room.localParticipant.setMicrophoneEnabled(wanted.micOn);
-      const localVideo = room.localParticipant
-        .getTrackPublications()
-        .find((pub) => pub.kind === Track.Kind.Video)?.track?.mediaStreamTrack;
-      if (localVideo) {
-        this.tracks.set(selfId, localVideo);
-        this.emit();
-      }
     } catch (e) {
       console.warn("Room video unavailable:", e);
     }
@@ -325,16 +302,52 @@ class RoomVideo {
     void this.room?.localParticipant.setCameraEnabled(on);
   }
 
+  /* -------------------------- Screen share (PRD 23) ------------------------- */
+  /** Whether the local participant is currently publishing a screen share. */
+  isScreenSharing(): boolean {
+    return this.sharing;
+  }
+
+  /** Subscribe to sharing-state changes. useSyncExternalStore-shaped. */
+  onScreenShareChanged = (cb: () => void): (() => void) => {
+    this.shareListeners.add(cb);
+    return () => this.shareListeners.delete(cb);
+  };
+
+  private setSharing(on: boolean) {
+    if (this.sharing === on) return;
+    this.sharing = on;
+    this.shareListeners.forEach((cb) => cb());
+  }
+
+  /**
+   * Start/stop the meeting screen share. Publishes through LiveKit's screen-share
+   * API on the meeting room's local participant; the grid renders the resulting
+   * `ScreenShare` track like any other. A no-op (stays not-sharing) when the room
+   * is unavailable or when the user cancels the browser picker.
+   */
+  async setScreenShareEnabled(on: boolean): Promise<void> {
+    const room = this.room;
+    if (!room) return;
+    try {
+      await room.localParticipant.setScreenShareEnabled(on);
+      this.setSharing(on);
+    } catch (e) {
+      // Picker cancellation / permission denial: never leave a phantom "sharing".
+      this.setSharing(false);
+      console.warn("Screen share toggle failed:", e);
+    }
+  }
+
   /** The local mic MediaStreamTrack while seated (for the HUD level meter). */
   localAudioTrack(): MediaStreamTrack | null {
     return localAudioTrackOf(this.room);
   }
 
   async leave() {
-    this.tracks.clear();
+    this.setSharing(false);
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
-    this.emit();
     speakingState.clear("room");
     await this.room?.disconnect();
     this.setRoom(null);

@@ -37,6 +37,28 @@ export function setCam(on: boolean): void {
   stageVideo.setCamEnabled(on);
 }
 
+/**
+ * Screen share (PRD 23) rides the meeting room's LiveKit connection only — it is
+ * not a global publisher fan-out like mic/cam (there is no world/stage screen
+ * share), so it targets `roomVideo` alone and is meaningful only while seated in a
+ * meeting. Sharing state is NOT sticky across surfaces: it is bound to the meeting
+ * and torn down on leave. Mock mode has no LiveKit room, so it is a no-op.
+ */
+export function setScreenShare(on: boolean): void {
+  if (USE_MOCK) return;
+  void roomVideo.setScreenShareEnabled(on);
+}
+
+/** Current screen-share state (meeting room). */
+export function isScreenSharing(): boolean {
+  return roomVideo.isScreenSharing();
+}
+
+/** Subscribe to screen-share state changes (useSyncExternalStore-shaped). */
+export function subscribeScreenShare(cb: () => void): () => void {
+  return roomVideo.onScreenShareChanged(cb);
+}
+
 export function toggleMic(): boolean {
   const on = !getMediaPrefs().micOn;
   setMic(on);

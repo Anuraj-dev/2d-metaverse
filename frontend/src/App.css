@@ -887,6 +887,9 @@ html, body, #root {
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  /* Above the meeting overlay (z-20) + control bar (z-100) so a pending knock /
+     the entry-approval prompt stays visible during a meeting (PRD 23 fix). */
+  z-index: 110;
 }
 .knock-spinner { display: inline-flex; color: var(--accent); animation: knock-bob 0.9s ease-in-out infinite; }
 .knock-status-icon { display: inline-flex; color: var(--muted); }
@@ -916,6 +919,9 @@ html, body, #root {
   gap: 8px;
   align-items: center;
   max-width: min(92vw, 420px);
+  /* Above the meeting overlay (z-20) + control bar (z-100) so the admin's
+     approve/deny prompt is reachable while the meeting overlay is open. */
+  z-index: 110;
 }
 .room-admin-bar {
   display: flex;
@@ -969,47 +975,6 @@ html, body, #root {
   border: 1px solid var(--line);
 }
 
-/* ---------- Video bubbles ---------- */
-.bubble {
-  position: absolute;
-  margin-left: -32px;
-  width: 64px;
-  text-align: center;
-  pointer-events: none;
-}
-/* Fixed-size circular frame that clips any video aspect ratio (portrait cams etc.) */
-.bubble-frame {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid var(--accent2);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-  background: #0b0d13;
-  display: grid;
-  place-items: center;
-  margin: 0 auto;
-}
-.bubble-media {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.bubble-fallback {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  color: var(--muted);
-}
-.bubble-name {
-  font-size: 10px;
-  margin-top: 2px;
-  color: #fff;
-  text-shadow: 0 1px 2px #000;
-}
-
 /* ---------- Global control bar (PRD 20) ---------- */
 /* One persistent bar, bottom-center on every surface. z-index sits above the
    lazy meeting (20) and arcade (60) overlays so mic/cam/settings are always
@@ -1056,7 +1021,9 @@ html, body, #root {
 }
 .mic-seg.on { background: #7ee787; }
 .control-bar .control-btn.off { background: #5a2030; }
-.control-bar .control-share {
+/* Screen share (PRD 23): active while sharing, greyed while unavailable. */
+.control-bar .control-share.sharing { background: #2a7d5a; color: #fff; }
+.control-bar .control-share:disabled {
   background: #232838;
   color: var(--muted);
   cursor: not-allowed;
@@ -1172,6 +1139,21 @@ html, body, #root {
   opacity: 0.7;
 }
 
+/* Shared modal scrim (Help + Interactable). Fixed, centred, and above the HUD
+   chrome (control bar z-100, help/settings pills z-8) so nothing bleeds through
+   over the card (PRD 23 fix). */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 9, 16, 0.62);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
 .help-modal {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1608,6 +1590,24 @@ html, body, #root {
   font-size: 15px;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
 }
+/* Top-bar meta (PRD 23): participant count + elapsed timer, centred. */
+.meeting-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #fff;
+  font-size: 13px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+.meeting-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.meeting-timer {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.85);
+}
 /* Active-speaker ring on a meeting tile (PRD 20), shared green with the world ring. */
 .meet-tile-inner.speaking {
   box-shadow: 0 0 0 2px #7ee787, 0 0 14px rgba(126, 231, 135, 0.55);
@@ -1715,6 +1715,64 @@ html, body, #root {
   opacity: 0.5;
   cursor: default;
 }
+/* Chat open/close (PRD 23): header with a close control, and a slim launcher
+   with an unread badge when the panel is collapsed. */
+.meeting-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.meeting-chat-head-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+.meeting-chat-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.meeting-chat-close:hover { color: #fff; }
+.meeting-chat-launcher {
+  position: relative;
+  flex: none;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(19, 26, 42, 0.92);
+  color: #fff;
+  cursor: pointer;
+}
+.meeting-chat-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent2, #ff6b6b);
+  color: #06122b;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* Narrow viewports: stack chat under the grid rather than squeezing it. */
 @media (max-width: 720px) {
@@ -1726,16 +1784,41 @@ html, body, #root {
     max-height: 40%;
   }
 }
-.meet-grid-layout {
+/* ---- Meet-style stage (PRD 23): focus tile + filmstrip, or symmetric grid --- */
+.meet-stage {
   width: 100%;
   height: 100%;
+  display: flex;
 }
-/* Roster fallback (media unavailable): a simple responsive grid. */
-.meet-grid-roster {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+/* Symmetric grid: aspect-stable cells (sized inline from the view-model),
+   centred and wrapping into the computed rows/columns. */
+.meet-stage-grid {
+  flex-wrap: wrap;
   align-content: center;
+  justify-content: center;
+  gap: 12px;
+}
+/* Focus mode: a large focus tile above a horizontal filmstrip. */
+.meet-stage-focus {
+  flex-direction: column;
+  gap: 12px;
+}
+.meet-focus {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.meet-filmstrip {
+  flex: none;
+  height: 132px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  justify-content: center;
 }
 .meet-tile {
   position: relative;
@@ -1743,13 +1826,21 @@ html, body, #root {
   overflow: hidden;
   background: #131a2a;
   border: 1px solid var(--line);
-  min-height: 180px;
+  cursor: pointer;
 }
-/* Active-speaker emphasis from the LiveKit components' speaking state. */
-.meet-tile[data-lk-speaking="true"],
-.meet-tile [data-lk-speaking="true"] {
-  outline: 2px solid #38d0ff;
-  outline-offset: -2px;
+/* The focus tile fills the focus area; the filmstrip tiles are fixed-height,
+   16:9. Grid tiles get their explicit width/height inline (aspect-preserved). */
+.meet-tile-focus {
+  width: 100%;
+  height: 100%;
+}
+.meet-tile-filmstrip {
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  flex: none;
+}
+.meet-tile-grid {
+  min-height: 120px;
 }
 .meet-tile-inner {
   position: absolute;
@@ -1765,6 +1856,11 @@ html, body, #root {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* Screen shares are letterboxed (contain) so the shared content stays readable. */
+.meet-tile-video.screen {
+  object-fit: contain;
+  background: #05070c;
 }
 .meet-tile-avatar {
   display: flex;

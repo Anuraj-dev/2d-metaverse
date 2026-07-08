@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { bus } from "../game/eventBus";
 import { setMediaPrefs } from "../media/mediaPrefs";
 
@@ -10,7 +10,13 @@ import { setMediaPrefs } from "../media/mediaPrefs";
  */
 const media = vi.hoisted(() => ({
   worldAudio: { setMicEnabled: vi.fn() },
-  roomVideo: { setMicEnabled: vi.fn(), setCamEnabled: vi.fn() },
+  roomVideo: {
+    setMicEnabled: vi.fn(),
+    setCamEnabled: vi.fn(),
+    setScreenShareEnabled: vi.fn(),
+    isScreenSharing: vi.fn(() => false),
+    onScreenShareChanged: vi.fn(() => () => {}),
+  },
   stageVideo: { setMicEnabled: vi.fn(), setCamEnabled: vi.fn() },
 }));
 vi.mock("../media/livekit", () => media);
@@ -29,17 +35,42 @@ beforeEach(() => {
   media.roomVideo.setCamEnabled.mockClear();
   media.stageVideo.setMicEnabled.mockClear();
   media.stageVideo.setCamEnabled.mockClear();
+  media.roomVideo.setScreenShareEnabled.mockClear();
+  media.roomVideo.isScreenSharing.mockReturnValue(false);
 });
 afterEach(cleanup);
 
 describe("ControlBar", () => {
-  it("renders mic, cam, a disabled screen-share slot, and settings", () => {
+  it("renders mic, cam, a meeting-gated screen-share slot, and settings", () => {
     render(<ControlBar />);
     expect(screen.getByLabelText("Mute microphone")).toBeTruthy();
     expect(screen.getByLabelText("Turn camera off")).toBeTruthy();
-    const share = screen.getByLabelText("Share screen (coming soon)") as HTMLButtonElement;
+    // Screen share is disabled outside a meeting.
+    const share = screen.getByLabelText("Share screen (available in meetings)") as HTMLButtonElement;
     expect(share.disabled).toBe(true);
     expect(screen.getByTestId("settings-stub")).toBeTruthy();
+  });
+
+  it("enables screen share only inside a meeting and publishes on click", () => {
+    render(<ControlBar />);
+    let shared: unknown;
+    const off = bus.on("screen-share-on", () => (shared = true));
+    // Entering a meeting (grid visible for this client) enables the button.
+    act(() => bus.emit("meeting-grid-visible"));
+    const share = screen.getByLabelText("Share your screen") as HTMLButtonElement;
+    expect(share.disabled).toBe(false);
+
+    fireEvent.click(share);
+    expect(media.roomVideo.setScreenShareEnabled).toHaveBeenCalledWith(true);
+    expect(shared).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("Sharing your screen");
+    off();
+
+    // Leaving the meeting disables it again.
+    act(() => bus.emit("meeting-grid-hidden"));
+    expect(
+      (screen.getByLabelText("Share screen (available in meetings)") as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("mutes the mic across every active publisher and announces it", () => {

@@ -162,6 +162,9 @@ describe("cueForEvent", () => {
     expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
     expect(cueForEvent("stage-on-air")).toEqual({ clip: "meeting_join", channel: "sfx" });
     expect(cueForEvent("stage-off-air")).toEqual({ clip: "meeting_leave", channel: "sfx" });
+    // Screen share (PRD 23).
+    expect(cueForEvent("screen-share-on")).toEqual({ clip: "door_open", channel: "sfx" });
+    expect(cueForEvent("screen-share-off")).toEqual({ clip: "door_close", channel: "sfx" });
   });
   it("returns null for unmapped events", () => {
     expect(cueForEvent("leave-door")).toBeNull();

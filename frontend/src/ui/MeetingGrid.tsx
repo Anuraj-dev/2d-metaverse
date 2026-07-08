@@ -1,33 +1,50 @@
 /**
- * The Meet-style grid (PRD 10), built on LiveKit's React components
- * (GridLayout/ParticipantTile/VideoTrack) rather than raw <video> elements —
- * they provide responsive tile arrangement, active-speaker emphasis and
- * screen-share tiles. The custom tile content adds username nameplates and
- * the camera-off state: the participant's in-game pixel sprite.
+ * The Discord/Meet-style meeting grid (PRD 23). Tiles derive from BOTH sources:
+ *  - the server-sent meeting roster (participants + names) — always present, so
+ *    the grid renders even when media is unavailable (roster fallback);
+ *  - the meeting room's LiveKit connection (media/livekit.ts roomVideo) — its
+ *    camera + screen-share tracks, read straight off the Room via `useTracks`.
  *
- * Tiles derive from BOTH sources:
- *  - the server-sent meeting roster (participants + names) — always present,
- *    so the grid renders even when media is unavailable (roster fallback);
- *  - the existing per-room LiveKit Room (media/livekit.ts roomVideo), joined
- *    when the player sat down — the meeting UPGRADES that connection to the
- *    grid; no new token semantics.
+ * All layout/focus arithmetic lives in the pure, tested `game/meetingLayout`
+ * view-model (scene-as-glue + pure modules): this component only maps LiveKit
+ * track refs → plain tiles, feeds them to `arrangeMeeting`, and renders the
+ * result. An active screen share (or a manually clicked tile) becomes the large
+ * focus tile with everyone else in a filmstrip; otherwise an aspect-stable
+ * symmetric grid. Enter/exit + focus changes animate (~200ms); a camera on/off
+ * swaps in place within the same keyed tile, so neighbours never reflow.
  */
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
-  GridLayout,
-  ParticipantTile,
   RoomContext,
   VideoTrack,
   isTrackReference,
-  useEnsureTrackRef,
   useTracks,
+  type TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import type { MeetingParticipant } from "@metaverse/shared";
 import { roomVideo } from "../media/livekit";
 import { speakingState } from "../media/speakingState";
+import {
+  TILE_ASPECT,
+  arrangeMeeting,
+  fitCells,
+  type MeetingTile,
+  type Size,
+} from "../game/meetingLayout";
 import PixelAvatar from "./PixelAvatar";
+
+/** A tile ready to render — plain data (connected path) or roster placeholder. */
+interface RenderTile {
+  key: string;
+  participantId: string;
+  name: string;
+  self: boolean;
+  source: "camera" | "screen";
+  hasVideo: boolean;
+  trackRef?: TrackReferenceOrPlaceholder;
+}
 
 /** Whether a participant is an active speaker, off the shared media seam (PRD 20). */
 function useSpeaking(playerId: string): boolean {
@@ -36,6 +53,25 @@ function useSpeaking(playerId: string): boolean {
     () => speakingState.speaking.has(playerId),
     () => false,
   );
+}
+
+/** Track the pixel size of an element (for aspect-preserving cell math). */
+function useElementSize(): [React.RefObject<HTMLDivElement | null>, Size] {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState<Size>({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    // jsdom (unit tests) has no ResizeObserver — the grid then falls back to
+    // CSS sizing (fitCells returns 0, no inline size). Real browsers observe.
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, size];
 }
 
 export interface MeetingGridProps {
@@ -63,7 +99,7 @@ export default function MeetingGrid({ participants, selfId, selfChar }: MeetingG
   );
 }
 
-/** LiveKit-connected path: tracks (camera + screen share) drive the tiles. */
+/** LiveKit-connected path: camera + screen-share tracks drive the tiles. */
 function ConnectedGrid({ participants, selfId, selfChar }: MeetingGridProps) {
   const tracks = useTracks(
     [
@@ -72,103 +108,157 @@ function ConnectedGrid({ participants, selfId, selfChar }: MeetingGridProps) {
     ],
     { onlySubscribed: false },
   );
-  const names = new Map(participants.map((participant) => [participant.id, participant.name]));
-  return (
-    <GridLayout tracks={tracks} className="meet-grid-layout">
-      <MeetTile names={names} selfId={selfId} selfChar={selfChar} />
-    </GridLayout>
+  const names = useMemo(
+    () => new Map(participants.map((p) => [p.id, p.name])),
+    [participants],
   );
-}
-
-/** Rendered by GridLayout once per track reference (via TrackRefContext). */
-function MeetTile({
-  names,
-  selfId,
-  selfChar,
-}: {
-  names: Map<string, string>;
-  selfId: string;
-  selfChar?: string | undefined;
-}) {
-  const trackRef = useEnsureTrackRef();
-  const id = trackRef.participant.identity;
-  const self = id === selfId;
-  const screenShare = trackRef.source === Track.Source.ScreenShare;
-  const hasVideo = isTrackReference(trackRef) && !trackRef.publication.isMuted;
-  const name = names.get(id) ?? trackRef.participant.name ?? id;
-  return (
-    <ParticipantTile trackRef={trackRef} className="meet-tile">
-      <TileBody
-        playerId={id}
-        name={screenShare ? `${name} · screen` : name}
-        self={self}
-        selfChar={selfChar}
-        morph={self && !screenShare}
-      >
-        {hasVideo ? <VideoTrack trackRef={trackRef} className="meet-tile-video" /> : null}
-      </TileBody>
-    </ParticipantTile>
-  );
+  const tiles: RenderTile[] = tracks.map((trackRef) => {
+    const id = trackRef.participant.identity;
+    const isScreen = trackRef.source === Track.Source.ScreenShare;
+    const name = names.get(id) ?? trackRef.participant.name ?? id;
+    return {
+      key: `${id}:${isScreen ? "screen" : "camera"}`,
+      participantId: id,
+      name: isScreen ? `${name} · screen` : name,
+      self: id === selfId,
+      source: isScreen ? "screen" : "camera",
+      hasVideo: isTrackReference(trackRef) && !trackRef.publication.isMuted,
+      trackRef,
+    };
+  });
+  return <MeetingStage tiles={tiles} selfChar={selfChar} />;
 }
 
 /** Media-less path: one camera-off tile per roster entry. */
 function RosterGrid({ participants, selfId, selfChar }: MeetingGridProps) {
-  return (
-    <div className="meet-grid-layout meet-grid-roster">
-      {participants.map((participant) => (
-        <div key={participant.id} className="meet-tile">
-          <TileBody
-            playerId={participant.id}
-            name={participant.name}
-            self={participant.id === selfId}
-            selfChar={selfChar}
-            morph={participant.id === selfId}
-          />
+  const tiles: RenderTile[] = participants.map((p) => ({
+    key: `${p.id}:camera`,
+    participantId: p.id,
+    name: p.name,
+    self: p.id === selfId,
+    source: "camera",
+    hasVideo: false,
+  }));
+  return <MeetingStage tiles={tiles} selfChar={selfChar} />;
+}
+
+/**
+ * Shared stage: assigns each tile a stable arrival order, resolves the
+ * arrangement via the pure view-model, and renders focus/filmstrip or grid.
+ */
+function MeetingStage({ tiles, selfChar }: { tiles: RenderTile[]; selfChar?: string | undefined }) {
+  const [manualFocusKey, setManualFocusKey] = useState<string | null>(null);
+  const byKey = new Map(tiles.map((t) => [t.key, t]));
+
+  // Arrival order = position in the LiveKit track array (new tracks — incl. a
+  // fresh screen share — are appended), so "most recent share wins focus" needs
+  // no mutable counter. A stale manual focus key is simply ignored by the pure
+  // view-model (resolveFocusKey guards presence), so no cleanup effect is needed.
+  const layoutTiles: MeetingTile[] = tiles.map((t, index) => ({
+    key: t.key,
+    participantId: t.participantId,
+    source: t.source,
+    self: t.self,
+    hasVideo: t.hasVideo,
+    order: index,
+  }));
+
+  const arrangement = arrangeMeeting({ tiles: layoutTiles, manualFocusKey });
+
+  const toggleFocus = (key: string) => setManualFocusKey((prev) => (prev === key ? null : key));
+
+  const [gridRef, gridSize] = useElementSize();
+  const cell = fitCells(gridSize, arrangement.dims, TILE_ASPECT, 12);
+  const cellSize = cell.width > 0 ? { width: cell.width, height: cell.height } : null;
+
+  const renderTile = (key: string, variant: "focus" | "filmstrip" | "grid") => {
+    const t = byKey.get(key);
+    if (!t) return null;
+    const sizeProps = variant === "grid" && cellSize ? { style: cellSize } : {};
+    return (
+      <motion.div
+        key={key}
+        layout
+        {...(t.self && t.source === "camera" ? { layoutId: "meet-tile-self" } : {})}
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.85 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className={`meet-tile meet-tile-${variant}`}
+        {...sizeProps}
+        onClick={() => toggleFocus(key)}
+        data-testid="meet-tile"
+        data-player={t.participantId}
+        data-source={t.source}
+        data-focused={variant === "focus"}
+      >
+        <TileBody tile={t} selfChar={selfChar} screen={t.source === "screen"} />
+      </motion.div>
+    );
+  };
+
+  if (arrangement.mode === "focus" && arrangement.focusKey) {
+    return (
+      <div className="meet-stage meet-stage-focus" data-testid="meeting-stage" data-mode="focus">
+        <div className="meet-focus">
+          <AnimatePresence>{renderTile(arrangement.focusKey, "focus")}</AnimatePresence>
         </div>
-      ))}
+        {arrangement.filmstrip.length > 0 && (
+          <div className="meet-filmstrip" data-testid="meeting-filmstrip">
+            <AnimatePresence>
+              {arrangement.filmstrip.map((key) => renderTile(key, "filmstrip"))}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="meet-stage meet-stage-grid"
+      data-testid="meeting-stage"
+      data-mode="grid"
+      ref={gridRef}
+    >
+      <AnimatePresence>{arrangement.grid.map((key) => renderTile(key, "grid"))}</AnimatePresence>
     </div>
   );
 }
 
 /**
- * Shared tile content: video when provided, otherwise the in-game pixel
- * sprite; always a username nameplate. The local player's tile carries the
- * `meet-tile-self` layoutId so the seat ghost in MeetingOverlay morphs into
- * it on reveal (spatial continuity: that character became this tile).
+ * Tile content: the video track when present (screen shares are letterboxed so
+ * content stays readable; cameras fill), otherwise the participant's in-game
+ * pixel sprite; always a username nameplate + speaking ring.
  */
 function TileBody({
-  playerId,
-  name,
-  self,
+  tile,
   selfChar,
-  morph,
-  children,
+  screen,
 }: {
-  playerId: string;
-  name: string;
-  self: boolean;
+  tile: RenderTile;
   selfChar?: string | undefined;
-  morph: boolean;
-  children?: React.ReactNode;
+  screen: boolean;
 }) {
-  const speaking = useSpeaking(playerId);
+  const speaking = useSpeaking(tile.participantId);
+  const videoRef =
+    tile.hasVideo && tile.trackRef && isTrackReference(tile.trackRef) ? tile.trackRef : null;
   return (
-    <motion.div
-      className={`meet-tile-inner ${speaking ? "speaking" : ""}`}
-      data-testid="meet-tile"
-      data-player={playerId}
-      data-speaking={speaking}
-      {...(morph ? { layoutId: "meet-tile-self" } : {})}
-    >
-      {children ?? (
+    <div className={`meet-tile-inner ${speaking ? "speaking" : ""}`} data-speaking={speaking}>
+      {videoRef ? (
+        <VideoTrack
+          trackRef={videoRef}
+          className={`meet-tile-video ${screen ? "screen" : ""}`}
+        />
+      ) : (
         <div className="meet-tile-avatar" data-testid="meet-tile-avatar">
-          <PixelAvatar playerId={playerId} char={self ? selfChar : undefined} />
+          <PixelAvatar playerId={tile.participantId} char={tile.self ? selfChar : undefined} />
         </div>
       )}
       <span className="meet-nameplate">
-        {name}
-        {self ? " (you)" : ""}
+        {tile.name}
+        {tile.self && !screen ? " (you)" : ""}
       </span>
-    </motion.div>
+    </div>
   );
 }

@@ -30,5 +30,6 @@ class EventBus {
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' |
  *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip)
+ *  Screen share (PRD 23): 'screen-share-on' | 'screen-share-off' (control bar intent; sound blip + e2e hook)
  *  HUD (PRD 20): 'speaking'{ids} (active-speaker rings) | 'map-open' | 'map-close' (fullscreen map) */
 export const bus = new EventBus();

@@ -4,6 +4,8 @@ import {
   EMPTY_MEETING_CHAT,
   MEETING_CHAT_MAX_LINES,
   appendMeetingChat,
+  emptyMeetingChat,
+  setMeetingChatOpen,
   type MeetingChatState,
 } from "./meetingChat";
 
@@ -50,5 +52,42 @@ describe("appendMeetingChat", () => {
     expect(state.lines[0]?.key).toBe(5);
     expect(state.lines.at(-1)?.text).toBe(`m${total - 1}`);
     expect(state.nextKey).toBe(total);
+  });
+});
+
+describe("meeting chat open/unread (PRD 23)", () => {
+  it("defaults to open with no unread", () => {
+    expect(EMPTY_MEETING_CHAT.open).toBe(true);
+    expect(EMPTY_MEETING_CHAT.unread).toBe(0);
+    expect(emptyMeetingChat(false).open).toBe(false);
+  });
+
+  it("does not accrue unread while open", () => {
+    const next = appendMeetingChat(EMPTY_MEETING_CHAT, msg(), SELF);
+    expect(next.unread).toBe(0);
+  });
+
+  it("counts messages that arrive while closed", () => {
+    let state = setMeetingChatOpen(EMPTY_MEETING_CHAT, false);
+    state = appendMeetingChat(state, msg({ text: "a" }), SELF);
+    state = appendMeetingChat(state, msg({ text: "b" }), SELF);
+    expect(state.unread).toBe(2);
+  });
+
+  it("never counts the local player's own lines as unread", () => {
+    let state = setMeetingChatOpen(EMPTY_MEETING_CHAT, false);
+    state = appendMeetingChat(state, msg({ id: SELF, name: "Me", text: "mine" }), SELF);
+    expect(state.unread).toBe(0);
+  });
+
+  it("clears unread on reopen and preserves it while closed", () => {
+    let state = setMeetingChatOpen(EMPTY_MEETING_CHAT, false);
+    state = appendMeetingChat(state, msg(), SELF);
+    expect(state.unread).toBe(1);
+    // Toggling closed→closed is a no-op that preserves the count.
+    expect(setMeetingChatOpen(state, false)).toBe(state);
+    state = setMeetingChatOpen(state, true);
+    expect(state.unread).toBe(0);
+    expect(state.open).toBe(true);
   });
 });

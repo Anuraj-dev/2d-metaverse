@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, ScreenShare } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Mic, MicOff, Video, VideoOff, ScreenShare, ScreenShareOff } from "lucide-react";
 import { bus } from "../game/eventBus";
-import { setMic, setCam } from "../media/mediaControls";
+import {
+  setMic,
+  setCam,
+  setScreenShare,
+  isScreenSharing,
+  subscribeScreenShare,
+} from "../media/mediaControls";
 import { getMediaPrefs, subscribeMediaPrefs } from "../media/mediaPrefs";
 import { micToastText, camToastText } from "../game/controlBar";
 import Settings from "./Settings";
@@ -16,16 +22,29 @@ const TOAST_MS = 1600;
  * pair. Mic/cam always drive the live media manager (`media/mediaControls`), which
  * keeps one mute sticky across walk<->meeting. Each toggle swaps the lucide icon,
  * emits a bus event for the sound mixer's blip, and shows a transient toast that is
- * announced politely for screen readers. A screen-share slot is designed in but
- * disabled — its behaviour lands in PRD 23. Settings lives in the bar.
+ * announced politely for screen readers. The screen-share button (PRD 23) is
+ * enabled only while in a meeting and publishes to the meeting room. Settings
+ * lives in the bar.
  */
 export default function ControlBar() {
   const [prefs, setPrefs] = useState(getMediaPrefs());
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
+  // Screen share is only meaningful inside a meeting; the button greys out
+  // otherwise. `meeting-grid-visible`/`hidden` bracket THIS client's meeting.
+  const [inMeeting, setInMeeting] = useState(false);
+  const sharing = useSyncExternalStore(subscribeScreenShare, isScreenSharing, () => false);
 
   useEffect(() => subscribeMediaPrefs(() => setPrefs(getMediaPrefs())), []);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  useEffect(() => {
+    const offShow = bus.on("meeting-grid-visible", () => setInMeeting(true));
+    const offHide = bus.on("meeting-grid-hidden", () => setInMeeting(false));
+    return () => {
+      offShow();
+      offHide();
+    };
+  }, []);
 
   const flash = (text: string) => {
     setToast(text);
@@ -44,6 +63,15 @@ export default function ControlBar() {
     setCam(on);
     bus.emit("cam-toggle", { on });
     flash(camToastText(on));
+  };
+  const onShare = () => {
+    const on = !sharing;
+    setScreenShare(on);
+    // Emit the intent (drives the sound blip + the e2e "publish attempted" hook)
+    // regardless of whether the transport ultimately publishes; the button's
+    // sharing state reflects the actual published track via the subscription.
+    bus.emit(on ? "screen-share-on" : "screen-share-off");
+    flash(on ? "Sharing your screen" : "Stopped sharing");
   };
 
   return (
@@ -78,14 +106,26 @@ export default function ControlBar() {
         )}
       </button>
 
-      {/* Screen-share slot: layout only. Behaviour lands in PRD 23. */}
+      {/* Screen share (PRD 23): enabled only inside a meeting; reflects sharing. */}
       <button
         type="button"
-        className="icon-btn control-btn control-share"
-        aria-label="Share screen (coming soon)"
-        disabled
+        className={`icon-btn control-btn control-share ${sharing ? "sharing" : ""}`}
+        onClick={onShare}
+        disabled={!inMeeting}
+        aria-pressed={sharing}
+        aria-label={
+          !inMeeting
+            ? "Share screen (available in meetings)"
+            : sharing
+              ? "Stop sharing your screen"
+              : "Share your screen"
+        }
       >
-        <ScreenShare size={20} aria-hidden="true" />
+        {sharing ? (
+          <ScreenShareOff size={20} aria-hidden="true" />
+        ) : (
+          <ScreenShare size={20} aria-hidden="true" />
+        )}
       </button>
 
       <span className="control-sep" aria-hidden="true" />
