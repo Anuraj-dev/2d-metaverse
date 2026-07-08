@@ -15,11 +15,12 @@ Sources (documented per clip below; timestamps into the pack's stems):
   - melodic notes    8 - G- 80 BPM / 8-Intro.opus  (A-major arpeggio set)
   - soft pluck       9 -F - 120 BPM / Loops(without Crash and Drums)/9-Intro(WO Drums).opus
   - ambient bed      3-D#-104 BPM / 3-Loop(without Drums).opus  (slowed 2x)
+  - music pool       10-C/1-Ab/4-G "without Drums" stems (PRD 21, see MUSIC_STEMS)
 
-The melodic notes are shifted -1 semitone so the UI chimes sit in the same key
-family as the shipped music bed (`music_bed.ogg`, the pack's G# stem
-6-Loop(without Drums)); the ambient bed's slowed D# stem is its dominant —
-everything that can sound at once is consonant.
+The melodic notes are shifted -1 semitone into the G# key family of the
+pack's stem 6 — historically the shipped music bed (`music_bed.ogg`, retired
+by PRD 21 and replaced by the calm pool below); the ambient bed's slowed D#
+stem is its dominant — everything that can sound at once is consonant.
 
 Requires: ffmpeg, sox, and the pack zip at repo-root Assets/ (untracked).
 Run:  python3 scripts/curate_audio.py
@@ -52,6 +53,23 @@ STEMS = {
     "intro8": "8 - G- 80 BPM/8-Intro.opus",
     "intro9": "9 -F - 120 BPM/Loops(without Crash and Drums)/9-Intro(WO Drums).opus",
     "pad3": "3-D#-104 BPM/3-Loop(without Drums).opus",
+}
+
+# PRD 21: the curated calm-music pool that replaces the single looping
+# `music_bed.ogg` (retired — see ATTRIBUTIONS.md). Three sparse "without
+# drums"/"no drums" stems, chosen distinctly slower and quieter (measured via
+# `ffmpeg -af volumedetect`) than the retired bed (G#, 96 BPM, -14.2dB mean)
+# so the pool reads as calm rather than driving:
+#   music_calm_1  10-C, 65 BPM   mean -17.5dB  (slowest, sparsest)
+#   music_calm_2  1-Ab, 67 BPM   mean -22.0dB  (quietest)
+#   music_calm_3  4-G, 91.5 BPM  mean -20.8dB
+# Curation, not composition (locked audio direction): same already-attributed
+# pack as every other clip, no new third-party sourcing. Each of format
+# (member path within the pack, peak-normalize target dB).
+MUSIC_STEMS = {
+    "music_calm_1": ("10-C -65 BPM/10-FullLoop(without Drums).opus", -14),
+    "music_calm_2": ("1-Ab-67 BPM/1-Loop(without Drums).opus", -14),
+    "music_calm_3": ("4-G-91.5 BPM/4-Loop(No Drums).opus", -14),
 }
 
 TMP = tempfile.mkdtemp(prefix="curate_audio_")
@@ -175,6 +193,25 @@ def curate_portal_transitions() -> None:
     encode(p_out, "portal_out")
 
 
+def curate_music_pool() -> None:
+    """Curate the PRD-21 calm-music pool (see MUSIC_STEMS above).
+
+    Each stem is decoded whole (NOT trimmed to a beat-synced loop point — PRD
+    21 plays a track once to completion, then a silence gap, never looping a
+    single track), given a short in/out fade so the hard stem edit has no
+    click, and peak-normalized alongside the rest of the soundscape.
+    """
+    with zipfile.ZipFile(PACK) as z:
+        for clip, (member, peak_db) in MUSIC_STEMS.items():
+            src = os.path.join(TMP, f"{clip}_raw.opus")
+            with z.open(PREFIX + member) as f, open(src, "wb") as o:
+                shutil.copyfileobj(f, o)
+            wav = os.path.join(TMP, f"{clip}.wav")
+            run(["ffmpeg", "-y", "-i", src, "-ac", "1", "-ar", "48000", wav])
+            faded = fx(wav, f"{clip}_faded", "fade", "t", "0.8", "0", "1.2")
+            encode(peak_normalize(faded, f"{clip}_n", peak_db), clip, quality="4")
+
+
 def main() -> None:
     if not os.path.exists(PACK):
         sys.exit(f"pack not found: {PACK}")
@@ -285,6 +322,13 @@ def main() -> None:
     run(["sox", amb_main, amb, "splice", "-q", "60,4"])
     amb = fx(amb, "amb_trimmed", "trim", "0", "60")
     encode(peak_normalize(amb, "amb_n", -20), "ambient_outdoor", quality="2")
+
+    # ── Music pool (PRD 21): retires the single music_bed.ogg loop ──────────
+    curate_music_pool()
+    old_bed = os.path.join(OUT_DIR, "music_bed.ogg")
+    if os.path.exists(old_bed):
+        os.remove(old_bed)
+        print("  removed music_bed.ogg (retired — replaced by the curated pool)")
 
     # ── Arcade cabinet blips (PRD 11) ───────────────────────────────────────
     # Diegetic 8-bit chiptune: the cabinets are retro arcade machines, so their

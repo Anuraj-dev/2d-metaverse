@@ -20,7 +20,10 @@ const KEY = "mv:settings";
 
 const DEFAULTS: Settings = {
   masterVolume: 0.6,
-  musicVolume: 0.4,
+  // PRD 21: lowered from 0.4 — the curated calm pool is meant to sit under
+  // conversation by default, not be the first thing a new player reaches to
+  // mute. Existing players' saved slider values are untouched (see `load`).
+  musicVolume: 0.2,
   sfxVolume: 0.7,
   ambientVolume: 0.5,
   arcadeVolume: 0.8,

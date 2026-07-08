@@ -12,13 +12,15 @@ import { bus } from "../game/eventBus";
 import {
   AUDIO_CUTOFF,
   STAGE_VOLUME,
-  computeVolumes,
+  computeZonedVolumes,
+  rampVolumes,
   subscribeAction,
   unsubscribeAction,
   worldRoomName,
   roomRoomName,
   stageRoomName,
   type RoomMode,
+  type VolumeRampState,
 } from "./mediaLogic";
 import { speakingState } from "./speakingState";
 import { getMediaPrefs } from "./mediaPrefs";
@@ -112,6 +114,11 @@ class WorldAudio {
   private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
   private offPositions?: () => void;
+  // Per-remote volume-ramp state (PRD 21) — the applied `<audio>` gain glides
+  // toward its zone-aware target over `VOICE_RAMP_MS`, except zone/door cuts,
+  // which `rampVolumes` snaps instantly (see mediaLogic.ts `rampVolume`).
+  private rampState = new Map<string, VolumeRampState>();
+  private lastVolumeTickAt = 0;
 
   async start(spaceId: string, selfId: string) {
     this.selfId = selfId;
@@ -174,14 +181,31 @@ class WorldAudio {
       .map((pl) => pl.id);
     // Mute any remote who is a live stage performer: the listener already hears
     // them server-wide off the stage room, so their proximity track is deduped.
-    const vols = computeVolumes(p.players, this.selfId, remoteIds, AUDIO_CUTOFF, stagePerformerIds);
-    if (!vols) return;
-    for (const [id, el] of this.audioEls) el.volume = vols.get(id) ?? 0;
-    // Surface the computed world-audio volumes on the bus unconditionally:
-    // SfxBridge ducks the ambient bed against them in production, and the
+    const zoned = computeZonedVolumes(
+      p.players,
+      this.selfId,
+      remoteIds,
+      AUDIO_CUTOFF,
+      stagePerformerIds
+    );
+    if (!zoned) return;
+    // PRD 21: the AUDIBLE gain glides toward the target over VOICE_RAMP_MS for
+    // same-zone distance changes, but snaps instantly at a zone/door boundary
+    // (rampVolumes/rampVolume). dt is real elapsed time (not the nominal tick
+    // period) so the ramp stays correct under jitter/throttled tabs.
+    const now = performance.now();
+    const dt = this.lastVolumeTickAt === 0 ? 0 : now - this.lastVolumeTickAt;
+    this.lastVolumeTickAt = now;
+    this.rampState = rampVolumes(this.rampState, zoned, dt);
+    for (const [id, el] of this.audioEls) el.volume = this.rampState.get(id)?.applied ?? 0;
+    // Surface the computed world-audio TARGET volumes on the bus unconditionally
+    // (unramped — the zone-aware decision itself, not the smoothed audible
+    // gain): SfxBridge ducks the ambient bed against them in production, and the
     // Playwright suite asserts zone isolation through the same event (it needs
     // no build-flag gate — the payload is derived purely from broadcast
     // positions, never from RTC internals).
+    const vols = new Map<string, number>();
+    for (const [id, z] of zoned) vols.set(id, z.volume);
     bus.emit("audio-volumes", { volumes: Object.fromEntries(vols) });
   }
 
@@ -199,6 +223,8 @@ class WorldAudio {
     speakingState.clear("world");
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
+    this.rampState = new Map();
+    this.lastVolumeTickAt = 0;
     await this.room?.disconnect();
     this.room = null;
   }

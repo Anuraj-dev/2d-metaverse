@@ -24,14 +24,19 @@ Nothing is synthesized from oscillators.
 
 | File | Source material (within the pack) | Treatment |
 | --- | --- | --- |
-| `music_bed.ogg` | Ogg Opus stem `6-Loop(without Drums)` (G#) | Transcoded to a small mono looping `.ogg`. |
+| `music_calm_1.ogg`, `music_calm_2.ogg`, `music_calm_3.ogg` | Ogg Opus stems `10-FullLoop(without Drums)` (C, 65 BPM), `1-Loop(without Drums)` (Ab, 67 BPM), `4-Loop(No Drums)` (G, 91.5 BPM) | PRD 21 curated calm-music pool (`scripts/curate_audio.py` → `curate_music_pool`), replacing the single looping `music_bed.ogg` (retired — see below). Each stem picked distinctly slower/sparser than the retired bed (measured via `ffmpeg volumedetect`: -17.5/-22.0/-20.8dB mean vs. the bed's -14.2dB) so the pool reads as calm, not driving. Decoded whole (not loop-trimmed — a track plays once to completion, then a silence gap, never loops), short in/out fade, peak-normalized. |
 | `ambient_outdoor.ogg` | `3-Loop(without Drums)` pad (D#, the bed's dominant) | 34s slowed 2×, darkened (LP 950Hz), long reverb, seamless splice loop — a distant, warm outdoor "air" bed. |
 | `footstep.ogg`, `sit.ogg` | Low drum hit, `6-Drums Only` @ 10.06s | Pitched down, low-passed, shortened — soft weight / cushioned thud. |
 | `door_open.ogg`, `door_close.ogg` | Mid knock (`2-Loop(Drums Only)` @ 97.33s) + low thump (above) | Two-layer wooden foley: handle click into swing contact (open), firm shut (close), light room reverb. |
-| `message.ogg`, `join.ogg`, `leave.ogg` | Melodic notes from the `8-Intro` arpeggio | Shifted −1 st into the music bed's key family; single soft blip / rising / falling two-note chimes. |
-| `meeting_join.ogg`, `meeting_leave.ogg` | Four `8-Intro` notes | Up/down arpeggio in the bed's key with a warm room reverb. |
+| `message.ogg`, `join.ogg`, `leave.ogg` | Melodic notes from the `8-Intro` arpeggio | Shifted −1 st into the retired music bed's key family (historical — see below); single soft blip / rising / falling two-note chimes. |
+| `meeting_join.ogg`, `meeting_leave.ogg` | Four `8-Intro` notes | Up/down arpeggio in the retired bed's key with a warm room reverb. |
 | `portal_in.ogg`, `portal_out.ogg` | **CC0 library** (see the note below) — reversed-cymbal riser `711683__leonseptavaux`, transition whoosh `427823__kinoton__whoosh-1`, sub-impact `394642__screamstudio` (in); low swoosh `517877__the_real_not_important__swoosh_low` (out) | PRD 16 cinematic transition: rising riser + whoosh landing on a soft sub-impact (in); softer, lighter descending swoosh, long fade, no impact (out). `scripts/curate_audio.py` → `curate_portal_transitions`. |
 | `arcade_start.ogg`, `arcade_point.ogg`, `arcade_over.ogg` | **Project-original** — synthesized square-wave chiptune (`scripts/curate_audio.py` → `synth_arcade`) | Diegetic 8-bit arcade blips (open arpeggio, score blip, game-over descend). Intentionally a different family from the recorded foley — a cozy pack has no arcade beeps to cut. Project asset (no third-party source). |
+
+**Retired:** `music_bed.ogg` (Ogg Opus stem `6-Loop(without Drums)`, G#) — the
+single looping music bed shipped through PRD 20. PRD 21 replaced it with the
+curated calm-music pool above (testers muted the constant loop within
+seconds); the file is deleted and no longer referenced by any code path.
 
 The two **portal transition** clips (`portal_in.ogg`, `portal_out.ogg`, PRD 16)
 are cut from the owner's personal sound-effects library, whose bundled

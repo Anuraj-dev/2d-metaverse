@@ -15,9 +15,14 @@ import {
   DUCK_FACTOR,
   duckStep,
   fadeStep,
+  initMusicScheduler,
   loopTargets,
+  musicSchedulerTick,
+  musicTrackEnded,
+  MUSIC_TRACKS,
   volumesFromSettings,
   type Channel,
+  type MusicSchedulerState,
 } from "./soundMixer";
 
 const BASE = "/assets/audio";
@@ -90,18 +95,25 @@ export function playSfx(name: SfxName, opts: { notify?: boolean } = {}): void {
   playCue(name, "sfx", opts);
 }
 
-// ── Loops (music bed + outdoor ambient) ──────────────────────────────────────
+// ── Loops (curated music pool + outdoor ambient) ─────────────────────────────
 //
 // The loops are LIFECYCLE-AWARE: the outdoor ambience only sounds while the
 // local player is outdoors, and both world loops fall silent across a meeting
 // (portal-in → portal-out). Two independent smoothers drive each loop and are
 // multiplied to the applied volume:
 //   • a slow BASE fade (soundMixer.loopTargets / fadeStep, ~700ms) for scene-scale
-//     changes — zone crossings, meetings, slider/mute moves;
+//     changes — zone crossings, meetings, silence gaps, slider/mute moves;
 //   • a shared speech DUCK envelope (soundMixer.duckStep) with a fast attack and a
 //     ~700ms release, dropping BOTH loops to DUCK_FACTOR while a peer/self speaks.
 // Nothing hard-cuts. A loop element is paused once its applied gain reaches
 // silence with a silent base target, and resumed when it becomes audible again.
+//
+// Music (PRD 21) is a small curated pool driven by the pure scheduler in
+// soundMixer.ts: `musicLoop` is NOT set to loop — it plays one track to
+// completion (the native `ended` event advances the scheduler into a silence
+// gap), then the gap timer (ticked here, frozen during a meeting) counts down
+// to the next track. `ensureTrackLoaded` swaps the element's `src` exactly
+// when the scheduler hands it a new track id.
 
 let voiceActive = false;
 let outdoors = true; // players spawn in the plaza (outdoor zone)
@@ -118,6 +130,11 @@ let unbindSettings: (() => void) | null = null;
 let fadeTimer: ReturnType<typeof setInterval> | null = null;
 let lastFadeTick = 0;
 
+// The music scheduler's own state + which track id is currently loaded into
+// `musicLoop.src` (so a repeated tick with the same track id is a no-op).
+let scheduler: MusicSchedulerState = initMusicScheduler(Date.now());
+let loadedTrackId: string | null = null;
+
 const FADE_TICK_MS = 50;
 
 function makeLoop(clip: string): HTMLAudioElement {
@@ -127,8 +144,35 @@ function makeLoop(clip: string): HTMLAudioElement {
   return a;
 }
 
+/** The music element is never `loop`d — the scheduler decides what plays next. */
+function makeMusicElement(): HTMLAudioElement {
+  const a = new Audio();
+  a.preload = "auto";
+  a.addEventListener("ended", handleTrackEnded);
+  return a;
+}
+
+/** Swap the music element's `src` to the scheduler's current track, if it changed. */
+function ensureTrackLoaded(): void {
+  if (!musicLoop || scheduler.phase !== "track" || scheduler.trackId === null) return;
+  if (loadedTrackId === scheduler.trackId) return;
+  loadedTrackId = scheduler.trackId;
+  musicLoop.src = `${BASE}/${scheduler.trackId}.ogg`;
+  musicLoop.load();
+}
+
+/** The current track finished playing to completion — advance to a silence gap. */
+function handleTrackEnded(): void {
+  scheduler = musicTrackEnded(scheduler);
+  refreshLoops();
+}
+
 function baseTargets(): { music: number; ambient: number } {
-  return loopTargets(volumesFromSettings(getSettings()), { outdoors, meeting });
+  return loopTargets(volumesFromSettings(getSettings()), {
+    outdoors,
+    meeting,
+    musicPlaying: scheduler.phase === "track",
+  });
 }
 
 /** Apply an already-computed gain to a loop; pause at silence, resume when audible. */
@@ -147,6 +191,10 @@ function fadeTick(): void {
   const now = performance.now();
   const dt = now - lastFadeTick;
   lastFadeTick = now;
+  // Advance the silence-gap countdown (frozen during a meeting); swap in a new
+  // track's src the instant the scheduler hands one over.
+  scheduler = musicSchedulerTick(scheduler, dt, meeting, MUSIC_TRACKS);
+  ensureTrackLoaded();
   const t = baseTargets();
   musicBase = fadeStep(musicBase, t.music, dt);
   ambientBase = fadeStep(ambientBase, t.ambient, dt);
@@ -155,10 +203,14 @@ function fadeTick(): void {
   if (ambientLoop) applyLoopGain(ambientLoop, ambientBase * duckEnv, t.ambient);
   // Keep ticking until every smoother has settled on its target: the base fades
   // reach their loop targets AND the duck envelope reaches its rest/ducked value.
+  // A pending (unpaused) silence gap must keep the ticker alive even once the
+  // envelopes settle at 0 — otherwise the gap's countdown would freeze forever
+  // and the next track would never arrive.
   const duckTarget = voiceActive ? DUCK_FACTOR : 1;
   const settled =
     musicBase === t.music && ambientBase === t.ambient && duckEnv === duckTarget;
-  if (settled && fadeTimer !== null) {
+  const gapPending = scheduler.phase === "gap" && !meeting;
+  if (settled && !gapPending && fadeTimer !== null) {
     clearInterval(fadeTimer);
     fadeTimer = null;
   }
@@ -201,7 +253,7 @@ export function setMeetingActive(value: boolean): void {
 export function startLoops(): void {
   if (!started) {
     started = true;
-    musicLoop = makeLoop("music_bed");
+    musicLoop = makeMusicElement();
     ambientLoop = makeLoop("ambient_outdoor");
     musicLoop.volume = 0;
     ambientLoop.volume = 0;
@@ -209,7 +261,12 @@ export function startLoops(): void {
     ambientBase = 0;
     duckEnv = 1;
     unbindSettings = subscribeSettings(refreshLoops);
-    void musicLoop.play().catch(() => {});
+    // The scheduler starts in a silence gap (no track blares on load), so
+    // there is usually nothing to load/play yet — ensureTrackLoaded is still
+    // called defensively in case a resumed/hot-reloaded scheduler is already
+    // mid-track.
+    ensureTrackLoaded();
+    if (loadedTrackId !== null) void musicLoop.play().catch(() => {});
     void ambientLoop.play().catch(() => {});
   }
   refreshLoops();
@@ -223,9 +280,13 @@ export function stopLoops(): void {
   }
   musicLoop?.pause();
   ambientLoop?.pause();
+  musicLoop?.removeEventListener("ended", handleTrackEnded);
   unbindSettings?.();
   unbindSettings = null;
   musicLoop = null;
   ambientLoop = null;
+  // A fresh element on the next startLoops() has no src loaded yet — forget
+  // what was loaded into the discarded element so ensureTrackLoaded reloads it.
+  loadedTrackId = null;
   started = false;
 }
