@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { areaDimAt, dimBands, dimTintColor, type DimArea } from "./areaDim";
+import {
+  areaDimAt,
+  dimBands,
+  dimTintColor,
+  focusAreaId,
+  floorNameHidden,
+  type DimArea,
+} from "./areaDim";
 import type { Rect } from "./zones";
 
 const AREAS: DimArea[] = [
@@ -78,6 +85,48 @@ describe("dimBands", () => {
       expect(b.x + b.width).toBeLessThanOrEqual(map.w);
       expect(b.y + b.height).toBeLessThanOrEqual(map.h);
     }
+  });
+});
+
+describe("focusAreaId", () => {
+  it("is null outdoors", () => {
+    expect(focusAreaId(null)).toBe(null);
+  });
+
+  it("collapses hostel room ids onto their building area", () => {
+    expect(focusAreaId("1")).toBe("mandakini");
+    expect(focusAreaId("3")).toBe("mandakini");
+    expect(focusAreaId("4")).toBe("cauvery");
+    expect(focusAreaId("6")).toBe("cauvery");
+  });
+
+  it("passes standalone area ids through unchanged", () => {
+    expect(focusAreaId("stage")).toBe("stage");
+    expect(focusAreaId("arcade")).toBe("arcade");
+  });
+
+  it("is null for an id that maps to no named area", () => {
+    expect(focusAreaId("99")).toBe(null);
+  });
+});
+
+describe("floorNameHidden", () => {
+  it("hides a floor name only while the player is inside that area", () => {
+    // Standing in Mandakini room 2 ⇒ focus "mandakini".
+    const focus = focusAreaId("2");
+    expect(floorNameHidden("mandakini", focus)).toBe(true);
+    expect(floorNameHidden("cauvery", focus)).toBe(false);
+    expect(floorNameHidden("arcade", focus)).toBe(false);
+  });
+
+  it("shows every floor name outdoors", () => {
+    for (const id of ["mandakini", "cauvery", "stage", "arcade"]) {
+      expect(floorNameHidden(id, focusAreaId(null))).toBe(false);
+    }
+  });
+
+  it("hides the arcade name anywhere inside the arcade", () => {
+    expect(floorNameHidden("arcade", focusAreaId("arcade"))).toBe(true);
   });
 });
 

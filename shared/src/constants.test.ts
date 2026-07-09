@@ -3,6 +3,7 @@ import {
   AREA_NAMES,
   areaNameForId,
   areaNameForRoom,
+  areaIdForRoom,
   roomDisplayName,
   BOARD_TABLES,
   gameForTable,
@@ -31,6 +32,14 @@ describe("AREA_NAMES registry", () => {
   it("returns undefined for unknown rooms and ids", () => {
     expect(areaNameForRoom("7")).toBeUndefined();
     expect(areaNameForId("nope")).toBeUndefined();
+  });
+
+  it("collapses each room id onto its hostel area id", () => {
+    expect(areaIdForRoom("1")).toBe("mandakini");
+    expect(areaIdForRoom("3")).toBe("mandakini");
+    expect(areaIdForRoom("4")).toBe("cauvery");
+    expect(areaIdForRoom("6")).toBe("cauvery");
+    expect(areaIdForRoom("7")).toBeUndefined();
   });
 
   it("resolves a display name by area id", () => {

@@ -592,27 +592,35 @@ Place names are owned by one registry — `AREA_NAMES` in `shared/src/constants.
 (`roomDisplayName(id)` builds "Mandakini Hostel · Room 1" etc.). Every UI surface
 that shows a room (entry toast `RoomToast`, chat Room tab, knock card, room-admin
 panel) resolves names through it, and the backend seed (`backend/src/seed.ts`)
-aligns `rooms.name` to the same strings. In-world signage (PRD 24, zep-style) is
-authored in `scripts/gen_campus.py`'s `signs` object layer as flat, text-only
-objects — NO sprites, so nothing occludes an avatar: `plaque(name, tx, ty, area=…)`
-mounts a slim dark name plaque flush on a building facade, and
+aligns `rooms.name` to the same strings. In-world signage (PRD 24, reworked in
+PRD 24.1) is authored in `scripts/gen_campus.py`'s `signs` object layer as flat,
+text-only objects — NO sprites and NO facade plaques (plaques were removed in
+24.1 because they occluded avatars and doorways), so nothing ever occludes an
+avatar. Both remaining forms draw BELOW players/furniture:
 `ground_label(name, tx, ty, area, dir)` paints directional text + an arrow glyph
-flat on the paving at a junction. Each object carries an `area` id (not a baked
-string); `WorldScene.buildSigns` resolves it through `areaNameForId` and renders
-the plaque (rounded rect, depth = y) or the ground label (dark text + light halo,
-depth below players). The lone non-area sub-label (the arcade's "Board Games"
-corner) uses a literal `text` fallback. **To rename an area or add a sign:** edit
-`AREA_NAMES`, add/adjust a `plaque(...)`/`ground_label(...)` call in
-`gen_campus.py` (referencing the area id), regenerate the map, and keep `shared`
-constants.test + `game/maps.test.ts` (signs layer) green.
+flat on the paving at a junction, and `floor_name(name, tx, ty, area)` paints the
+area's name LARGE + bold on the floor inside the area, near its entrance side.
+Each object carries an `area` id (not a baked string); `WorldScene.buildSigns`
+resolves it through `areaNameForId`. A floor name is normally visible but **fades
+out (~300ms) while the local player stands inside that same area** and fades back
+in when they leave — the visibility decision is the pure `floorNameHidden`
+(keyed off `focusAreaId`, which collapses the dim's per-room containment onto the
+AREA_NAMES grouping via shared `areaIdForRoom`); `WorldScene` only tweens each
+label's alpha. **To rename an area or add a sign:** edit `AREA_NAMES`, add/adjust
+a `ground_label(...)`/`floor_name(...)` call in `gen_campus.py` (referencing the
+area id), regenerate the map, and keep `shared` constants.test +
+`game/maps.test.ts` (signs layer) green.
 
 **Area focus dim (PRD 24):** standing inside a named area (room interior, Stage,
-or arcade hall — the same rects that drive audio zones, no second registry)
-subtly dims everything outside it to ~75% brightness with a ~300ms fade, composed
-onto the day/night tint. The decision logic (which area contains the player, and
-the band geometry to darken) is the pure `game/areaDim.ts` (+ vitest);
-`WorldScene` only samples the point each frame and draws/fades a world-space
-multiply overlay. Outdoors ⇒ no dim.
+or arcade hall) subtly dims everything outside it to ~75% brightness with a
+~300ms fade, composed onto the day/night tint. Room/Stage rects reuse the audio
+zones; the **arcade uses an authored `arcade_zone` object (stage layer) that
+spans the WHOLE hall interior** — cabinet hall + board-game corner + seating —
+so the entire room lights as one area (PRD 24.1 fixed a bug where the old
+cabinet-bounding-box rect only lit the upper hall). The decision logic (which
+area contains the player, and the band geometry to darken) is the pure
+`game/areaDim.ts` (+ vitest); `WorldScene` only samples the point each frame and
+draws/fades a world-space multiply overlay. Outdoors ⇒ no dim.
 
 ### Tests
 

@@ -517,6 +517,19 @@ stage_objs = [
         "point": True, "rotation": 0, "type": "", "visible": True,
         "properties": [],
     },
+    # arcade_zone — the FULL arcade-hall interior (cabinet hall + board-game
+    # corner + seating), authored from the building shell (AX0..AX1 / AY0..AY1)
+    # so the area-focus dim and the HUD map light the whole room as one area.
+    # (PRD 24.1 fix: the old rect was the padded bounding box of the cabinet
+    # interactables, which only covered the upper hall — the board-table corner
+    # stayed dark.) Interior = one tile inside each wall.
+    {
+        "id": 50004, "name": "arcade_zone",
+        "x": (AX0 + 1) * TS, "y": (AY0 + 1) * TS,
+        "width": (AX1 - AX0 - 1) * TS, "height": (AY1 - AY0 - 1) * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [{"name": "zoneType", "type": "string", "value": "arcade"}],
+    },
 ]
 
 # ── SPAWN ────────────────────────────────────────────────────────────────
@@ -678,18 +691,19 @@ def board_table(table_id, game, label, cx, ty):
 board_table("ttt-1", "tictactoe", "Tic-Tac-Toe", 72, 102)
 board_table("c4-1",  "connect4",  "Connect 4",   72, 105)
 
-# ── SIGNAGE / WAYFINDING (PRD 24) ─────────────────────────────────────────────
-# Zep-style in-world naming: NO floating sprites. Two flat, text-only forms that
-# never occlude an avatar (WorldScene renders both as crisp runtime text):
+# ── SIGNAGE / WAYFINDING (PRD 24 / 24.1) ──────────────────────────────────────
+# Zep-style in-world naming: NO floating sprites, NO facade plaques (removed in
+# PRD 24.1 — they occluded avatars and doorways). Two flat, text-only forms, both
+# drawn BELOW players/furniture so nothing ever occludes an avatar (WorldScene
+# renders both as crisp runtime text):
 #   - groundLabel: directional text + arrow glyph painted FLAT on the paving at
-#     junctions, at a depth below players/furniture (walkable);
-#   - plaque: a slim dark plaque mounted flush on a building facade above an
-#     entrance, depth-sorted by y so players in front render over it.
+#     junctions (walkable);
+#   - floorName: the area's name painted LARGE + bold on the floor inside the
+#     area, near its entrance side, faded out while the local player is in that
+#     same area (fade keyed off the area-focus dim's containment).
 # The label text is NOT baked here — each object carries an `area` id and the
 # scene resolves it through the shared AREA_NAMES registry (the single source of
 # truth via `areaNameForId`), so renaming an area never touches art or this file.
-# The lone exception is the arcade's "Board Games" sub-corner, which is not a
-# top-level area and so carries a literal `text` fallback.
 signs_objs = []
 
 
@@ -703,17 +717,6 @@ def _sign(name, kind, tx, ty, props):
     })
 
 
-def plaque(name, tx, ty, area=None, text=None):
-    """A slim building-name plaque flush on the facade at tile (tx,ty). Pass an
-    `area` id (resolved via AREA_NAMES) or, for a non-area sub-label, `text`."""
-    props = []
-    if area is not None:
-        props.append({"name": "area", "type": "string", "value": area})
-    if text is not None:
-        props.append({"name": "text", "type": "string", "value": text})
-    _sign(name, "plaque", tx, ty, props)
-
-
 def ground_label(name, tx, ty, area, direction):
     """Flat directional ground text at a junction: names `area` (via AREA_NAMES)
     with an arrow glyph in `direction` (up/down/left/right)."""
@@ -723,20 +726,32 @@ def ground_label(name, tx, ty, area, direction):
     ])
 
 
-# Building name plaques flush on each entrance facade (names from AREA_NAMES).
-plaque("plaque_cauvery",   54, 25, area="cauvery")    # HQ south doors (rooms 4-6)
-plaque("plaque_stage",     98, 45, area="stage")      # auditorium south door
-plaque("plaque_mandakini", 31, 99, area="mandakini")  # hostel north facade (rooms 1-3)
-plaque("plaque_arcade",    79, 93, area="arcade")     # arcade hall north doorway
-# "Board Games" corner plaque inside the arcade, by the two relocated tables.
-plaque("plaque_boardgames", 72, 100, text="Board Games")
+def floor_name(name, tx, ty, area):
+    """Large area name painted on the floor inside `area` (name via AREA_NAMES),
+    centered on an open floor region near the area's entrance. Rendered below
+    players; fades out while the local player stands inside that area."""
+    _sign(name, "floorName", tx, ty, [
+        {"name": "area", "type": "string", "value": area},
+    ])
+
+
+# Floor-painted area names, each on an open floor region near the entrance side,
+# clear of furniture (names from AREA_NAMES; faded while inside that area).
+floor_name("floor_cauvery",   54, 18, "cauvery")     # HQ lobby, inside the south doors
+floor_name("floor_stage",     99, 40, "stage")       # auditorium audience, near south door
+floor_name("floor_mandakini", 31, 97, "mandakini")   # hostel forecourt, off the north facade
+floor_name("floor_arcade",    77, 99, "arcade")       # arcade upper hall, just inside the entrance
 
 # Directional ground labels at major junctions (arrows point the way).
-ground_label("ground_plaza_cauvery", 64, 45, "cauvery", "up")
-ground_label("ground_plaza_stage",   69, 47, "stage",   "right")
-ground_label("ground_plaza_arcade",  64, 50, "arcade",  "down")
-ground_label("ground_south_arcade",  81, 90, "arcade",  "down")
-ground_label("ground_hostel",        36, 92, "mandakini", "down")
+ground_label("ground_plaza_cauvery",   64, 45, "cauvery",   "up")
+ground_label("ground_plaza_stage",     69, 47, "stage",     "right")
+ground_label("ground_plaza_arcade",    64, 50, "arcade",    "down")
+# Mandakini Hostel sits south-west of the plaza (rooms x=10-52, y=100-110); the
+# artery leads down to it, so point the plaza label DOWN (PRD 24.1 — it was the
+# one missing plaza direction).
+ground_label("ground_plaza_mandakini", 56, 52, "mandakini", "down")
+ground_label("ground_south_arcade",    81, 90, "arcade",    "down")
+ground_label("ground_hostel",          36, 92, "mandakini", "down")
 
 # ── Tilemap JSON ──────────────────────────────────────────────────────────
 tilemap = {
@@ -816,6 +831,6 @@ print(f"  wall tiles placed: {wall_count}")
 print(f"  furniture objects: {len(furniture)}")
 print(f"  rooms: {len(door_zones)} doorZones, {len(room_bounds)} roomBounds, {len(seats_objs)} seats")
 print(f"  interactables: {len(interactables_objs)} objects")
-print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen)")
-print(f"  signs: {len(signs_objs)} objects (facade plaques + ground labels)")
+print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen + arcade_zone)")
+print(f"  signs: {len(signs_objs)} objects (floor names + ground labels)")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")

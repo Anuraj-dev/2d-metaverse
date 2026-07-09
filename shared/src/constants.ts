@@ -96,6 +96,16 @@ export function areaNameForRoom(roomId: string): string | undefined {
 }
 
 /**
+ * The area *id* a given private-room id belongs to, or undefined. Collapses a
+ * room id (e.g. "1") onto its hostel area key (e.g. "mandakini") — the inverse
+ * grouping used by the area-focus dim to decide whether a room the player stands
+ * in belongs to a named building area.
+ */
+export function areaIdForRoom(roomId: string): string | undefined {
+  return AREA_NAMES.find((a) => a.rooms?.includes(roomId))?.id;
+}
+
+/**
  * Full human-readable label for a private room, combining its hostel/area name
  * with the room number — e.g. "Mandakini Hostel · Room 1". Every UI surface that
  * shows a room to a player (entry toast, chat Room tab, knock/admin panels,
