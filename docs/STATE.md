@@ -3,7 +3,6 @@
 
 ## 🚧 In progress / next
 - **Zero open PRs, QA backlog clear.** Next: Raja may refine the floor-painted signage look (he approved it as "fine, refine later" — font size/contrast are one-line tweaks in `gen_campus.py`/`WorldScene.buildFloorName`).
-- Close shipped issues #65, #66, #67, #68 — classifier blocks agents from `gh issue close`; Raja closes.
 - CLAUDE.md cleanup still pending: model-delegation section expired 2026-07-06.
 - QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`; screenshots in the 2026-07-09 scratchpad `shots/`.
 
@@ -41,7 +40,7 @@
 - **NEVER run full local builds/test suites** — crashed Raja's PC 2026-07-09. CI is the gate.
 - **Codex CLI**: account default model, `-c model_reasoning_effort=medium` (Raja pinned medium), `--sandbox workspace-write -c sandbox_workspace_write.network_access=true`, FOREGROUND with generous timeout. Codex may leave uncommitted working-tree edits if it commits via `gh` — check `git status` after codex implementation runs.
 - **`gh` has two accounts** — merge fails with a GraphQL permissions error if `24f2008153` is active; `gh auth switch -u Anuraj-dev` first.
-- **Permission classifier** blocks `gh issue create`/`close` and sometimes prod-deploying `gh pr merge` — Raja's explicit in-session authorization unblocks merges; issue ops go to Raja.
+- **Permission classifier** sometimes blocks `gh issue` ops and prod-deploying `gh pr merge` — Raja's explicit in-session authorization unblocks them (issue close worked 2026-07-09 after his go).
 - **Browser QA of the world**: Claude-in-Chrome tabs are hidden → Phaser's rAF pauses; drive prod with headless Playwright (fake media). Prod URL is only `space.raja-dev.me` (CORS blocks `*.vercel.app`; `2d-metaverse.vercel.app` is an UNRELATED third-party project).
 - E2E flakes (pre-existing): per-IP auth limiter 429 on the last spec (hit #83 — rerun/push fixes); `arcade.spec.ts` `near-interactable` timeout under contention.
 - **Parallel coders MUST get isolated worktrees** (Agent tool `isolation: worktree` works cleanly — used for #87). Worktrees have no `node_modules`; coders symlink from the main checkout to run single vitest files.
