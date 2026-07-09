@@ -249,6 +249,35 @@ describe("campus arcade hall (PRD 16)", () => {
     const ys = cabinets.map((c) => c.y ?? 0);
     expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(16);
   });
+
+  // PRD 24.1: the area-focus dim + HUD map read the arcade area from an authored
+  // `arcade_zone` (stage layer) that spans the WHOLE interior — cabinet hall AND
+  // the board-table corner. The old cabinet-bbox rect only covered the upper
+  // hall, leaving the board corner dark. Guard: the zone must enclose the full
+  // interior, cabinets, and all four board seats.
+  it("authors an arcade_zone spanning the full hall interior (cabinets + board corner)", () => {
+    const zone = objects("stage").find((o) => prop(o, "zoneType") === "arcade");
+    expect(zone, "arcade_zone in the stage layer").toBeDefined();
+    const zx = zone?.x ?? 0;
+    const zy = zone?.y ?? 0;
+    const zx1 = zx + (zone?.width ?? 0);
+    const zy1 = zy + (zone?.height ?? 0);
+    // Interior of the hall (cols 68-86, rows 95-107 → px 1088-1392, 1520-1728).
+    expect(zx).toBe(1088);
+    expect(zy).toBe(1520);
+    expect(zx1).toBe(1392);
+    expect(zy1).toBe(1728);
+    const encloses = (o: TiledObject) =>
+      (o.x ?? 0) >= zx && (o.x ?? 0) <= zx1 && (o.y ?? 0) >= zy && (o.y ?? 0) <= zy1;
+    for (const c of objects("furniture").filter((o) => o.name.startsWith("f_arcade_"))) {
+      expect(encloses(c), `${c.name} inside arcade_zone`).toBe(true);
+    }
+    const boardSeats = objects("board_seats");
+    expect(boardSeats.length).toBeGreaterThan(0);
+    for (const s of boardSeats) {
+      expect(encloses(s), `${s.name} inside arcade_zone`).toBe(true);
+    }
+  });
 });
 
 describe("campus board-game tables (PRD 11 phase 2)", () => {
@@ -358,11 +387,15 @@ describe("campus wayfinding signage (PRD 24, zep-style)", () => {
     expect(signs().length).toBeGreaterThan(0);
   });
 
-  it("every sign is a plaque or a groundLabel and resolves to a non-empty label", () => {
+  it("every sign is a groundLabel or a floorName and resolves to a non-empty label", () => {
     for (const s of signs()) {
-      expect(["plaque", "groundLabel"], `${s.name} kind`).toContain(prop(s, "kind"));
+      expect(["groundLabel", "floorName"], `${s.name} kind`).toContain(prop(s, "kind"));
       expect(label(s).length, `${s.name} label`).toBeGreaterThan(0);
     }
+  });
+
+  it("has NO plaques (removed in PRD 24.1 — they occluded avatars)", () => {
+    expect(signs().some((s) => prop(s, "kind") === "plaque")).toBe(false);
   });
 
   it("every groundLabel carries a known arrow direction", () => {
@@ -373,22 +406,36 @@ describe("campus wayfinding signage (PRD 24, zep-style)", () => {
     }
   });
 
-  it("mounts a facade plaque for each named building area", () => {
-    const plaqueAreas = signs()
-      .filter((s) => prop(s, "kind") === "plaque")
+  it("paints a floor name for every named building area", () => {
+    const floorAreas = signs()
+      .filter((s) => prop(s, "kind") === "floorName")
       .map((s) => prop(s, "area"));
     for (const area of AREA_NAMES) {
-      expect(plaqueAreas, `plaque for ${area.name}`).toContain(area.id);
+      expect(floorAreas, `floor name for ${area.name}`).toContain(area.id);
     }
   });
 
-  it("includes a Board Games corner plaque inside the arcade", () => {
-    const boardSign = signs().find((s) => label(s) === "Board Games");
-    expect(boardSign).toBeDefined();
-    expect(prop(boardSign as TiledObject, "kind")).toBe("plaque");
-    // In the arcade hall interior (px x 1088-1392, y 1520-1728).
-    expect(boardSign?.x ?? 0).toBeGreaterThan(1088);
-    expect(boardSign?.y ?? 0).toBeGreaterThan(1520);
+  it("points a plaza ground label toward every away area, including Mandakini", () => {
+    const grounds = signs().filter(
+      (s) => prop(s, "kind") === "groundLabel" && (s.name ?? "").startsWith("ground_plaza_"),
+    );
+    const areas = grounds.map((s) => prop(s, "area"));
+    expect(areas).toContain("mandakini");
+    expect(areas).toContain("cauvery");
+    expect(areas).toContain("stage");
+    expect(areas).toContain("arcade");
+  });
+
+  it("places the arcade floor name inside the arcade hall interior", () => {
+    // Arcade hall interior: px x 1088-1392, y 1520-1728.
+    const arcadeFloor = signs().find(
+      (s) => prop(s, "kind") === "floorName" && prop(s, "area") === "arcade",
+    );
+    expect(arcadeFloor).toBeDefined();
+    expect(arcadeFloor?.x ?? 0).toBeGreaterThan(1088);
+    expect(arcadeFloor?.x ?? 0).toBeLessThan(1392);
+    expect(arcadeFloor?.y ?? 0).toBeGreaterThan(1520);
+    expect(arcadeFloor?.y ?? 0).toBeLessThan(1728);
   });
 });
 

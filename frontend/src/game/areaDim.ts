@@ -15,6 +15,7 @@
  * are the SAME rects that drive audio zones (room bounds) plus the Stage/arcade
  * interiors; there is no second registry.
  */
+import { AREA_NAMES, areaIdForRoom } from "@metaverse/shared";
 import { rectContains, type Rect } from "./zones";
 
 /** A named focus area: an id (room id / "stage" / "arcade") and its rectangle. */
@@ -78,6 +79,35 @@ export function dimBands(
     { x: rx1, y: ry0, width: mapWidth - rx1, height: ry1 - ry0 }, // right
   ];
   return bands.filter((b) => b.width > 0 && b.height > 0);
+}
+
+/**
+ * Collapse the dim's containing-area id (a room id like "1", or "stage" /
+ * "arcade") onto the named building-area id it belongs to (rooms 1-3 ⇒
+ * "mandakini", 4-6 ⇒ "cauvery"; "stage"/"arcade" pass through). Returns null
+ * outdoors or for any id that maps to no named area. This is the single bridge
+ * from the dim's per-room containment to the coarser AREA_NAMES grouping — the
+ * floor-painted names key off the SAME containment the dim already computed,
+ * never a second geometry test.
+ */
+export function focusAreaId(dimAreaId: string | null): string | null {
+  if (dimAreaId === null) return null;
+  const roomArea = areaIdForRoom(dimAreaId);
+  if (roomArea) return roomArea;
+  return AREA_NAMES.some((a) => a.id === dimAreaId) ? dimAreaId : null;
+}
+
+/**
+ * Whether a floor-painted area name is currently hidden (faded out): exactly
+ * when the player stands inside that same named area. `focusId` is the result of
+ * `focusAreaId` for the player's current containing area. WorldScene tweens each
+ * floor label's alpha toward `hidden ? 0 : 1` on every area change.
+ */
+export function floorNameHidden(
+  floorAreaId: string,
+  focusId: string | null
+): boolean {
+  return floorAreaId === focusId;
 }
 
 /**

@@ -15,12 +15,14 @@ import { CHARS, charForPlayer, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, arcadeOpenPayload, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
-import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, rectContains, type RoomArea, type Rect } from "../zones";
+import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, rectContains, type RoomArea } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
 import {
   areaDimAt,
   dimBands,
   dimTintColor,
+  focusAreaId,
+  floorNameHidden,
   DIM_BRIGHTNESS,
   DIM_FADE_MS,
   type DimArea,
@@ -129,6 +131,7 @@ export default class WorldScene extends Phaser.Scene {
   private interactables: InteractableDef[] = [];
   private currentInteractable: InteractableDef | null = null;
   private stageZone: Phaser.Geom.Rectangle | null = null;
+  private arcadeZone: Phaser.Geom.Rectangle | null = null;
   private presenterZone: Phaser.Geom.Rectangle | null = null;
   private inStage = false;
   private inPresenterSlot = false;
@@ -143,6 +146,10 @@ export default class WorldScene extends Phaser.Scene {
   private dimGfx: Phaser.GameObjects.Graphics | null = null;
   private dimAreaId: string | null = null;
   private dimTween: Phaser.Tweens.Tween | null = null;
+  // Floor-painted area names (PRD 24.1): a large label inside each named area,
+  // depth below players/furniture, faded out while the local player is inside
+  // that same area (visibility decided by game/areaDim.floorNameHidden).
+  private floorNames: { areaId: string; text: Phaser.GameObjects.Text }[] = [];
   private mapPixels = { width: 0, height: 0 };
   private enteredRooms = new Set<string>();
   private currentDoor: string | null = null;
@@ -387,6 +394,7 @@ export default class WorldScene extends Phaser.Scene {
       const zoneType = prop(o, "zoneType");
       if (zoneType === "stage") this.stageZone = rectOf(o);
       else if (zoneType === "presenter") this.presenterZone = rectOf(o);
+      else if (zoneType === "arcade") this.arcadeZone = rectOf(o);
     }
   }
 
@@ -427,17 +435,16 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * Zep-style wayfinding signage (PRD 24): no floating sprites. Two flat, crisp,
-   * text-only forms authored in the map's `signs` object layer, so nothing ever
-   * occludes an avatar:
+   * Zep-style wayfinding signage (PRD 24 / 24.1): no floating sprites, nothing
+   * that occludes an avatar. Two flat, crisp, text-only forms authored in the
+   * map's `signs` object layer, both drawn BELOW players/furniture (walkable):
    *  - `groundLabel` — directional text + arrow glyph painted FLAT on the paving
-   *    at junctions, at a depth below players/furniture (walkable);
-   *  - `plaque` — a slim dark plaque mounted flush on a building facade above an
-   *    entrance, depth-sorted by its y so players in front render over it.
+   *    at junctions;
+   *  - `floorName` — the area's name painted large + bold on the floor inside the
+   *    area, faded out while the local player stands in that same area.
    * The label text comes from the shared AREA_NAMES registry (`area` id →
-   * `areaNameForId`), with a literal `text` fallback for non-area sub-labels
-   * (the arcade's "Board Games" corner), so renaming an area never touches art.
-   * Signs are decorative — no collision, no gameplay wiring.
+   * `areaNameForId`), with a literal `text` fallback for non-area sub-labels,
+   * so renaming an area never touches art. Signs are decorative — no collision.
    */
   private buildSigns(map: Phaser.Tilemaps.Tilemap) {
     const signObjs = map.getObjectLayer("signs")?.objects ?? [];
@@ -447,10 +454,10 @@ export default class WorldScene extends Phaser.Scene {
       if (!label) continue;
       const x = o.x ?? 0;
       const y = o.y ?? 0;
-      if (prop(o, "kind") === "groundLabel") {
-        this.buildGroundLabel(x, y, label, prop(o, "dir"));
+      if (prop(o, "kind") === "floorName" && area) {
+        this.buildFloorName(x, y, label, area);
       } else {
-        this.buildPlaque(x, y, label);
+        this.buildGroundLabel(x, y, label, prop(o, "dir"));
       }
     }
   }
@@ -474,26 +481,25 @@ export default class WorldScene extends Phaser.Scene {
       .setDepth(SIGN_GROUND_DEPTH);
   }
 
-  /** A slim dark rounded plaque with light text, mounted flush on the facade.
-   *  Depth = y so a player standing in front (larger y) renders over it. */
-  private buildPlaque(x: number, y: number, label: string) {
-    const txt = this.add
+  /** The area's name painted large + bold directly on the floor, with a light
+   *  halo so it reads on any floor tile. Drawn at a low depth so players and
+   *  furniture (depth = y) always walk OVER it — it never occludes anyone. Kept
+   *  in `this.floorNames` so `updateAreaDim` can fade it out while the player is
+   *  inside this same area. */
+  private buildFloorName(x: number, y: number, label: string, areaId: string) {
+    const text = this.add
       .text(x, y, label, {
         fontFamily: CANVAS_FONT_FAMILY,
-        fontSize: "10px",
-        color: "#f4ead6",
+        fontSize: "22px",
+        fontStyle: "bold",
+        color: "#37322a",
         align: "center",
         resolution: 2,
       })
+      .setStroke("#f5eeda", 6)
       .setOrigin(0.5, 0.5)
-      .setDepth(y + 0.1);
-    const w = txt.width + 12;
-    const h = txt.height + 6;
-    const g = this.add.graphics().setDepth(y);
-    g.fillStyle(0x232733, 0.94);
-    g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
-    g.lineStyle(1, 0x3a4258, 0.9);
-    g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+      .setDepth(SIGN_GROUND_DEPTH);
+    this.floorNames.push({ areaId, text });
   }
 
   /** A slow, subtle pivot from the base so plants/trees sway in a breeze. */
@@ -579,8 +585,17 @@ export default class WorldScene extends Phaser.Scene {
         },
       });
     }
-    const arcade = arcadeAreaRect(map);
-    if (arcade) this.dimAreas.push({ id: "arcade", rect: arcade });
+    if (this.arcadeZone) {
+      this.dimAreas.push({
+        id: "arcade",
+        rect: {
+          x: this.arcadeZone.x,
+          y: this.arcadeZone.y,
+          width: this.arcadeZone.width,
+          height: this.arcadeZone.height,
+        },
+      });
+    }
 
     this.dimGfx = this.add
       .graphics()
@@ -599,6 +614,7 @@ export default class WorldScene extends Phaser.Scene {
     const state = areaDimAt(this.dimAreas, fx, fy);
     if (state.areaId === this.dimAreaId) return;
     this.dimAreaId = state.areaId;
+    this.updateFloorNames(state.areaId);
     const gfx = this.dimGfx;
     if (!gfx) return;
     if (state.active && state.areaRect) {
@@ -611,6 +627,27 @@ export default class WorldScene extends Phaser.Scene {
       this.fadeDim(1);
     } else {
       this.fadeDim(0);
+    }
+  }
+
+  /**
+   * Cross-fade the floor-painted area names as the player's containing area
+   * changes: a name fades OUT (~300ms) while the player is inside that same area
+   * and back IN when they leave. The visible/hidden decision is the pure
+   * `floorNameHidden` (keyed off the SAME containment the dim computed) — this is
+   * only the alpha tween.
+   */
+  private updateFloorNames(dimAreaId: string | null) {
+    const focusId = focusAreaId(dimAreaId);
+    for (const fn of this.floorNames) {
+      const target = floorNameHidden(fn.areaId, focusId) ? 0 : 1;
+      if (fn.text.alpha === target) continue;
+      this.tweens.add({
+        targets: fn.text,
+        alpha: target,
+        duration: DIM_FADE_MS,
+        ease: "Sine.easeInOut",
+      });
     }
   }
 
@@ -804,9 +841,14 @@ export default class WorldScene extends Phaser.Scene {
         h: this.stageZone.height,
       });
     }
-    const arcade = arcadeAreaRect(map);
-    if (arcade) {
-      areas.push({ id: "arcade", x: arcade.x, y: arcade.y, w: arcade.width, h: arcade.height });
+    if (this.arcadeZone) {
+      areas.push({
+        id: "arcade",
+        x: this.arcadeZone.x,
+        y: this.arcadeZone.y,
+        w: this.arcadeZone.width,
+        h: this.arcadeZone.height,
+      });
     }
     bus.emit("world-info", {
       width: map.widthInPixels,
@@ -1431,31 +1473,6 @@ function rectOf(
   dh = 0
 ): Phaser.Geom.Rectangle {
   return new Phaser.Geom.Rectangle(o.x ?? 0, o.y ?? 0, o.width || dw, o.height || dh);
-}
-
-/**
- * The arcade hall's interior rectangle: the padded bounding box of the map's
- * `arcade` interactables. Used both for the HUD map's "Game Arcade" label and as
- * a focus area for the PRD-24 dim, so the two can't drift. Null when the map has
- * no arcade cabinets.
- */
-function arcadeAreaRect(map: Phaser.Tilemaps.Tilemap): Rect | null {
-  const arcadeObjs = (map.getObjectLayer("interactables")?.objects ?? []).filter((o) =>
-    o.properties?.some(
-      (p: { name: string; value: unknown }) =>
-        p.name === "interactType" && p.value === "arcade"
-    )
-  );
-  if (arcadeObjs.length === 0) return null;
-  const pad = 24;
-  const x = Math.min(...arcadeObjs.map((o) => o.x ?? 0)) - pad;
-  const y = Math.min(...arcadeObjs.map((o) => o.y ?? 0)) - pad;
-  return {
-    x,
-    y,
-    width: Math.max(...arcadeObjs.map((o) => (o.x ?? 0) + (o.width ?? 0))) + pad - x,
-    height: Math.max(...arcadeObjs.map((o) => (o.y ?? 0) + (o.height ?? 0))) + pad - y,
-  };
 }
 
 function prop(o: Phaser.Types.Tilemaps.TiledObject, name: string): string | undefined {
