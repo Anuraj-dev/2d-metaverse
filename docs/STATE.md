@@ -13,7 +13,7 @@
 - QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`; 3 stale hyprverse tabs open in Raja's Chrome; screenshots in the session scratchpad `shots/`.
 
 ## Status
-- **Shipped this session (overnight 2026-07-09):** PR #76 (PRD 21 audio feel — 500ms in-zone ramp, instant zone cuts, calm music w/ silence gaps) and PR #77 (PRD 22 naming & wayfinding — shared AREA_NAMES + `roomDisplayName()`, generator-authored banners/signposts/Board-Games sign, board tables moved into Game Arcade, named toast/chat-tab/knock/admin surfaces, seed derives names from shared). Both codex-reviewed (1 blocking finding on #77: seed name literals — fixed by a Fable fix agent, re-approved) and merged on ✅ + green CI. FE auto-deployed (Vercel) + backend deployed (workflow_run chain) — prod runs `4acf21f`.
+- **Shipped this session (overnight 2026-07-09):** PR #76 (PRD 21 audio feel — 500ms in-zone ramp, instant zone cuts, calm music w/ silence gaps) and PR #77 (PRD 22 naming & wayfinding — shared AREA_NAMES + `roomDisplayName()`, generator-authored signage (reworked to zep-style plaques/ground labels in PRD 24), board tables moved into Game Arcade, named toast/chat-tab/knock/admin surfaces, seed derives names from shared). Both codex-reviewed (1 blocking finding on #77: seed name literals — fixed by a Fable fix agent, re-approved) and merged on ✅ + green CI. FE auto-deployed (Vercel) + backend deployed (workflow_run chain) — prod runs `4acf21f`.
 - **Full prod browser E2E pass done (2026-07-09): ALL PASS** — signup/world, PRD 22 naming everywhere, board tables (sit/offer/accept/moves) in arcade, meetings (countdown/grid/chat-toggle/unread/screen-share end-to-end), knock naming, help overlay, audio settings. Only findings: the 4 items above.
 - **Sonnet experiment PAUSED** (Raja, 2026-07-09 evening): coding → Opus 4.8 medium (`opus-coder`), review/heavy backend → codex, scouts/browser → Sonnet **medium** (never `sonnet-scout-low`). Resume only on Raja's word. Data so far: PRD 21 Sonnet-high coder ≈ Opus cost; PRD 22 Opus-medium coder: 178k tok/120 tools, 1 codex finding, 1 fix round.
 - Zero open PRs. Open issues: #65–#68 (all shipped, awaiting close).
@@ -22,7 +22,7 @@
 - Wire contract (zod schemas + types + constants incl. AREA_NAMES, `roomDisplayName`) -> `shared/src/` (`socket.ts`, `rest.ts`, `constants.ts`, `games/`)
 - Backend (Express + Socket.IO + Postgres/Redis/LiveKit) -> `backend/src/` (`app.ts`, `socket.ts`, `meeting.ts`/`meeting-manager.ts`, `boardMatch.ts`/`board-manager.ts`, `room-admin*.ts`, `stage.ts`, `seed.ts`, `logger.ts`)
 - Frontend (React + Phaser + Vite) -> `frontend/src/` (`game/` pure modules; `WorldScene.ts` glue incl. `buildSigns`; `media/` — `livekit.ts`, `mediaLogic.ts` (ramp), `soundMixer.ts`; `ui/` — `MeetingGrid`, `RoomToast`, `ChatBox`, `HelpOverlay`)
-- Map/asset generation -> `frontend/scripts/` (`gen_campus.py` — signs layer + board-table placement, `gen_signs.py`, `curate_audio.py`)
+- Map/asset generation -> `frontend/scripts/` (`gen_campus.py` — signs layer (plaque/groundLabel) + board-table placement, `curate_audio.py`)
 - Deploy -> `deploy/`, `.github/workflows/` · Prod: FE **https://space.raja-dev.me** (Vercel), BE EC2 compose (`api.space.raja-dev.me`, LiveKit `livekit.space.raja-dev.me`)
 
 ## Stack & run
