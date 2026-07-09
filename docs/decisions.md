@@ -67,3 +67,9 @@
 
 ## 2026-07-09 — Browser QA runs on headless Playwright, not Claude-in-Chrome
 **Why:** Claude-in-Chrome automates background tabs (`visibilityState: hidden`), which pauses Phaser's rAF loop — avatars can't move, so world interactions are untestable. Headless Playwright pages (repo's own tooling, fake media devices) against prod work identically to the e2e suite. Also: prod is reachable ONLY via https://space.raja-dev.me — backend CORS rejects the `*.vercel.app` deployment URLs, and `2d-metaverse.vercel.app` is an unrelated third-party app (rejected: testing via Vercel URLs).
+
+## 2026-07-09 — Signage: no plaque signs; floor-painted fading names
+**Why:** Raja rejected facade plaques (occlude avatars, block doors, visual noise). Wayfinding is now ground direction labels (text+arrow) + bold area names painted on interior floors that fade out when the player is inside that area (containment reused from areaDim — no second registry). Alternative rejected: sprite/plaque signage of any kind.
+
+## 2026-07-09 — LiveKit server pinned v1.9.12 (not latest major line jump)
+**Why:** prod v1.9.1 predates the /rtc/v1 signaling path (added v1.9.10; v1.9.10 has a panic bug, v1.9.11/12 fix it) that livekit-client 2.19 requires. v1.9.12 = smallest safe jump with identical config keys; deploy script now pulls livekit so pin bumps actually roll out.
