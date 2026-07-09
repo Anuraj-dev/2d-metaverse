@@ -125,7 +125,7 @@ export DOCKER_GID
 
 export BACKEND_IMAGE=$IMAGE
 if [[ "$SKIP_PULL" != "1" ]]; then
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull backend setup
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull backend setup livekit
 fi
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis livekit
 
