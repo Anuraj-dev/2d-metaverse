@@ -68,10 +68,15 @@ export default function Minimap() {
     };
   }, []);
 
-  // Opening captures movement in the scene; closing hands it back.
+  // Opening captures movement in the scene; closing hands it back. The emitted
+  // `map-open` also closes the Settings panel (mutually-exclusive HUD overlays).
   useEffect(() => {
     bus.emit(open ? "map-open" : "map-close");
   }, [open]);
+
+  // …and the reverse: opening Settings closes the map, so they never stack
+  // (issue #79). Settings emits `settings-open` only on its open transition.
+  useEffect(() => bus.on("settings-open", () => setOpen(false)), []);
 
   // Keyboard shortcut: M toggles the fullscreen map while playing.
   useEffect(() => {

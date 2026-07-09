@@ -6,6 +6,10 @@
   --muted: #9aa3b5;
   --accent: #6ea8fe;
   --accent2: #7ee787;
+  /* Vertical space the bottom-center global control bar occupies (its 18px
+     offset + ~58px height + a small gap). Overlays that reach the bottom center
+     reserve this so nothing sits under the bar (issue #79). */
+  --control-bar-safe: 92px;
 }
 
 * { box-sizing: border-box; }
@@ -1616,7 +1620,11 @@ html, body, #root {
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 18px;
+  /* Reserve room at the bottom for the always-present global control bar
+     (bottom:18px + ~58px tall + breathing room) so the focus-mode filmstrip and
+     the grid's bottom row never sit under it (issue #79). Sized from the bar's
+     own dimensions, not a per-viewport magic number, so it holds at any size. */
+  padding: 18px 18px var(--control-bar-safe, 92px);
   gap: 14px;
 }
 .meeting-topbar {
