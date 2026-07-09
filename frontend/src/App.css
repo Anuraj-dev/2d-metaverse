@@ -1188,6 +1188,12 @@ html, body, #root {
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
+/* Help overlay docks to the chat panel's left column (left: 16px) instead of
+   centring, so it reads as a HUD cheat-sheet rather than a blocking modal. */
+.modal-backdrop.help-backdrop {
+  justify-content: flex-start;
+  padding-left: 16px;
+}
 .help-modal {
   background: var(--panel);
   border: 1px solid var(--line);

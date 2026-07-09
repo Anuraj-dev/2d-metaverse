@@ -4,9 +4,13 @@ import { CircleHelp } from "lucide-react";
 const CONTROLS: [string, string][] = [
   ["Move", "WASD / Arrow keys"],
   ["Run", "Hold Shift"],
-  ["Sit / Stand", "E — when near a chair"],
+  ["Interact", "E — sit, stand, doors, tables, arcade"],
   ["Enter a room", "Walk to its door, type the key"],
+  ["Fullscreen map", "M (Esc to close)"],
+  ["Chat", "Enter or T — / for a command"],
   ["Find someone", "Open the roster (top-right), click a name"],
+  ["Arcade games", "Arrow keys / WASD — Space to flap"],
+  ["Close overlay", "Escape"],
   ["Help", "Press ?"],
 ];
 
@@ -45,7 +49,10 @@ export default function HelpOverlay() {
         </button>
       )}
       {open && (
-        <div className="modal-backdrop" onClick={() => setOpen(false)}>
+        <div
+          className="modal-backdrop help-backdrop"
+          onClick={() => setOpen(false)}
+        >
           <div className="help-modal" onClick={(e) => e.stopPropagation()}>
             <h3>Controls</h3>
             <ul className="help-list">
