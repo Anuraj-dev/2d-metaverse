@@ -2,15 +2,14 @@
 > Gather/Zep-style 2D metaverse (app name: **hyprverse**): walk a styled office campus, proximity voice/video, key-gated meeting rooms, arcade + board-game tables. · Last checkpoint: 2026-07-09 (overnight autonomous run)
 
 ## 🚧 In progress / next
-- **PRD queue is EMPTY — PRDs 18–23 all shipped and prod-verified.** Next: triage the QA findings below with Raja and pick the next PRD.
-- **QA findings to file/fix** (classifier blocked `gh issue create`; Raja to file or authorize):
-  1. **[Medium] Prod LiveKit server older than client SDK** — every client 404s on `wss://livekit.space.raja-dev.me/rtc/v1` + `/rtc/v1/validate` ("v1 RTC path not found… Retrying"); SDK falls back to legacy `/rtc` (voice/share DID work) but it's a per-session retry loop and one SDK bump from breakage. Fix: upgrade LiveKit server on EC2 or pin the client SDK.
-  2. [Low] Settings panel and fullscreen Campus map (M) stack/overlap when both open.
-  3. [Low] Meeting control bar overlaps bottom-center filmstrip tiles while a screen share is focused (1280×800).
-  4. [Docs] Prod frontend URL undocumented — it's **https://space.raja-dev.me** (only origin backend CORS allows; `*.vercel.app` URLs get CORS-blocked; `2d-metaverse.vercel.app` is an UNRELATED third-party app). Add to deploy/README.md.
-- Close issues #65, #66 (PR #76), #67 (PR #77), #68 on GitHub — permission classifier blocks the agent from closing/creating issues; Raja closes or adds a settings allowance.
+- **TWO OPEN PRs awaiting the codex review → merge loop** (review from `gh pr diff` + gate on `gh pr checks`; merge on `✅ READY FOR MERGE` + green CI — standing authorization):
+  - **PR #82** — help overlay fix: accurate controls list (incl. "M — fullscreen map", E interact, chat keys, Escape; stale "Sit/Stand" row removed), panel left-aligned to the chat column via a scoped `help-backdrop` class. RTL test added.
+  - **PR #83** — **PRD 24 (#81)**: zep-style signage rework (wooden banner/post sprites + `gen_signs.py` DELETED; flat `groundLabel` text+arrow painted under players at junctions; slim dark `plaque` flush on facades; names via shared `AREA_NAMES`, literal-text fallback for the "Board Games" corner) + area focus dim (pure `game/areaDim.ts` + vitest; ~75% MULTIPLY dim outside the current named area — roomBounds + Stage + arcade hall, same rects as audio zones — 300ms fade, composed with day/night; outdoors no dim).
+  - After merging #83: **Raja should visually check the new signage + dim on prod** (aesthetic call — he rejected the PRD 22 look, screenshots drove PRD 24).
+- QA/bug backlog (issues filed): **#78** LiveKit server older than client SDK (`/rtc/v1` 404 retry loop — medium, fix next), **#79** overlay stacking (settings vs map; meeting bar vs filmstrip), **#80** document prod URL.
+- Close shipped issues #65, #66, #67, #68 — classifier blocks agents from `gh issue close`; Raja closes.
 - CLAUDE.md cleanup still pending: model-delegation section expired 2026-07-06.
-- QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`; 3 stale hyprverse tabs open in Raja's Chrome; screenshots in the session scratchpad `shots/`.
+- QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`; screenshots in the 2026-07-09 session scratchpad `shots/`.
 
 ## Status
 - **Shipped this session (overnight 2026-07-09):** PR #76 (PRD 21 audio feel — 500ms in-zone ramp, instant zone cuts, calm music w/ silence gaps) and PR #77 (PRD 22 naming & wayfinding — shared AREA_NAMES + `roomDisplayName()`, generator-authored banners/signposts/Board-Games sign, board tables moved into Game Arcade, named toast/chat-tab/knock/admin surfaces, seed derives names from shared). Both codex-reviewed (1 blocking finding on #77: seed name literals — fixed by a Fable fix agent, re-approved) and merged on ✅ + green CI. FE auto-deployed (Vercel) + backend deployed (workflow_run chain) — prod runs `4acf21f`.
@@ -44,4 +43,5 @@
 - **Permission classifier blocks the agent from `gh issue create`/`close`** — hand issue ops to Raja or add a settings rule.
 - **Browser QA of the world**: Claude-in-Chrome tabs are hidden → Phaser's rAF pauses, avatars can't move; drive prod with headless Playwright pages (fake media) instead. Prod URL is only `space.raja-dev.me` (CORS).
 - E2E flakes (pre-existing): per-IP auth limiter 429 on the last spec as the serial suite grows; `arcade.spec.ts` `near-interactable` timeout under runner contention.
+- **Parallel coders MUST get isolated worktrees** — two agents sharing the main checkout collided on 2026-07-09 (a PRD-24 commit landed on the help-overlay branch; recovered by cherry-pick + reset). One coder at a time in the main checkout, or spawn with worktree isolation.
 - Stacked PRs: merging+deleting a base auto-closes the child. Build shared first. Merging to main auto-deploys FE (Vercel) and chains the backend deploy off Backend CI (`workflow_run`). Backend Docker context is repo root. Every asset needs an ATTRIBUTIONS.md row. No `console.*` in backend/src.
