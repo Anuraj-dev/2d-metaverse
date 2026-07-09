@@ -678,46 +678,65 @@ def board_table(table_id, game, label, cx, ty):
 board_table("ttt-1", "tictactoe", "Tic-Tac-Toe", 72, 102)
 board_table("c4-1",  "connect4",  "Connect 4",   72, 105)
 
-# ── SIGNAGE / WAYFINDING (PRD 22) ─────────────────────────────────────────────
-# In-world naming: building name banners over each area's entrance and a small
-# set of directional signposts at major junctions. The text mirrors the shared
-# AREA_NAMES registry (the single source of truth) — keep these strings aligned
-# with `shared/src/constants.ts` if a name ever changes. Signs are decorative,
-# non-colliding objects; WorldScene renders the wooden sprite (f_sign_banner /
-# f_sign_post) plus a crisp text label pulled from each object's `text` property.
+# ── SIGNAGE / WAYFINDING (PRD 24) ─────────────────────────────────────────────
+# Zep-style in-world naming: NO floating sprites. Two flat, text-only forms that
+# never occlude an avatar (WorldScene renders both as crisp runtime text):
+#   - groundLabel: directional text + arrow glyph painted FLAT on the paving at
+#     junctions, at a depth below players/furniture (walkable);
+#   - plaque: a slim dark plaque mounted flush on a building facade above an
+#     entrance, depth-sorted by y so players in front render over it.
+# The label text is NOT baked here — each object carries an `area` id and the
+# scene resolves it through the shared AREA_NAMES registry (the single source of
+# truth via `areaNameForId`), so renaming an area never touches art or this file.
+# The lone exception is the arcade's "Board Games" sub-corner, which is not a
+# top-level area and so carries a literal `text` fallback.
 signs_objs = []
 
 
-def sign(name, variant, tx, ty, text):
-    """A wayfinding sign at tile (tx,ty). `variant` picks the sprite:
-    "banner" (wide building nameplate) or "post" (directional signpost). The
-    point is the sprite's ground anchor (bottom-centre); text is baked as a
-    property, not into the PNG, so names stay crisp and registry-aligned."""
+def _sign(name, kind, tx, ty, props):
     signs_objs.append({
         "id": 60000 + len(signs_objs), "name": name,
-        "x": tx * TS + TS // 2, "y": ty * TS + TS,
+        "x": tx * TS + TS // 2, "y": ty * TS + TS // 2,
         "width": 0, "height": 0,
         "point": True, "rotation": 0, "type": "", "visible": True,
-        "properties": [
-            {"name": "variant", "type": "string", "value": variant},
-            {"name": "text",    "type": "string", "value": text},
-        ],
+        "properties": [{"name": "kind", "type": "string", "value": kind}] + props,
     })
 
 
-# Building name banners over each entrance, on the side players approach from.
-sign("banner_cauvery",  "banner", 54, 25, "Cauvery Hostel")    # HQ south doors (rooms 4-6)
-sign("banner_stage",    "banner", 98, 45, "Stage")             # auditorium south door
-sign("banner_mandakini","banner", 31, 99, "Mandakini Hostel")  # hostel north facade (rooms 1-3)
-sign("banner_arcade",   "banner", 79, 93, "Game Arcade")       # arcade hall north doorway
-# "Board Games" corner sign inside the arcade, by the two relocated tables.
-sign("sign_boardgames", "banner", 72, 100, "Board Games")
+def plaque(name, tx, ty, area=None, text=None):
+    """A slim building-name plaque flush on the facade at tile (tx,ty). Pass an
+    `area` id (resolved via AREA_NAMES) or, for a non-area sub-label, `text`."""
+    props = []
+    if area is not None:
+        props.append({"name": "area", "type": "string", "value": area})
+    if text is not None:
+        props.append({"name": "text", "type": "string", "value": text})
+    _sign(name, "plaque", tx, ty, props)
 
-# Directional signposts at major junctions (arrows point the way).
-sign("post_plaza", "post", 66, 47,
-     "Cauvery Hostel  ↑\nStage  →\nGame Arcade  ↓")
-sign("post_south", "post", 81, 90, "Game Arcade  ↓")
-sign("post_hostel", "post", 36, 92, "Mandakini Hostel  ↓")
+
+def ground_label(name, tx, ty, area, direction):
+    """Flat directional ground text at a junction: names `area` (via AREA_NAMES)
+    with an arrow glyph in `direction` (up/down/left/right)."""
+    _sign(name, "groundLabel", tx, ty, [
+        {"name": "area", "type": "string", "value": area},
+        {"name": "dir",  "type": "string", "value": direction},
+    ])
+
+
+# Building name plaques flush on each entrance facade (names from AREA_NAMES).
+plaque("plaque_cauvery",   54, 25, area="cauvery")    # HQ south doors (rooms 4-6)
+plaque("plaque_stage",     98, 45, area="stage")      # auditorium south door
+plaque("plaque_mandakini", 31, 99, area="mandakini")  # hostel north facade (rooms 1-3)
+plaque("plaque_arcade",    79, 93, area="arcade")     # arcade hall north doorway
+# "Board Games" corner plaque inside the arcade, by the two relocated tables.
+plaque("plaque_boardgames", 72, 100, text="Board Games")
+
+# Directional ground labels at major junctions (arrows point the way).
+ground_label("ground_plaza_cauvery", 64, 45, "cauvery", "up")
+ground_label("ground_plaza_stage",   69, 47, "stage",   "right")
+ground_label("ground_plaza_arcade",  64, 50, "arcade",  "down")
+ground_label("ground_south_arcade",  81, 90, "arcade",  "down")
+ground_label("ground_hostel",        36, 92, "mandakini", "down")
 
 # ── Tilemap JSON ──────────────────────────────────────────────────────────
 tilemap = {
@@ -798,5 +817,5 @@ print(f"  furniture objects: {len(furniture)}")
 print(f"  rooms: {len(door_zones)} doorZones, {len(room_bounds)} roomBounds, {len(seats_objs)} seats")
 print(f"  interactables: {len(interactables_objs)} objects")
 print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen)")
-print(f"  signs: {len(signs_objs)} objects (banners + directional posts)")
+print(f"  signs: {len(signs_objs)} objects (facade plaques + ground labels)")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")

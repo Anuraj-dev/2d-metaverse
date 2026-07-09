@@ -592,15 +592,27 @@ Place names are owned by one registry — `AREA_NAMES` in `shared/src/constants.
 (`roomDisplayName(id)` builds "Mandakini Hostel · Room 1" etc.). Every UI surface
 that shows a room (entry toast `RoomToast`, chat Room tab, knock card, room-admin
 panel) resolves names through it, and the backend seed (`backend/src/seed.ts`)
-aligns `rooms.name` to the same strings. In-world signage is authored in
-`scripts/gen_campus.py`: a `signs` object layer (`sign(name, variant, tx, ty,
-text)`) carries building banners + directional posts; `WorldScene.buildSigns`
-draws the wooden sprite plus a crisp text label (text is a map property, not baked
-into art, so a rename never re-exports a PNG). Sign sprites come from
-`scripts/gen_signs.py` (`f_sign_banner` / `f_sign_post`, + BootScene keys + an
-ATTRIBUTIONS row). **To rename an area or add a sign:** edit `AREA_NAMES`, mirror
-the string in `gen_campus.py`'s `sign(...)` calls, regenerate the map, and keep
-`shared` constants.test + `game/maps.test.ts` (signs layer) green.
+aligns `rooms.name` to the same strings. In-world signage (PRD 24, zep-style) is
+authored in `scripts/gen_campus.py`'s `signs` object layer as flat, text-only
+objects — NO sprites, so nothing occludes an avatar: `plaque(name, tx, ty, area=…)`
+mounts a slim dark name plaque flush on a building facade, and
+`ground_label(name, tx, ty, area, dir)` paints directional text + an arrow glyph
+flat on the paving at a junction. Each object carries an `area` id (not a baked
+string); `WorldScene.buildSigns` resolves it through `areaNameForId` and renders
+the plaque (rounded rect, depth = y) or the ground label (dark text + light halo,
+depth below players). The lone non-area sub-label (the arcade's "Board Games"
+corner) uses a literal `text` fallback. **To rename an area or add a sign:** edit
+`AREA_NAMES`, add/adjust a `plaque(...)`/`ground_label(...)` call in
+`gen_campus.py` (referencing the area id), regenerate the map, and keep `shared`
+constants.test + `game/maps.test.ts` (signs layer) green.
+
+**Area focus dim (PRD 24):** standing inside a named area (room interior, Stage,
+or arcade hall — the same rects that drive audio zones, no second registry)
+subtly dims everything outside it to ~75% brightness with a ~300ms fade, composed
+onto the day/night tint. The decision logic (which area contains the player, and
+the band geometry to darken) is the pure `game/areaDim.ts` (+ vitest);
+`WorldScene` only samples the point each frame and draws/fades a world-space
+multiply overlay. Outdoors ⇒ no dim.
 
 ### Tests
 

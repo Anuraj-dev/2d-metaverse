@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { BoardUpdatePayload, BoardErrorPayload, Dir, PlayerState } from "@metaverse/shared";
-import { SERVER_EVENTS, AREA_NAMES, roomDisplayName } from "@metaverse/shared";
+import { SERVER_EVENTS, AREA_NAMES, roomDisplayName, areaNameForId } from "@metaverse/shared";
 import { speakingRingIds } from "../speakingRings";
 import {
   boardSeatOccupants,
@@ -15,8 +15,16 @@ import { CHARS, charForPlayer, isCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, arcadeOpenPayload, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
-import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, rectContains, type RoomArea } from "../zones";
+import { findDoor, findSeat, findRoomArea, hasExitedRoom, inZone, rectContains, type RoomArea, type Rect } from "../zones";
 import { zoneAt, roomAreasFromObjects } from "../audioZones";
+import {
+  areaDimAt,
+  dimBands,
+  dimTintColor,
+  DIM_BRIGHTNESS,
+  DIM_FADE_MS,
+  type DimArea,
+} from "../areaDim";
 import { seatTransition } from "../seatDoor";
 import { doorPassable, shouldAnnounceKnock, type RoomOpenState } from "../roomAccess";
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
@@ -40,6 +48,18 @@ const PORTAL_FADE_MS = PORTAL_MS * 3;
 // A renderer snapshot is asynchronous; if a driver quirk stalls it, the portal
 // must still hand off (with no backdrop image) rather than hang the sequencer.
 const SNAPSHOT_TIMEOUT_MS = 400;
+
+// Wayfinding signage (PRD 24). Ground labels paint flat on the paving below
+// everything that moves (players/furniture depth = y); the dim overlay sits just
+// under the camera-locked day/night tint (depth 6000) so both multiplies compose.
+const SIGN_GROUND_DEPTH = 2;
+const AREA_DIM_DEPTH = 5999;
+const ARROW_GLYPHS: Record<string, string> = {
+  up: "↑",
+  down: "↓",
+  left: "←",
+  right: "→",
+};
 
 interface Remote {
   sprite: Phaser.GameObjects.Sprite;
@@ -116,6 +136,14 @@ export default class WorldScene extends Phaser.Scene {
   private onAir: OnAirState = initOnAir();
   private furniture: { key: string; x: number; y: number; solid: boolean }[] = [];
   private roomAreas: RoomArea[] = [];
+  // Area focus dim (PRD 24): the named areas whose interior spotlights (rooms +
+  // stage + arcade hall), a world-space multiply overlay that darkens everything
+  // outside the current area, and the id of the area currently in focus.
+  private dimAreas: DimArea[] = [];
+  private dimGfx: Phaser.GameObjects.Graphics | null = null;
+  private dimAreaId: string | null = null;
+  private dimTween: Phaser.Tweens.Tween | null = null;
+  private mapPixels = { width: 0, height: 0 };
   private enteredRooms = new Set<string>();
   private currentDoor: string | null = null;
   private currentSeat: Seat | null = null;
@@ -234,6 +262,7 @@ export default class WorldScene extends Phaser.Scene {
     this.buildFurniture();
     this.buildSigns(map);
     this.setupAmbience(map);
+    this.setupAreaDim(map);
     this.emitWorldInfo(map);
 
     this.playerLabel = this.makeLabel("You");
@@ -398,38 +427,73 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * Wayfinding signage (PRD 22): building name banners + directional posts
-   * authored in the map's `signs` object layer. Each object anchors a wooden
-   * sprite at its ground point and a crisp text label drawn from its `text`
-   * property (kept aligned with the shared AREA_NAMES registry). Signs are
-   * decorative — no collision, no gameplay wiring.
+   * Zep-style wayfinding signage (PRD 24): no floating sprites. Two flat, crisp,
+   * text-only forms authored in the map's `signs` object layer, so nothing ever
+   * occludes an avatar:
+   *  - `groundLabel` — directional text + arrow glyph painted FLAT on the paving
+   *    at junctions, at a depth below players/furniture (walkable);
+   *  - `plaque` — a slim dark plaque mounted flush on a building facade above an
+   *    entrance, depth-sorted by its y so players in front render over it.
+   * The label text comes from the shared AREA_NAMES registry (`area` id →
+   * `areaNameForId`), with a literal `text` fallback for non-area sub-labels
+   * (the arcade's "Board Games" corner), so renaming an area never touches art.
+   * Signs are decorative — no collision, no gameplay wiring.
    */
   private buildSigns(map: Phaser.Tilemaps.Tilemap) {
     const signObjs = map.getObjectLayer("signs")?.objects ?? [];
     for (const o of signObjs) {
-      const text = prop(o, "text");
-      if (!text) continue;
-      const variant = prop(o, "variant") === "post" ? "post" : "banner";
+      const area = prop(o, "area");
+      const label = (area ? areaNameForId(area) : undefined) ?? prop(o, "text");
+      if (!label) continue;
       const x = o.x ?? 0;
       const y = o.y ?? 0;
-      // Sprites anchor at the ground (bottom-centre) and depth-sort by y like
-      // other props; the label rides on the plank face.
-      const img = this.add
-        .image(x, y, variant === "post" ? "f_sign_post" : "f_sign_banner")
-        .setOrigin(0.5, 1)
-        .setDepth(y);
-      const plankMidY = variant === "post" ? y - img.height + 12 : y - img.height / 2;
-      this.add
-        .text(x, plankMidY, text, {
-          fontFamily: CANVAS_FONT_FAMILY,
-          fontSize: "10px",
-          color: "#f4ead6",
-          align: "center",
-          resolution: 2,
-        })
-        .setOrigin(0.5, 0.5)
-        .setDepth(y + 1);
+      if (prop(o, "kind") === "groundLabel") {
+        this.buildGroundLabel(x, y, label, prop(o, "dir"));
+      } else {
+        this.buildPlaque(x, y, label);
+      }
     }
+  }
+
+  /** Directional ground text: dark label + arrow glyph painted flat on the
+   *  paving, with a light halo so it reads on both paving and grass. Drawn at a
+   *  low depth so players and furniture (depth = y) always render over it. */
+  private buildGroundLabel(x: number, y: number, label: string, dir: string | undefined) {
+    const arrow = ARROW_GLYPHS[dir ?? ""] ?? "";
+    const text = arrow ? `${label}  ${arrow}` : label;
+    this.add
+      .text(x, y, text, {
+        fontFamily: CANVAS_FONT_FAMILY,
+        fontSize: "11px",
+        color: "#3a352c",
+        align: "center",
+        resolution: 2,
+      })
+      .setStroke("#f2ecdd", 3)
+      .setOrigin(0.5, 0.5)
+      .setDepth(SIGN_GROUND_DEPTH);
+  }
+
+  /** A slim dark rounded plaque with light text, mounted flush on the facade.
+   *  Depth = y so a player standing in front (larger y) renders over it. */
+  private buildPlaque(x: number, y: number, label: string) {
+    const txt = this.add
+      .text(x, y, label, {
+        fontFamily: CANVAS_FONT_FAMILY,
+        fontSize: "10px",
+        color: "#f4ead6",
+        align: "center",
+        resolution: 2,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(y + 0.1);
+    const w = txt.width + 12;
+    const h = txt.height + 6;
+    const g = this.add.graphics().setDepth(y);
+    g.fillStyle(0x232733, 0.94);
+    g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 4);
+    g.lineStyle(1, 0x3a4258, 0.9);
+    g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 4);
   }
 
   /** A slow, subtle pivot from the base so plants/trees sway in a breeze. */
@@ -492,6 +556,75 @@ export default class WorldScene extends Phaser.Scene {
         blendMode: Phaser.BlendModes.ADD,
       })
       .setDepth(2500);
+  }
+
+  /**
+   * Area focus dim (PRD 24): collect the named focus areas (room interiors +
+   * stage + arcade hall — the same rects that drive audio zones, no second
+   * registry) and create the world-space multiply overlay used to darken
+   * everything outside the current area. The overlay starts clear; per-frame
+   * membership is sampled in `updateAreaDim`. Decisions live in `game/areaDim.ts`.
+   */
+  private setupAreaDim(map: Phaser.Tilemaps.Tilemap) {
+    this.mapPixels = { width: map.widthInPixels, height: map.heightInPixels };
+    this.dimAreas = this.roomAreas.map((a) => ({ id: a.roomId, rect: a.rect }));
+    if (this.stageZone) {
+      this.dimAreas.push({
+        id: "stage",
+        rect: {
+          x: this.stageZone.x,
+          y: this.stageZone.y,
+          width: this.stageZone.width,
+          height: this.stageZone.height,
+        },
+      });
+    }
+    const arcade = arcadeAreaRect(map);
+    if (arcade) this.dimAreas.push({ id: "arcade", rect: arcade });
+
+    this.dimGfx = this.add
+      .graphics()
+      .setDepth(AREA_DIM_DEPTH)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY)
+      .setAlpha(0);
+  }
+
+  /**
+   * Per-frame: when the focus area under the player's feet changes, redraw the
+   * dim bands around it and cross-fade the overlay in (entering an area) or out
+   * (stepping outdoors). Only the transition does work — a stationary player
+   * costs a cheap id comparison.
+   */
+  private updateAreaDim(fx: number, fy: number) {
+    const state = areaDimAt(this.dimAreas, fx, fy);
+    if (state.areaId === this.dimAreaId) return;
+    this.dimAreaId = state.areaId;
+    const gfx = this.dimGfx;
+    if (!gfx) return;
+    if (state.active && state.areaRect) {
+      gfx.clear();
+      gfx.fillStyle(dimTintColor(DIM_BRIGHTNESS), 1);
+      const { width, height } = this.mapPixels;
+      for (const b of dimBands(state.areaRect, width, height)) {
+        gfx.fillRect(b.x, b.y, b.width, b.height);
+      }
+      this.fadeDim(1);
+    } else {
+      this.fadeDim(0);
+    }
+  }
+
+  /** Cross-fade the dim overlay's alpha (0 clear .. 1 full dim) over ~300ms. */
+  private fadeDim(target: number) {
+    const gfx = this.dimGfx;
+    if (!gfx) return;
+    this.dimTween?.stop();
+    this.dimTween = this.tweens.add({
+      targets: gfx,
+      alpha: target,
+      duration: DIM_FADE_MS,
+      ease: "Sine.easeInOut",
+    });
   }
 
   private addSolid(
@@ -671,23 +804,9 @@ export default class WorldScene extends Phaser.Scene {
         h: this.stageZone.height,
       });
     }
-    const arcadeObjs = (map.getObjectLayer("interactables")?.objects ?? []).filter((o) =>
-      o.properties?.some(
-        (p: { name: string; value: unknown }) =>
-          p.name === "interactType" && p.value === "arcade"
-      )
-    );
-    if (arcadeObjs.length > 0) {
-      const pad = 24;
-      const x = Math.min(...arcadeObjs.map((o) => o.x ?? 0)) - pad;
-      const y = Math.min(...arcadeObjs.map((o) => o.y ?? 0)) - pad;
-      areas.push({
-        id: "arcade",
-        x,
-        y,
-        w: Math.max(...arcadeObjs.map((o) => (o.x ?? 0) + (o.width ?? 0))) + pad - x,
-        h: Math.max(...arcadeObjs.map((o) => (o.y ?? 0) + (o.height ?? 0))) + pad - y,
-      });
+    const arcade = arcadeAreaRect(map);
+    if (arcade) {
+      areas.push({ id: "arcade", x: arcade.x, y: arcade.y, w: arcade.width, h: arcade.height });
     }
     bus.emit("world-info", {
       width: map.widthInPixels,
@@ -909,6 +1028,9 @@ export default class WorldScene extends Phaser.Scene {
   private checkZones() {
     const fx = this.player.x;
     const fy = this.player.y + 8;
+
+    // Area focus dim (PRD 24): spotlight the named area the player is standing in.
+    this.updateAreaDim(fx, fy);
 
     // doors (PRD 14): approaching an un-entered room knocks — the server admits
     // (empty room / open door) or queues for the admin. Walking away withdraws it.
@@ -1309,6 +1431,31 @@ function rectOf(
   dh = 0
 ): Phaser.Geom.Rectangle {
   return new Phaser.Geom.Rectangle(o.x ?? 0, o.y ?? 0, o.width || dw, o.height || dh);
+}
+
+/**
+ * The arcade hall's interior rectangle: the padded bounding box of the map's
+ * `arcade` interactables. Used both for the HUD map's "Game Arcade" label and as
+ * a focus area for the PRD-24 dim, so the two can't drift. Null when the map has
+ * no arcade cabinets.
+ */
+function arcadeAreaRect(map: Phaser.Tilemaps.Tilemap): Rect | null {
+  const arcadeObjs = (map.getObjectLayer("interactables")?.objects ?? []).filter((o) =>
+    o.properties?.some(
+      (p: { name: string; value: unknown }) =>
+        p.name === "interactType" && p.value === "arcade"
+    )
+  );
+  if (arcadeObjs.length === 0) return null;
+  const pad = 24;
+  const x = Math.min(...arcadeObjs.map((o) => o.x ?? 0)) - pad;
+  const y = Math.min(...arcadeObjs.map((o) => o.y ?? 0)) - pad;
+  return {
+    x,
+    y,
+    width: Math.max(...arcadeObjs.map((o) => (o.x ?? 0) + (o.width ?? 0))) + pad - x,
+    height: Math.max(...arcadeObjs.map((o) => (o.y ?? 0) + (o.height ?? 0))) + pad - y,
+  };
 }
 
 function prop(o: Phaser.Types.Tilemaps.TiledObject, name: string): string | undefined {
