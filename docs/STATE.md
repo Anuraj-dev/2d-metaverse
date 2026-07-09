@@ -41,7 +41,7 @@
 - **Codex CLI**: account default model, `-c model_reasoning_effort=medium|high`, `--sandbox workspace-write -c sandbox_workspace_write.network_access=true`, FOREGROUND with generous timeout.
 - **`gh` has two accounts** — merge fails with a GraphQL permissions error if `24f2008153` is active; `gh auth switch -u Anuraj-dev` first.
 - **Permission classifier blocks the agent from `gh issue create`/`close`** — hand issue ops to Raja or add a settings rule.
-- **Browser QA of the world**: Claude-in-Chrome tabs are hidden → Phaser's rAF pauses, avatars can't move; drive prod with headless Playwright pages (fake media) instead. Prod URL is only `space.raja-dev.me` (CORS).
+- **Browser QA of the world**: Claude-in-Chrome tabs are hidden → Phaser's rAF pauses, avatars can't move; drive prod with headless Playwright pages (fake media) instead. Prod URL is only `space.raja-dev.me` (CORS blocks `*.vercel.app` origins; `2d-metaverse.vercel.app` is an UNRELATED third-party project).
 - E2E flakes (pre-existing): per-IP auth limiter 429 on the last spec as the serial suite grows; `arcade.spec.ts` `near-interactable` timeout under runner contention.
 - **Parallel coders MUST get isolated worktrees** — two agents sharing the main checkout collided on 2026-07-09 (a PRD-24 commit landed on the help-overlay branch; recovered by cherry-pick + reset). One coder at a time in the main checkout, or spawn with worktree isolation.
 - Stacked PRs: merging+deleting a base auto-closes the child. Build shared first. Merging to main auto-deploys FE (Vercel) and chains the backend deploy off Backend CI (`workflow_run`). Backend Docker context is repo root. Every asset needs an ATTRIBUTIONS.md row. No `console.*` in backend/src.

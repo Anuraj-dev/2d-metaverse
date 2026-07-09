@@ -1,5 +1,11 @@
 # Production deployment
 
+## Production URLs
+
+- **Frontend: https://space.raja-dev.me — the ONLY working origin.** Backend CORS allows just this origin; the `*.vercel.app` deployment URLs load the frontend but every API call fails.
+- Backend API: `https://api.space.raja-dev.me` · LiveKit: `https://livekit.space.raja-dev.me`
+- ⚠️ `https://2d-metaverse.vercel.app` is an **unrelated third-party project** — not this app.
+
 The backend pipeline has two workflows:
 
 - `Backend CI` tests only backend and deployment files. It runs type checks, unit tests, a clean build, dependency audit, production image build, and the complete Docker contract smoke test.
