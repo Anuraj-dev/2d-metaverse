@@ -31,5 +31,6 @@ class EventBus {
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' |
  *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip)
  *  Screen share (PRD 23): 'screen-share-on' | 'screen-share-off' (control bar intent; sound blip + e2e hook)
- *  HUD (PRD 20): 'speaking'{ids} (active-speaker rings) | 'map-open' | 'map-close' (fullscreen map) */
+ *  HUD (PRD 20): 'speaking'{ids} (active-speaker rings) | 'map-open' | 'map-close' (fullscreen map) |
+ *  'settings-open' (Settings panel opened — mutually exclusive with the map, issue #79) */
 export const bus = new EventBus();

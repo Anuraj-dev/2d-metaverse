@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, Maximize, Settings as SettingsIcon } from "lucide-react";
+import { bus } from "../game/eventBus";
 import {
   getSettings,
   setSettings,
@@ -15,6 +16,15 @@ export default function Settings() {
   );
 
   useEffect(() => subscribeSettings(setS), []);
+
+  // Mutually-exclusive HUD overlays (issue #79): the Settings panel and the
+  // fullscreen campus map must never stack. Opening the map closes Settings…
+  useEffect(() => bus.on("map-open", () => setOpen(false)), []);
+  // …and opening Settings closes the map. Emit only on the open transition so a
+  // close (incl. the one the map triggers) can't ping-pong back.
+  useEffect(() => {
+    if (open) bus.emit("settings-open");
+  }, [open]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
