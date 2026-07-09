@@ -326,7 +326,7 @@ describe("campus board-game tables (PRD 11 phase 2)", () => {
   });
 });
 
-describe("campus wayfinding signage (PRD 22)", () => {
+describe("campus wayfinding signage (PRD 24, zep-style)", () => {
   interface TiledObject {
     name: string;
     x?: number;
@@ -342,28 +342,50 @@ describe("campus wayfinding signage (PRD 22)", () => {
   function prop(o: TiledObject, name: string): unknown {
     return o.properties?.find((p) => p.name === name)?.value;
   }
+  // The runtime label a sign resolves to: an `area` id via AREA_NAMES, else the
+  // literal `text` fallback (mirrors WorldScene.buildSigns).
+  function label(o: TiledObject): string {
+    const area = prop(o, "area");
+    if (typeof area === "string") {
+      const named = AREA_NAMES.find((a) => a.id === area);
+      if (named) return named.name;
+    }
+    const text = prop(o, "text");
+    return typeof text === "string" ? text : "";
+  }
 
   it("authors a signs object layer", () => {
     expect(signs().length).toBeGreaterThan(0);
   });
 
-  it("every sign carries a non-empty text and a known variant sprite", () => {
+  it("every sign is a plaque or a groundLabel and resolves to a non-empty label", () => {
     for (const s of signs()) {
-      expect(String(prop(s, "text")).length, `${s.name} text`).toBeGreaterThan(0);
-      expect(["banner", "post"], `${s.name} variant`).toContain(prop(s, "variant"));
+      expect(["plaque", "groundLabel"], `${s.name} kind`).toContain(prop(s, "kind"));
+      expect(label(s).length, `${s.name} label`).toBeGreaterThan(0);
     }
   });
 
-  it("names each building with its AREA_NAMES label", () => {
-    const texts = signs().map((s) => String(prop(s, "text")));
+  it("every groundLabel carries a known arrow direction", () => {
+    const grounds = signs().filter((s) => prop(s, "kind") === "groundLabel");
+    expect(grounds.length).toBeGreaterThan(0);
+    for (const s of grounds) {
+      expect(["up", "down", "left", "right"], `${s.name} dir`).toContain(prop(s, "dir"));
+    }
+  });
+
+  it("mounts a facade plaque for each named building area", () => {
+    const plaqueAreas = signs()
+      .filter((s) => prop(s, "kind") === "plaque")
+      .map((s) => prop(s, "area"));
     for (const area of AREA_NAMES) {
-      expect(texts, `banner for ${area.name}`).toContain(area.name);
+      expect(plaqueAreas, `plaque for ${area.name}`).toContain(area.id);
     }
   });
 
-  it("includes a Board Games corner sign inside the arcade", () => {
-    const boardSign = signs().find((s) => String(prop(s, "text")) === "Board Games");
+  it("includes a Board Games corner plaque inside the arcade", () => {
+    const boardSign = signs().find((s) => label(s) === "Board Games");
     expect(boardSign).toBeDefined();
+    expect(prop(boardSign as TiledObject, "kind")).toBe("plaque");
     // In the arcade hall interior (px x 1088-1392, y 1520-1728).
     expect(boardSign?.x ?? 0).toBeGreaterThan(1088);
     expect(boardSign?.y ?? 0).toBeGreaterThan(1520);
