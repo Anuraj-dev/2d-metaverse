@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Lock, MessageSquare, ChevronDown } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Lock, MessageSquare, ChevronDown, Flag } from "lucide-react";
 import {
   LIMITS,
   SERVER_EVENTS,
@@ -7,10 +7,15 @@ import {
   type ChatCooldownPayload,
   type ChatMessage,
   type PlayerState,
+  type ReportCategory,
 } from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
 import { chatCooldownNotice } from "../game/chatCooldown";
+import { reportResultNotice } from "../game/report";
+import { submitReport } from "../net/reports";
+
+const ReportDialog = lazy(() => import("./ReportDialog"));
 import {
   chatPanelReducer,
   initialChatPanelState,
@@ -20,10 +25,17 @@ import {
 /** A line in the transcript. Whispers and system notices are always shown
  *  regardless of the active channel; world/room chat is filtered by tab. */
 type Entry =
-  | { kind: "chat"; id: string; name: string; text: string; scope: string }
+  | { kind: "chat"; id: string; name: string; text: string; scope: string; messageId: string }
   | { kind: "wout"; toName: string; text: string }
   | { kind: "win"; fromName: string; text: string }
   | { kind: "sys"; text: string };
+
+/** The message a report dialog is currently open for (PRD 25.12). */
+interface ReportTarget {
+  messageId: string;
+  name: string;
+  text: string;
+}
 
 interface Player {
   id: string;
@@ -75,6 +87,8 @@ export default function ChatBox() {
   const [selfId, setSelfId] = useState(sharedNet().selfId);
   // Registry display name of the room the player is in, shown on the Room tab.
   const [roomName, setRoomName] = useState<string | null>(null);
+  // The message a report dialog is open for, or null (PRD 25.12).
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -133,7 +147,7 @@ export default function ChatBox() {
     );
 
     const offChat = net.on("chat", (m: ChatMessage) => {
-      push({ kind: "chat", id: m.id, name: m.name, text: m.text, scope: m.scope });
+      push({ kind: "chat", id: m.id, name: m.name, text: m.text, scope: m.scope, messageId: m.messageId });
       if (m.id !== selfIdRef.current) dispatch({ type: "message" });
     });
     const offWhisper = net.on(
@@ -337,8 +351,27 @@ export default function ChatBox() {
       <div key={i} className="mc-line">
         <span className={`mc-name ${me ? "me" : ""}`}>&lt;{e.name}&gt;</span>{" "}
         <span className="mc-text">{e.text}</span>
+        {!me && (
+          <button
+            type="button"
+            className="mc-report-btn"
+            title={`Report ${e.name}'s message`}
+            aria-label={`Report ${e.name}'s message`}
+            onClick={() =>
+              setReportTarget({ messageId: e.messageId, name: e.name, text: e.text })
+            }
+          >
+            <Flag size={12} aria-hidden="true" />
+          </button>
+        )}
       </div>
     );
+  };
+
+  const sendReport = async (target: ReportTarget, category: ReportCategory, note: string) => {
+    const result = await submitReport(target.messageId, category, note || undefined);
+    setReportTarget(null);
+    push({ kind: "sys", text: reportResultNotice(result) });
   };
 
   const selectTab = (tab: ChatTab) => dispatch({ type: "select-tab", tab });
@@ -443,6 +476,17 @@ export default function ChatBox() {
           }
         />
       </form>
+
+      {reportTarget && (
+        <Suspense fallback={null}>
+          <ReportDialog
+            name={reportTarget.name}
+            text={reportTarget.text}
+            onSubmit={(category, note) => sendReport(reportTarget, category, note)}
+            onClose={() => setReportTarget(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

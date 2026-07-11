@@ -172,10 +172,19 @@ export type PlayerLeftPayload = z.infer<typeof playerLeftSchema>;
  * — deliberately looser than the inbound {@link chatScopeSchema}.
  */
 export const chatMessageSchema = z.object({
+  /** Author's player id (server-stamped, not client-supplied). */
   id: z.string(),
   name: z.string(),
   text: z.string(),
   scope: z.string(),
+  /**
+   * Server-generated unique id for this line (PRD 25.12). Stable across every
+   * recipient, so a report can reference exactly one message and the server can
+   * bind its authoritative author/text — the client can never forge it.
+   */
+  messageId: z.string(),
+  /** Server send timestamp (epoch ms). */
+  ts: z.number().int().nonnegative(),
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 

@@ -4,7 +4,14 @@
  */
 import { z } from "zod";
 import { dirSchema } from "./socket.js";
-import { ARCADE_GAMES, LIMITS, RATE_LIMITS, USERNAME_PATTERN } from "./constants.js";
+import {
+  ARCADE_GAMES,
+  LIMITS,
+  RATE_LIMITS,
+  REPORT_ACK_STATUSES,
+  REPORT_CATEGORIES,
+  USERNAME_PATTERN,
+} from "./constants.js";
 
 /* ------------------------------- requests --------------------------------- */
 
@@ -51,6 +58,20 @@ export const arcadeScoreSchema = z.object({
 });
 export type ArcadeScoreSubmission = z.infer<typeof arcadeScoreSchema>;
 
+/**
+ * `POST /api/v1/reports` body (PRD 25.12): flag one broadcast chat line. The
+ * client supplies ONLY the server-stamped `messageId`, a reason `category`, and
+ * an optional short note. Author, target, and the message text/scope are bound
+ * server-side from the message's own snapshot — the reporter can never forge who
+ * said what or attach arbitrary transcript context.
+ */
+export const reportCreateSchema = z.strictObject({
+  messageId: z.string().min(1).max(LIMITS.reportMessageIdMax),
+  category: z.enum(REPORT_CATEGORIES),
+  note: z.string().trim().min(1).max(LIMITS.reportNoteMax).optional(),
+});
+export type ReportCreateRequest = z.infer<typeof reportCreateSchema>;
+
 /* ------------------------------- responses -------------------------------- */
 
 /**
@@ -89,6 +110,33 @@ export const arcadeLeaderboardSchema = z.object({
   best: z.number().int().nullable(),
 });
 export type ArcadeLeaderboard = z.infer<typeof arcadeLeaderboardSchema>;
+
+/**
+ * `POST /api/v1/reports` success response (PRD 25.12): a visible acknowledgement.
+ * `created` recorded a fresh moderation record; `duplicate` means the reporter had
+ * already flagged this same message (idempotent — no second record is written).
+ */
+export const reportAckSchema = z.strictObject({
+  status: z.enum(REPORT_ACK_STATUSES),
+});
+export type ReportAck = z.infer<typeof reportAckSchema>;
+
+/**
+ * Bounded failure response for `POST /api/v1/reports`. Deliberately coarse — it
+ * never reflects message content, the target's identity, or server internals.
+ * `rate-limited` is the only variant carrying metadata (the retry window).
+ */
+export const reportFailureResponseSchema = z.discriminatedUnion("error", [
+  z.strictObject({ error: z.literal("validation") }),
+  z.strictObject({ error: z.literal("message-not-found") }),
+  z.strictObject({ error: z.literal("cannot-report-self") }),
+  z.strictObject({ error: z.literal("unauthorized") }),
+  z.strictObject({
+    error: z.literal("rate-limited"),
+    retryAfterSeconds: z.number().int().min(1).max(Math.ceil(RATE_LIMITS.reportWindowMs / 1000)),
+  }),
+]);
+export type ReportFailureResponse = z.infer<typeof reportFailureResponseSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({

@@ -63,6 +63,33 @@ export const BOARD_MATCH_TTL_SECONDS = 8 * 60 * 60;
 export const CHAT_SCOPES = ["world", "room"] as const;
 
 /**
+ * Report reason categories (PRD 25.12). A small, justified set the reporter
+ * picks from — the server binds actor/target/message itself, so the category
+ * (plus an optional short note) is the only reporter-supplied classification.
+ */
+export const REPORT_CATEGORIES = [
+  "harassment",
+  "hate",
+  "spam",
+  "sexual",
+  "self-harm",
+  "other",
+] as const;
+export type ReportCategory = (typeof REPORT_CATEGORIES)[number];
+
+/** Report acknowledgement outcomes (PRD 25.12): a fresh record, or a deduped repeat. */
+export const REPORT_ACK_STATUSES = ["created", "duplicate"] as const;
+export type ReportAckStatus = (typeof REPORT_ACK_STATUSES)[number];
+
+/**
+ * TTL (seconds) on the server's bounded snapshot of a broadcast chat line kept so
+ * a later report can bind the authoritative author/text without trusting the
+ * client or retaining a full transcript (PRD 25.12). One hour bounds how long a
+ * message stays reportable and caps retention.
+ */
+export const REPORT_MESSAGE_TTL_SECONDS = 60 * 60;
+
+/**
  * Named campus areas (PRD 20). The single source of truth for human-readable
  * place names, consumed by the HUD map labels here and by in-world signage in
  * PRD 22. `rooms` lists the private-room ids an area groups (the two hostels);
@@ -252,6 +279,9 @@ export const LIMITS = {
   /** Chat / whisper message body. */
   chatTextMax: 500,
   whisperTextMax: 500,
+  /** Report ingestion (PRD 25.12): the referenced server message id + optional note. */
+  reportMessageIdMax: 64,
+  reportNoteMax: 300,
   /** Server-side sanity ceiling for movement coordinates. */
   moveCoordMax: 100_000,
   /** Credentials. */
@@ -312,4 +342,8 @@ export const RATE_LIMITS = {
   arcadeLeaderboardLimit: 120,
   /** Minimum spacing between accepted `move` events from one socket. */
   moveThrottleMs: 40,
+  /** Chat-report submit limiter (per IP; PRD 25.12) — enough to flag a burst of
+   *  abuse without becoming its own spam vector. */
+  reportWindowMs: 60_000,
+  reportLimit: 20,
 } as const;

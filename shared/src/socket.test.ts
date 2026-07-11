@@ -6,6 +6,7 @@ import {
   boardSitSchema,
   boardUpdateSchema,
   chatCooldownSchema,
+  chatMessageSchema,
   chatSchema,
   joinSchema,
   meetingChatMessageSchema,
@@ -39,6 +40,22 @@ describe("socket handshake auth", () => {
   });
   it("rejects an empty token", () => {
     expect(socketAuthSchema.safeParse({ token: "" }).success).toBe(false);
+  });
+});
+
+describe("outbound chat message", () => {
+  it("carries a server-stamped message id + timestamp (PRD 25.12)", () => {
+    const line = { id: "author", name: "Ada", text: "hi", scope: "world", messageId: "abc-123", ts: 1_700_000_000_000 };
+    expect(chatMessageSchema.safeParse(line).success).toBe(true);
+  });
+  it("rejects a line missing identity or with a fractional/negative timestamp", () => {
+    expect(chatMessageSchema.safeParse({ id: "a", name: "Ada", text: "hi", scope: "world" }).success).toBe(false);
+    expect(
+      chatMessageSchema.safeParse({ id: "a", name: "Ada", text: "hi", scope: "world", messageId: "m", ts: -1 }).success,
+    ).toBe(false);
+    expect(
+      chatMessageSchema.safeParse({ id: "a", name: "Ada", text: "hi", scope: "world", messageId: "m", ts: 1.5 }).success,
+    ).toBe(false);
   });
 });
 

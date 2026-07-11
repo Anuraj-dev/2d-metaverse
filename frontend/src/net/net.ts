@@ -212,7 +212,7 @@ export class MockNet implements Net {
   }
   chat(text: string, scope?: "world" | "room") {
     const s = scope === "room" ? "room" : "world";
-    this.bus.emit(SERVER_EVENTS.chat, { id: this.selfId, name: this.name, text, scope: s });
+    this.bus.emit(SERVER_EVENTS.chat, { id: this.selfId, name: this.name, text, scope: s, messageId: crypto.randomUUID(), ts: Date.now() });
     // a friendly NPC reply on the same channel
     setTimeout(
       () =>
@@ -221,6 +221,8 @@ export class MockNet implements Net {
           name: NAMES[0],
           text: "hey there!",
           scope: s,
+          messageId: crypto.randomUUID(),
+          ts: Date.now(),
         }),
       800
     );

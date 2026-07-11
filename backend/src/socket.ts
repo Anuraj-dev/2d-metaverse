@@ -1,9 +1,11 @@
 import type { Server as HttpServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { Server, type Socket } from "socket.io";
 import {
   BOARD_MATCH_TTL_SECONDS,
   BOARD_TABLES,
   RATE_LIMITS,
+  REPORT_MESSAGE_TTL_SECONDS,
   approveKnockSchema,
   boardAcceptSchema,
   boardMoveSchema,
@@ -25,7 +27,7 @@ import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
-import { checkRateLimit, isRateLimitExceeded, redis } from "./redis.js";
+import { checkRateLimit, isRateLimitExceeded, redis, storeReportableMessage } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
 import type { RoomMeetingSnapshot } from "./meeting.js";
@@ -343,12 +345,20 @@ export function createGameServer(httpServer: HttpServer) {
       // World chat reaches the whole space (incl. private-room members, whose client
       // shows it only under the "All" filter). Room chat stays room-only — no leak out.
       const toWorld = parsed.data.scope === "world" || !currentRoomId;
-      const message = {
-        id: playerId,
-        name: username,
-        text: parsed.data.text,
-        scope: toWorld ? "world" : currentRoomId
-      };
+      const scope = toWorld ? "world" : currentRoomId;
+      // Server-stamped identity (PRD 25.12): a unique id + send time the client can
+      // never forge. The same id reaches every recipient, so a report references
+      // exactly one line and we can bind its author/text from our own snapshot.
+      const messageId = randomUUID();
+      const ts = Date.now();
+      const message = { id: playerId, name: username, text: parsed.data.text, scope, messageId, ts };
+      // Keep a bounded snapshot so a later report binds the authoritative
+      // author/text without trusting the reporter or storing a transcript.
+      await storeReportableMessage(
+        messageId,
+        { authorId: playerId, authorName: username, text: parsed.data.text, scope, spaceId, ts },
+        REPORT_MESSAGE_TTL_SECONDS,
+      );
       io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId)).emit("chat", message);
     }));
 

@@ -815,6 +815,91 @@ html, body, #root {
   line-height: 1.5;
 }
 .mc-line { word-break: break-word; }
+/* Report affordance (PRD 25.12): faint until the line is hovered/focused. */
+.mc-report-btn {
+  margin-left: 4px;
+  padding: 0 2px;
+  vertical-align: baseline;
+  background: none;
+  border: none;
+  color: #6b7490;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.mc-line:hover .mc-report-btn,
+.mc-report-btn:focus-visible { opacity: 1; }
+.mc-report-btn:hover { color: #ff7676; }
+
+.mc-report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 18, 0.55);
+}
+.mc-report {
+  width: min(360px, 92vw);
+  padding: 16px;
+  border-radius: 12px;
+  background: #131a2b;
+  border: 1px solid #263250;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #dfe6f5;
+}
+.mc-report-title { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+.mc-report-quote {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid #3a466a;
+  background: #0e1422;
+  border-radius: 6px;
+  color: #b9c2d8;
+  font-size: 13px;
+  max-height: 96px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+.mc-report-label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #8893b0;
+}
+.mc-report select,
+.mc-report textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #0e1422;
+  border: 1px solid #2a3550;
+  color: #dfe6f5;
+  font: inherit;
+  resize: vertical;
+}
+.mc-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.mc-report-actions button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #2a3550;
+  background: #1b2438;
+  color: #cdd6ea;
+  cursor: pointer;
+}
+.mc-report-actions button:disabled { opacity: 0.6; cursor: default; }
+.mc-report-actions .mc-report-send {
+  border-color: #b5443f;
+  background: #c14b45;
+  color: #fff;
+  font-weight: 600;
+}
 .mc-name { color: #8fb4ff; font-weight: 600; }
 .mc-name.me { color: #ffb454; }
 .mc-text { color: #dfe6f5; }

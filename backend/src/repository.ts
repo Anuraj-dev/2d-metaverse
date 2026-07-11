@@ -125,3 +125,30 @@ export async function getArcadeBest(
   );
   return result.rows[0]?.score ?? null;
 }
+
+/** Fields persisted for one moderation record (PRD 25.12). */
+export interface ReportInput {
+  reporterId: string;
+  targetId: string;
+  messageId: string;
+  messageText: string;
+  scope: string;
+  category: string;
+  note?: string | undefined;
+}
+
+/**
+ * Persist a chat report, deduping on (reporter, message). Returns `"created"`
+ * when a fresh record was written, or `"duplicate"` when this reporter had
+ * already flagged the same message (idempotent — no second row).
+ */
+export async function insertReport(input: ReportInput): Promise<"created" | "duplicate"> {
+  const result = await pool.query<{ id: string }>(
+    `INSERT INTO reports (reporter_id, target_id, message_id, message_text, scope, category, note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (reporter_id, message_id) DO NOTHING
+     RETURNING id`,
+    [input.reporterId, input.targetId, input.messageId, input.messageText, input.scope, input.category, input.note ?? null]
+  );
+  return (result.rowCount ?? 0) > 0 ? "created" : "duplicate";
+}
