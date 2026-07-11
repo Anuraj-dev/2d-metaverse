@@ -23,11 +23,21 @@
  *     slack. This is anti-teleport, not anti-lag: it is deliberately loose so
  *     honest sprint, reconnect bursts, and hidden-tab cadence never trip it.
  *
- * NOTE: per-tile walkability/collision (walking through walls or furniture) is a
- * SEPARATE slice (PRD 25.22) that consumes `manifest.collision`; this module
- * intentionally validates only the envelope (bounds + speed + declared portals).
+ *  5. Walkability (PRD 25.22) — the proposed position must sit on a walkable
+ *     tile: not a wall/tree cell (`manifest.collision.blocked`) and not a solid
+ *     furniture footprint (`manifest.solidObjects`). Checked AFTER the portal
+ *     exemption (portal targets land on walkable tiles by construction) and
+ *     BEFORE the speed envelope, so an in-envelope wall-clip — a small honest-
+ *     paced delta that ends inside a wall — is still rejected (the speed check
+ *     alone would wave it through). See `createWalkability` for the semantics.
  */
-import { MOVEMENT, type GeometryPortal, type MovementRejection } from "@metaverse/shared";
+import {
+  MOVEMENT,
+  type GeometryCollision,
+  type GeometryPortal,
+  type GeometrySolidObject,
+  type MovementRejection,
+} from "@metaverse/shared";
 
 /** The last position the server accepted for a player, with the wall-clock ms at
  *  which it was accepted. The envelope integrates elapsed time from `at`. */
@@ -44,6 +54,72 @@ export interface MovementProposal {
   y: number;
 }
 
+/**
+ * A precomputed, tile-indexed walkability lookup for the campus. Built once from
+ * the geometry manifest (see `createWalkability`) and reused across every move —
+ * `isBlockedAtPixel` is O(1) (a `Set` membership test), so validating a move is
+ * allocation-free.
+ */
+export interface Walkability {
+  readonly cols: number;
+  readonly rows: number;
+  readonly tileSize: number;
+  /** True when the world-pixel position falls on a blocked (non-walkable) tile. */
+  isBlockedAtPixel(x: number, y: number): boolean;
+}
+
+/**
+ * Derive the authoritative walkability lookup from the manifest's collision grid
+ * and solid-furniture anchors — the SAME two inputs the client blocks on.
+ *
+ * Semantics (matched to how an honest client actually blocks):
+ *  - A tile is blocked if `collision.blocked` marks it `1` (a wall or tree-trunk
+ *    cell, derived from the `walls` tile layer) …
+ *  - … OR it holds the centre anchor of a solid furniture object. The generator
+ *    emits only furniture centres (its pixel footprint depends on sprite size it
+ *    does not know), so we block the single tile the anchor sits in. That anchor
+ *    is always inside the furniture's collision body, so an honest client — whose
+ *    feet-box is stopped by that body — can never report its position on that
+ *    tile; blocking it is safe, and larger multi-tile footprints are a documented
+ *    follow-up rather than a guess made here.
+ *
+ * The proposed position's OWN tile is what gets tested (not a swept path): the
+ * client reports its avatar's anchor point, and its local physics already
+ * prevented that point from entering a wall — so an honest report never lands on
+ * a blocked tile. This makes doorways/thresholds traversable with no special-
+ * casing, because those are authored as non-blocked cells in the manifest.
+ */
+export function createWalkability(
+  collision: GeometryCollision,
+  solidObjects: readonly GeometrySolidObject[],
+  tileSize: number,
+): Walkability {
+  const { cols, rows, blocked } = collision;
+  const blockedTiles = new Set<number>();
+  for (let i = 0; i < blocked.length; i++) {
+    if (blocked[i] === 1) blockedTiles.add(i);
+  }
+  for (const obj of solidObjects) {
+    const col = Math.floor(obj.x / tileSize);
+    const row = Math.floor(obj.y / tileSize);
+    if (col >= 0 && col < cols && row >= 0 && row < rows) {
+      blockedTiles.add(row * cols + col);
+    }
+  }
+  return {
+    cols,
+    rows,
+    tileSize,
+    isBlockedAtPixel(x: number, y: number): boolean {
+      // Clamp the exact far edge (x === world.width) back onto the last tile; a
+      // sub-zero/over-max pixel is an out-of-bounds concern handled upstream.
+      const col = Math.min(Math.max(Math.floor(x / tileSize), 0), cols - 1);
+      const row = Math.min(Math.max(Math.floor(y / tileSize), 0), rows - 1);
+      return blockedTiles.has(row * cols + col);
+    },
+  };
+}
+
 /** Everything the validator needs from the world, all from the geometry manifest
  *  except the two per-connection flags. */
 export interface MovementContext {
@@ -51,6 +127,8 @@ export interface MovementContext {
   world: { width: number; height: number };
   /** Manifest-declared portals (`manifest.portals`) — the only legal teleports. */
   portals: readonly GeometryPortal[];
+  /** Per-tile walkability derived from `manifest.collision` + `solidObjects`. */
+  walkable: Walkability;
   /** Tile size (px), used only to size the portal match tolerance. */
   tileSize: number;
   /** The first move after a join/recovery: re-anchor instead of speed-checking. */
@@ -132,10 +210,19 @@ export function validateMove(
   // 2. Re-anchor the first move after join/recovery (in-bounds already checked).
   if (ctx.justEntered) return ACCEPT;
 
-  // 3. Manifest-declared portal teleports are legal discontinuities.
+  // 3. Manifest-declared portal teleports are legal discontinuities (their
+  //    targets land on walkable tiles by construction, so they skip both the
+  //    walkability and speed checks below).
   if (isPortalJump(anchor, proposal, ctx.portals, ctx.tileSize)) return ACCEPT;
 
-  // 4. Speed envelope: distance must fit a generous, time-integrated budget.
+  // 4. Walkability: the proposed position must sit on a walkable tile. Checked
+  //    before speed so a small, honest-paced delta that ends inside a wall or on
+  //    solid furniture is still rejected (the speed envelope alone would pass it).
+  if (ctx.walkable.isBlockedAtPixel(proposal.x, proposal.y)) {
+    return { ok: false, reason: "blocked" };
+  }
+
+  // 5. Speed envelope: distance must fit a generous, time-integrated budget.
   const elapsedMs = Math.min(Math.max(now - anchor.at, 0), MOVEMENT.envelopeMaxElapsedMs);
   const budget = MAX_SPEED_PX_PER_MS * elapsedMs + MOVEMENT.envelopeSlackPx;
   const distance = Math.hypot(proposal.x - anchor.x, proposal.y - anchor.y);

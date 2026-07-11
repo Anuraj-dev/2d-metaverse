@@ -434,5 +434,5 @@ export const MOVEMENT = {
 } as const;
 
 /** Reasons the server rejects a `move` and issues an authoritative correction. */
-export const MOVEMENT_REJECTIONS = ["out-of-bounds", "too-fast"] as const;
+export const MOVEMENT_REJECTIONS = ["out-of-bounds", "too-fast", "blocked"] as const;
 export type MovementRejection = (typeof MOVEMENT_REJECTIONS)[number];

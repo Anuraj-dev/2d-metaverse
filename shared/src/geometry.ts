@@ -127,3 +127,4 @@ export type GeometryBoardSeat = z.infer<typeof geometryBoardSeatSchema>;
 export type GeometryStageZone = z.infer<typeof geometryStageZoneSchema>;
 export type GeometryPortal = z.infer<typeof geometryPortalSchema>;
 export type GeometrySolidObject = z.infer<typeof geometrySolidObjectSchema>;
+export type GeometryCollision = z.infer<typeof geometryCollisionSchema>;
