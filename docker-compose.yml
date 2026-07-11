@@ -60,7 +60,7 @@ services:
       retries: 20
 
   livekit:
-    image: livekit/livekit-server:v1.9.1
+    image: livekit/livekit-server:v1.9.12
     restart: unless-stopped
     logging: *default-logging
     depends_on:
