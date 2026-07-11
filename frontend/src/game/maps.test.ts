@@ -766,6 +766,25 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
     expect(bad, `furniture on a path artery: ${bad.join(", ")}`).toHaveLength(0);
   });
 
+  // The x=79-80 column is the arcade approach corridor players descend from
+  // spawn into the Game Arcade hall (arcade.spec walks straight down it). Unlike
+  // the stone arteries it runs THROUGH the coworking wood deck (FLOOR_ACC, not
+  // stone), so the stone-gated guard above cannot see an intruding desk here —
+  // this ungated guard keeps the corridor walkable regardless of ground tile.
+  it("keeps the x=79-80 arcade approach corridor clear of solid furniture", () => {
+    const bad: string[] = [];
+    for (const o of solids)
+      for (const [tx, ty] of bodyTiles(o))
+        // From the plaza down to the arcade doorway (rows 25-93); inside the hall
+        // (rows 94+) this column is interior floor, not the approach corridor.
+        if ((tx === 79 || tx === 80) && ty >= 25 && ty <= 93)
+          bad.push(`${o.name}@(${tx},${ty})`);
+    expect(
+      bad,
+      `furniture in the arcade approach corridor: ${bad.join(", ")}`,
+    ).toHaveLength(0);
+  });
+
   it("keeps the flagged desk/cafe clutter thinned", () => {
     const furn = objects("furniture");
     // Cafe round tables (SW terrace) thinned from 18 to 12.

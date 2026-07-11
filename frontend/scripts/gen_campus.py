@@ -626,12 +626,15 @@ for tx, ty in [(2, 85), (52, 65)]:
 
 # Coworking — desk pods in two rows. PRD 25.33: the SE deck was the flagged
 # "meaningless coworking clutter" (a solid 7+6 wall of identical desks). Thinned
-# to 5+4 staggered pods at a wider (12-tile) pitch so there are real walkable
-# aisles between pods and the open-plan office reads intentional, not packed.
-for tx, ty in [(60,65),(72,65),(84,65),(96,65),(108,65)]:
+# to 5+4 pods at a wider pitch so there are real walkable aisles between pods and
+# the open-plan office reads intentional, not packed. Every column stays clear of
+# the x=79-80 arcade approach corridor (the full-height artery players descend
+# from spawn into the Game Arcade passes straight through this deck) — a 32px
+# desk body spans its centre tile ±1, so no desk centre sits on tiles 77-82.
+for tx, ty in [(60,65),(70,65),(84,65),(96,65),(108,65)]:
     furn("f_desk",  tx, ty, True)
     furn("f_chair", tx, ty + 1, False)
-for tx, ty in [(66,73),(78,73),(90,73),(102,73)]:
+for tx, ty in [(66,73),(76,73),(90,73),(102,73)]:
     furn("f_desk2", tx, ty, True)
     furn("f_chair", tx, ty + 1, False)
 furn("f_desk_boss",    114, 73, True)
