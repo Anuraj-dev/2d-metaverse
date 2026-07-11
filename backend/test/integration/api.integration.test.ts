@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { RATE_LIMITS } from "@metaverse/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sitPlayer, standPlayer } from "../../src/seat-store.js";
 import { redis } from "../../src/redis.js";
@@ -24,19 +25,17 @@ describe("signup", () => {
     expect(result).toEqual({ status: 200, json: { ok: true } });
   });
 
-  it("rejects a duplicate username with 400 username-taken", async () => {
+  it("reports a duplicate username as a conflict", async () => {
     const username = uniqueName("su2");
     expect((await api(base, "/api/v1/signup", { body: { username, password: TEST_PASSWORD } })).status).toBe(200);
     const duplicate = await api(base, "/api/v1/signup", { body: { username, password: TEST_PASSWORD } });
-    expect(duplicate.status).toBe(400);
-    expect(duplicate.json.error).toBe("username-taken");
+    expect(duplicate).toEqual({ status: 409, json: { error: "username-taken" } });
   });
 
-  it("rejects malformed credentials with 400 and field details", async () => {
+  it("reports malformed signup credentials as validation, never username taken", async () => {
     const short = await api(base, "/api/v1/signup", { body: { username: "ab", password: "short" } });
     expect(short.status).toBe(400);
-    expect(short.json.error).toBe("invalid-credentials");
-    expect(short.json.details).toBeDefined();
+    expect(short.json).toEqual({ error: "validation" });
 
     expect((await api(base, "/api/v1/signup", { body: { username: "Bad Chars!", password: TEST_PASSWORD } })).status).toBe(400);
     expect((await api(base, "/api/v1/signup", { body: {} })).status).toBe(400);
@@ -283,18 +282,26 @@ describe("arcade high scores", () => {
 // of the 15-minute window (the limiter store is module-scoped in api.ts and
 // keyed by IP, which is the same 127.0.0.1 for every request in this suite).
 describe("auth rate limiting", () => {
-  it("returns 429 within the 40-request window and keeps rejecting after", async () => {
-    const body = { username: "x", password: "y" }; // cheap 401s — no scrypt work
-    const statuses: number[] = [];
+  it("returns a bounded retry outcome within the 40-request window", async () => {
+    const body = { username: uniqueName("rate"), password: TEST_PASSWORD };
+    const results: Awaited<ReturnType<typeof api>>[] = [];
     for (let attempt = 0; attempt < 41; attempt += 1) {
-      statuses.push((await api(base, "/api/v1/signin", { body })).status);
+      results.push(await api(base, "/api/v1/signin", { body }));
     }
     // Earlier tests consumed part of the window, so the flip point varies —
     // but every response is 401/429, a 429 must appear by request 41, and the
     // limiter never un-trips mid-window.
+    const statuses = results.map((result) => result.status);
     expect(statuses.every((status) => status === 401 || status === 429)).toBe(true);
     expect(statuses.at(-1)).toBe(429);
     const firstLimited = statuses.indexOf(429);
     expect(statuses.slice(firstLimited).every((status) => status === 429)).toBe(true);
+    const limited = results.at(-1);
+    expect(limited?.json).toMatchObject({
+      error: "rate-limited",
+      retryAfterSeconds: expect.any(Number),
+    });
+    expect(limited?.json.retryAfterSeconds).toBeGreaterThan(0);
+    expect(limited?.json.retryAfterSeconds).toBeLessThanOrEqual(RATE_LIMITS.authWindowMs / 1000);
   });
 });

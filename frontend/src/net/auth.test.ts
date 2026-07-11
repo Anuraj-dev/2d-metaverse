@@ -15,11 +15,11 @@ const ok = (body: unknown) =>
     status: 200,
     json: () => Promise.resolve(body),
   } as Response);
-const fail = (status: number) =>
+const fail = (status: number, body: unknown = {}) =>
   Promise.resolve({
     ok: false,
     status,
-    json: () => Promise.resolve({}),
+    json: () => Promise.resolve(body),
   } as Response);
 
 describe("auth", () => {
@@ -51,12 +51,35 @@ describe("auth", () => {
   });
 
   it("signIn surfaces a friendly error on bad credentials", async () => {
-    fetchMock.mockReturnValue(fail(401));
+    fetchMock.mockReturnValue(fail(401, { error: "invalid-credentials" }));
     await expect(signIn("x", "y")).rejects.toThrow(/check your username/i);
   });
 
   it("signUp flags a taken username", async () => {
-    fetchMock.mockReturnValue(fail(409));
+    fetchMock.mockReturnValue(fail(409, { error: "username-taken" }));
     await expect(signUp("x", "y")).rejects.toThrow(/taken/i);
+  });
+
+  it("distinguishes validation failures from a taken username", async () => {
+    fetchMock.mockReturnValue(fail(400, { error: "validation" }));
+    await expect(signUp("x", "y")).rejects.toThrow(/requirements/i);
+  });
+
+  it("includes bounded retry guidance when auth is rate limited", async () => {
+    fetchMock.mockReturnValue(
+      fail(429, { error: "rate-limited", retryAfterSeconds: 37 }),
+    );
+    await expect(signIn("x", "y")).rejects.toThrow(/37 seconds/i);
+  });
+
+  it("reports network failures without exposing the fetch exception", async () => {
+    fetchMock.mockRejectedValue(new TypeError("secret upstream address"));
+    await expect(signIn("x", "y")).rejects.toThrow(/could not reach hyprverse/i);
+    await expect(signIn("x", "y")).rejects.not.toThrow(/secret upstream/i);
+  });
+
+  it("falls back safely when a server error body is malformed", async () => {
+    fetchMock.mockReturnValue(fail(500, { error: "database exploded" }));
+    await expect(signUp("x", "y")).rejects.toThrow(/server is having trouble/i);
   });
 });

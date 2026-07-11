@@ -41,7 +41,8 @@ export function createApp(): express.Express {
   app.use((_request, response) => response.status(404).json({ error: "not-found" }));
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     requestLog(response, log).error({ err: error }, "unhandled request error");
-    response.status(500).json({ error: "internal-error" });
+    const isAuthRequest = _request.path === "/api/v1/signup" || _request.path === "/api/v1/signin";
+    response.status(500).json({ error: isAuthRequest ? "server-error" : "internal-error" });
   });
 
   return app;

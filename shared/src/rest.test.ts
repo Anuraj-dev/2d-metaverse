@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   arcadeLeaderboardSchema,
   arcadeScoreSchema,
+  authFailureResponseSchema,
   clientErrorSchema,
   credentialsSchema,
   liveKitSchema,
@@ -21,6 +22,25 @@ describe("credentials", () => {
   });
   it("rejects disallowed username characters", () => {
     expect(credentialsSchema.safeParse({ username: "bad name", password: "hunter2!!" }).success).toBe(false);
+  });
+});
+
+describe("auth failure response", () => {
+  it("accepts only the bounded public auth outcomes", () => {
+    expect(authFailureResponseSchema.safeParse({ error: "validation" }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "username-taken" }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "invalid-credentials" }).success).toBe(true);
+    expect(
+      authFailureResponseSchema.safeParse({ error: "rate-limited", retryAfterSeconds: 60 }).success,
+    ).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "server-error" }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "database exploded" }).success).toBe(false);
+    expect(
+      authFailureResponseSchema.safeParse({
+        error: "validation",
+        details: { password: ["hunter2"] },
+      }).success,
+    ).toBe(false);
   });
 });
 
