@@ -125,7 +125,12 @@ vi.mock("phaser", () => {
   }
 
   class Vector2 {
-    constructor(public x = 0, public y = 0) {}
+    x: number;
+    y: number;
+    constructor(x = 0, y = 0) {
+      this.x = x;
+      this.y = y;
+    }
     set(x: number, y: number): this { this.x = x; this.y = y; return this; }
   }
 
