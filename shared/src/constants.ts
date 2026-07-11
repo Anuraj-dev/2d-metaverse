@@ -186,6 +186,7 @@ export const SERVER_EVENTS = {
   playerJoined: "player-joined",
   playerMoved: "player-moved",
   playerLeft: "player-left",
+  moveCorrection: "move-correction",
   chat: "chat",
   whisper: "whisper",
   whisperFail: "whisper-fail",
@@ -216,6 +217,7 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.playerJoined,
   SERVER_EVENTS.playerMoved,
   SERVER_EVENTS.playerLeft,
+  SERVER_EVENTS.moveCorrection,
   SERVER_EVENTS.chat,
   SERVER_EVENTS.whisper,
   SERVER_EVENTS.whisperFail,
@@ -308,3 +310,38 @@ export const RATE_LIMITS = {
   /** Minimum spacing between accepted `move` events from one socket. */
   moveThrottleMs: 40,
 } as const;
+
+/**
+ * Movement tuning: the single source of truth for avatar speed. The frontend's
+ * `movementIntent` (game/movement.ts) drives the avatar from these, and the
+ * backend's authoritative movement envelope (backend/src/movement.ts) derives
+ * its speed budget from the SAME numbers — so the server's "impossible delta"
+ * threshold can never silently diverge from what an honest client can actually
+ * produce.
+ *
+ * The envelope is deliberately generous (anti-teleport, not anti-lag): it caps
+ * the theoretical max speed with a headroom multiplier, adds a fixed per-move
+ * slack for rounding/diagonal/seat-snaps, and integrates only a capped slice of
+ * elapsed time so an idle client cannot bank distance for a burst teleport.
+ */
+export const MOVEMENT = {
+  /** Base walking speed in world px/s. */
+  walkSpeedPxPerSec: 120,
+  /** Sprint multiplier applied while the run (Shift) key is held. */
+  runMultiplier: 1.6,
+  /** Headroom the server allows over the theoretical max sprint speed to absorb
+   *  network jitter, buffered bursts, and client/server clock skew. */
+  envelopeSpeedMultiplier: 2,
+  /** Fixed per-move distance slack (px) added on top of the speed budget, to
+   *  absorb `Math.round` coordinate jitter, diagonal clamping, and the small
+   *  seat/board-seat snap teleports the client performs on sit. */
+  envelopeSlackPx: 64,
+  /** Upper bound (ms) on the elapsed time integrated into a single move's
+   *  distance budget. Longer gaps (hidden tab, idle) are clamped to this so a
+   *  parked client cannot accumulate an arbitrarily large jump allowance. */
+  envelopeMaxElapsedMs: 500,
+} as const;
+
+/** Reasons the server rejects a `move` and issues an authoritative correction. */
+export const MOVEMENT_REJECTIONS = ["out-of-bounds", "too-fast"] as const;
+export type MovementRejection = (typeof MOVEMENT_REJECTIONS)[number];

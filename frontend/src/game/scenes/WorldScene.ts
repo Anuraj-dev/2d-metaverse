@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { BoardUpdatePayload, BoardErrorPayload, Dir, PlayerState } from "@metaverse/shared";
+import type { BoardUpdatePayload, BoardErrorPayload, Dir, MoveCorrectionPayload, PlayerState } from "@metaverse/shared";
 import { SERVER_EVENTS, AREA_NAMES, roomDisplayName, areaNameForId } from "@metaverse/shared";
 import { speakingRingIds } from "../speakingRings";
 import {
@@ -754,6 +754,18 @@ export default class WorldScene extends Phaser.Scene {
     );
     this.listeners.own(
       this.net.on("player-left", (p: { id: string }) => this.removeRemote(p.id)),
+    );
+    // Authoritative movement correction (PRD 25.21): the server rejected a move
+    // as an impossible delta / out-of-bounds and is snapping us back to the last
+    // position it accepted. The server is the source of truth — apply it locally
+    // (position + facing) and clear velocity so we don't immediately re-diverge.
+    this.listeners.own(
+      this.net.on<MoveCorrectionPayload>(SERVER_EVENTS.moveCorrection, (c) => {
+        this.player.setPosition(c.x, c.y);
+        this.dir = c.dir;
+        const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+        body?.setVelocity(0, 0);
+      }),
     );
   }
 

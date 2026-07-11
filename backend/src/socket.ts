@@ -23,6 +23,8 @@ import {
 } from "@metaverse/shared";
 import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
+import { getGeometryManifest } from "./geometry.js";
+import { validateMove } from "./movement.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
 import { isRateLimitExceeded, redis } from "./redis.js";
@@ -270,6 +272,11 @@ export function createGameServer(httpServer: HttpServer) {
           : { x: SPAWN_X, y: SPAWN_Y, dir: "down" as const };
         if (!restored?.success) log.warn("invalid recovered presence; restoring spawn");
         const self: PlayerState = { id: playerId, name: username, ...position };
+        // Re-seed the movement envelope from the recovered position; the first
+        // move after recovery re-anchors, since the client may have kept walking
+        // while its buffered moves were held during the disconnect.
+        socket.data.moveAnchor = { x: position.x, y: position.y, dir: position.dir, at: Date.now() };
+        socket.data.moveJustEntered = true;
         // One Redis write transfers connection ownership and position together;
         // the expired socket's grace cleanup cannot delete the recovered state.
         await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify({ ...self, connectionId: socket.id }));
@@ -314,6 +321,9 @@ export function createGameServer(httpServer: HttpServer) {
 
       const players = (await presenceFor(parsed.data.spaceId)).filter((player) => player.id !== userId);
       const self: PlayerState = { id: userId, name: username, x: SPAWN_X, y: SPAWN_Y, dir: "down" };
+      // Seed the movement envelope at spawn; the first move re-anchors (see move handler).
+      socket.data.moveAnchor = { x: SPAWN_X, y: SPAWN_Y, dir: "down", at: Date.now() };
+      socket.data.moveJustEntered = true;
       await redis.hSet(`presence:${parsed.data.spaceId}`, userId, JSON.stringify({ ...self, connectionId: socket.id }));
       socket.emit("init", { selfId: userId, players: [self, ...players] });
       socket.to(spaceChannel(parsed.data.spaceId)).emit("player-joined", self);
@@ -338,6 +348,33 @@ export function createGameServer(httpServer: HttpServer) {
       const now = Date.now();
       if (socket.data.lastMoveAt && now - socket.data.lastMoveAt < RATE_LIMITS.moveThrottleMs) return;
       socket.data.lastMoveAt = now;
+
+      // Authoritative movement envelope (PRD 25.21): reject impossible deltas and
+      // out-of-bounds moves. The last accepted position stays authoritative — a
+      // rejected move is neither stored nor broadcast; the offender gets a
+      // correction snapping it back to that position. Rules live in the pure
+      // `validateMove`; this shell only feeds it the anchor + geometry manifest.
+      const manifest = getGeometryManifest();
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y, dir: "down" as const, at: now };
+      const decision = validateMove(anchor, parsed.data, now, {
+        world: manifest.world,
+        portals: manifest.portals,
+        tileSize: manifest.tile.size,
+        justEntered: socket.data.moveJustEntered ?? false,
+      });
+      socket.data.moveJustEntered = false;
+      if (!decision.ok) {
+        // Privacy-safe security telemetry: playerId + reason only, never raw
+        // coordinate streams (the bound logger already carries playerId/spaceId).
+        log.child({ module: "movement" }).warn(
+          { event: "move_rejected", reason: decision.reason },
+          "movement rejected",
+        );
+        socket.emit("move-correction", { x: anchor.x, y: anchor.y, dir: anchor.dir, reason: decision.reason });
+        return;
+      }
+
+      socket.data.moveAnchor = { x: parsed.data.x, y: parsed.data.y, dir: parsed.data.dir, at: now };
       const state = { id: playerId, name: username, ...parsed.data, connectionId: socket.id };
       await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify(state));
       socket.to(spaceChannel(spaceId)).emit("player-moved", { id: playerId, ...parsed.data });

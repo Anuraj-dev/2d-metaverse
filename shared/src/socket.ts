@@ -20,6 +20,7 @@ import {
   KNOCK_RESULTS,
   LIMITS,
   MEETING_CANCEL_REASONS,
+  MOVEMENT_REJECTIONS,
 } from "./constants.js";
 import { BOARD_GAMES } from "./games/board.js";
 
@@ -381,6 +382,21 @@ export const boardUpdateSchema = z.strictObject({
 });
 export type BoardUpdatePayload = z.infer<typeof boardUpdateSchema>;
 
+/**
+ * An authoritative movement correction, sent only to the offending client when
+ * the server rejects a `move` (impossible delta or out-of-bounds). The client
+ * snaps its local avatar to this last-accepted server position; the server's
+ * presence keeps the same position, so it is the single source of truth. Carries
+ * the last-accepted facing so the corrected avatar keeps a coherent direction.
+ */
+export const moveCorrectionSchema = z.strictObject({
+  x: z.number(),
+  y: z.number(),
+  dir: dirSchema,
+  reason: z.enum(MOVEMENT_REJECTIONS),
+});
+export type MoveCorrectionPayload = z.infer<typeof moveCorrectionSchema>;
+
 /** A rejected board action, sent only to the offending client. */
 export const boardErrorSchema = z.strictObject({
   tableId: boardTableIdSchema,
@@ -417,6 +433,7 @@ export interface ServerToClientEvents {
   "player-joined": (payload: PlayerJoinedPayload) => void;
   "player-moved": (payload: PlayerMovedPayload) => void;
   "player-left": (payload: PlayerLeftPayload) => void;
+  "move-correction": (payload: MoveCorrectionPayload) => void;
   chat: (payload: ChatMessage) => void;
   whisper: (payload: WhisperMessage) => void;
   "whisper-fail": (payload: WhisperFailPayload) => void;
