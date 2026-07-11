@@ -13,6 +13,21 @@ import { createGameServer } from "./socket.js";
 
 const log = childLogger({ module: "http" });
 
+function isAuthPath(path: string): boolean {
+  return path === "/api/v1/signup" || path === "/api/v1/signin";
+}
+
+function isMalformedJson(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    error.status === 400 &&
+    "type" in error &&
+    error.type === "entity.parse.failed"
+  );
+}
+
 /**
  * Build the fully wired Express app without binding a port. Kept separate from
  * index.ts so tests can boot the identical app in-process on an ephemeral port.
@@ -40,9 +55,12 @@ export function createApp(): express.Express {
   app.use("/api/v1", api);
   app.use((_request, response) => response.status(404).json({ error: "not-found" }));
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    if (isAuthPath(_request.path) && isMalformedJson(error)) {
+      response.status(400).json({ error: "validation" });
+      return;
+    }
     requestLog(response, log).error({ err: error }, "unhandled request error");
-    const isAuthRequest = _request.path === "/api/v1/signup" || _request.path === "/api/v1/signin";
-    response.status(500).json({ error: isAuthRequest ? "server-error" : "internal-error" });
+    response.status(500).json({ error: isAuthPath(_request.path) ? "server-error" : "internal-error" });
   });
 
   return app;

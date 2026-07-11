@@ -40,6 +40,17 @@ describe("signup", () => {
     expect((await api(base, "/api/v1/signup", { body: { username: "Bad Chars!", password: TEST_PASSWORD } })).status).toBe(400);
     expect((await api(base, "/api/v1/signup", { body: {} })).status).toBe(400);
   });
+
+  it("reports syntactically invalid signup JSON as validation", async () => {
+    const response = await fetch(`${base}/api/v1/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"username":',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "validation" });
+  });
 });
 
 describe("signin", () => {
