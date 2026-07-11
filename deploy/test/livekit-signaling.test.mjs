@@ -33,3 +33,24 @@ test("an incompatible server path fails readiness", async () => {
     /LiveKit signaling is incompatible.*received 404/,
   );
 });
+
+test("startup transport failures are retried before signaling is ready", async () => {
+  let fetchCalls = 0;
+  const sleepDelays = [];
+
+  await assertLiveKitSignalingReady("http://livekit.test", {
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) throw new TypeError("fetch failed");
+      return new Response("join_request is required\n", { status: 400 });
+    },
+    attempts: 2,
+    retryDelayMs: 25,
+    sleepImpl: async (delayMs) => {
+      sleepDelays.push(delayMs);
+    },
+  });
+
+  assert.equal(fetchCalls, 2);
+  assert.deepEqual(sleepDelays, [25]);
+});

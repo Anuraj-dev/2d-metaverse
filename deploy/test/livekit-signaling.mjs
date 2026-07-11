@@ -12,16 +12,38 @@ const EXPECTED_BODY = "join_request is required";
  */
 export async function assertLiveKitSignalingReady(
   baseUrl,
-  { fetchImpl = fetch, timeoutMs = 5_000 } = {},
+  {
+    fetchImpl = fetch,
+    timeoutMs = 5_000,
+    attempts = 30,
+    retryDelayMs = 1_000,
+    sleepImpl = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  } = {},
 ) {
   const url = new URL(SIGNALING_PATH, `${baseUrl.replace(/\/$/, "")}/`);
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
-  const body = (await response.text()).trim();
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let response;
+    try {
+      response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+      if (attempt === attempts) {
+        throw new Error(
+          `LiveKit signaling unavailable at ${url} after ${attempts} attempts`,
+          { cause: error },
+        );
+      }
+      await sleepImpl(retryDelayMs);
+      continue;
+    }
 
-  if (response.status !== EXPECTED_STATUS || body !== EXPECTED_BODY) {
-    throw new Error(
-      `LiveKit signaling is incompatible at ${url}: expected ${EXPECTED_STATUS} ${JSON.stringify(EXPECTED_BODY)}, received ${response.status} ${JSON.stringify(body.slice(0, 200))}`,
-    );
+    const body = (await response.text()).trim();
+
+    if (response.status !== EXPECTED_STATUS || body !== EXPECTED_BODY) {
+      throw new Error(
+        `LiveKit signaling is incompatible at ${url}: expected ${EXPECTED_STATUS} ${JSON.stringify(EXPECTED_BODY)}, received ${response.status} ${JSON.stringify(body.slice(0, 200))}`,
+      );
+    }
+    return;
   }
 }
 
