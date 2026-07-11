@@ -171,11 +171,11 @@ Severity definitions:
 
 | Severity | Type | Finding and evidence | User impact | Business impact | Recommended action |
 | --- | --- | --- | --- | --- | --- |
-| Critical | Product/measurement | No academic domain exists in `backend/migrations/001_initial.sql` or `002_arcade_scores.sql`; no course/focus/help contracts exist. | Students cannot complete an academic job. | The product competes as a novelty world, not a learning product. | Define the smallest course-aware study-session domain after validation. |
+| Historical strategy finding — superseded | Product | No academic domain exists in `backend/migrations/001_initial.sql` or `002_arcade_scores.sql`; no course/focus/help contracts exist. | The original Study Guilds thesis treated this as a gap. | The owner rejected academic workflow as the product centre. | No MVP action; academic planning, focus sessions, and persistent Q&A are explicitly deferred. |
 | Critical | Measurement | Only operational logs and [`frontend/src/errorBeacon.ts`](../frontend/src/errorBeacon.ts) exist; there are no product events. | Unknown friction and invisible drop-off. | Retention and ROI claims are impossible. | Instrument activation, value, social, performance, and guardrail events before expansion. |
 | Critical | Privacy | Mic and camera preferences default on in `frontend/src/media/mediaPrefs.ts:14`; world audio starts after init and meetings request both devices. There is no prejoin consent surface. | A student may enter a live space hot. | Severe trust and privacy risk. | Default both off, explain media, preview devices, and require explicit first publish. |
 | Critical | Mobile/access | `TouchControls` renders only in mobile landscape; production QA confirmed phone portrait has no movement or interaction controls. | Touch-only portrait users cannot use the product. | Large acquisition and retention ceiling. | Provide a mobile-native non-spatial task path and either proper portrait controls or an explicit unsupported-state message. |
-| High | Strategic | Communication and meetings are synchronous and ephemeral; chat is component memory and meeting chat intentionally has no backlog. | Empty campus means little value; useful answers disappear. | Weak retention and no accumulated network value. | Add scheduled sessions, persistent course/pod context, outcomes, and reusable help artifacts. |
+| High | Strategic | Communication and meetings are synchronous and ephemeral; chat is component memory and meeting chat intentionally has no backlog. | An empty campus has little immediate social value and relationships are hard to resume. | Weak return behaviour and social continuity. | Seed scheduled community gatherings, make active people/activities legible on arrival, and measure repeat relationships before adding persistent academic systems. |
 | High | Safety | World chat broadcasts without a rate limit, block, mute, report, or moderation workflow in `backend/src/socket.ts:328-343`. | Spam and harassment are unmanageable. | Growth is unsafe; institutional adoption is blocked. | Add rate limits and minimum safety controls before peer discovery scales. |
 | High | Security | Movement writes client-supplied absolute coordinates directly in `backend/src/socket.ts:316-326`; knock, room-seat, and board-seat handlers lack interaction-distance checks. | Modified clients can teleport or trigger physical actions remotely. | Competitive/social integrity and access claims are weakened. | Add server plausibility and proximity checks at high-value interaction seams. |
 | High | Security | Stage publish validates Redis position, but that position is client-controlled via movement. | A modified client can place itself on stage and request publish rights. | Broadcast abuse risk. | Treat stage authorization as incomplete until movement/interaction authority is strengthened. |
@@ -302,7 +302,9 @@ Confirmed by production QA and source review:
 - Screenshots and raw browser observations are in `/tmp/metaverse-ux-audit/` for this machine/session, including desktop landing/world/help/map/settings, phone portrait/landscape, 2048, and Flappy.
 - Multi-user proximity, private-room approval, meeting media, screen sharing, stage broadcast, error recovery, and mobile games were not end-to-end reverified with multiple live users in this pass. Repository tests and prior checkpoints cover many of those technical flows, but they are not substitutes for this product audit.
 
-## 5. Student problem analysis
+## 5. Historical student-problem analysis — superseded academic lens
+
+> This section records the online-degree problem framing that informed the rejected Study Guilds recommendation. It is research context, not approved MVP scope.
 
 The addressable problems are not “students need a campus map” or “students need more games.” They are:
 
@@ -317,7 +319,7 @@ The addressable problems are not “students need a campus map” or “students
 
 Research supports the importance of structure, belonging, teacher/peer presence, usable synchronous systems, and adaptive help-seeking, while also warning that learner needs vary. See the systematic reviews on [online higher-education attrition](https://pmc.ncbi.nlm.nih.gov/articles/PMC9753023/), [digitally mediated connectedness](https://pmc.ncbi.nlm.nih.gov/articles/PMC8236383/), and [online learner help-seeking](https://olj.onlinelearningconsortium.org/index.php/olj/article/view/3400).
 
-### Session outcomes the product should enable
+### Session outcomes considered by the historical thesis
 
 | Time available | A valuable outcome |
 | --- | --- |
@@ -359,18 +361,20 @@ Research supports the importance of structure, belonging, teacher/peer presence,
 - Moderation and safeguarding added after growth.
 - Institution-facing “at-risk” surveillance without consent and strict governance.
 
-### 6.4 Neglected opportunity
+### 6.4 Historical opportunity hypothesis — superseded
 
-The strongest gap is a **course-aware social accountability layer** between the LMS and generic social/productivity tools:
+The original audit hypothesised a **course-aware social accountability layer** between the LMS and generic social/productivity tools:
 
 - LMS/Notion know the work but not who can help now.
 - Discord/WhatsApp know the people but not their academic commitments or reusable answers.
 - Focusmate knows accountability but not the course, cohort, or whole-degree relationship.
 - Spatial products show presence but rarely convert it into persistent academic progress or knowledge.
 
-Hyprverse can combine academic context, live availability, bounded study sessions, stable peers, and persistent help without replacing incumbents.
+That hypothesis is not approved MVP scope. The current direction validates the private Student Social World and meet-and-play loop first.
 
-## 7. Core weaknesses of the current product
+## 7. Historical weaknesses under the superseded thesis
+
+> These judgments explain why the audit first recommended Study Guilds. Current implementation priorities come from [`product-direction.md`](./product-direction.md), not this list.
 
 1. The name and map imply a student campus, but the domain is a generic social world.
 2. The primary loop optimises presence and novelty, not academic completion.
@@ -383,7 +387,9 @@ Hyprverse can combine academic context, live availability, bounded study session
 9. The product cannot explain what drives retention because it has no product analytics.
 10. Multiple strong technical subsystems feel like separate experiments because they do not serve one recurring workflow.
 
-## 8. Highest-leverage opportunities
+## 8. Historical opportunities — superseded
+
+> The following academic opportunities are retained as discarded alternatives. Do not implement them without a later owner-approved specification.
 
 ### 8.1 Choreograph one recurring academic loop
 

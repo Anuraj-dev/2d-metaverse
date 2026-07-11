@@ -88,12 +88,13 @@ Long sessions are an outcome of social momentum, not the primary metric.
 - Keep text-only and camera-off participation viable.
 - Make status truthful: students should always know whether they are publishing, muted, connected, or waiting.
 
-### 4. Ship two excellent social games, not many average games
+### 4. Polish the existing social games, not add breadth
 
 - **Snake:** improve movement, input smoothness, touch controls, game feel, levels, difficulty scaling, feedback, and short-session replayability. Explore a social presentation such as rounds, spectating, or friendly community competition before committing to a multiplayer rewrite.
+- **Tic-Tac-Toe:** retain server-authoritative rules while polishing seat, offer, acceptance, turn, win, draw, forfeit, rematch, spectator, keyboard, and screen-reader states.
 - **Connect Four:** retain the server-authoritative rules but redesign its presentation, feedback, animations, rematch flow, spectator clarity, and perceived quality.
 - **2048 / the block game:** remove it from primary discovery and messaging. Keep it hidden or retire it unless pilot evidence shows that students value it.
-- Do not add more games during the MVP. Existing games must first prove that they start conversations, hold groups together, or help groups transition between activities.
+- Do not add more games during the MVP. Snake, Tic-Tac-Toe, and Connect Four must first prove that they start conversations, hold groups together, or help groups transition between activities.
 
 ### 5. Create reasons to be present at the same time
 
