@@ -86,8 +86,7 @@ moderation.post("/reports/:id/dismiss", async (request, response) => {
   // no longer overlaps AuthenticatedRequest for a direct assertion. requireModerator
   // guarantees `.user` is present.
   const moderator = (request as unknown as AuthenticatedRequest).user;
-  const raw = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
-  const reportId = raw ?? "";
+  const reportId = (request.params as { id?: string }).id ?? "";
   const result = await setReportStatus(reportId, "dismissed", moderator.id);
   if (!result) {
     response.status(404).json({ error: "not-found" });
