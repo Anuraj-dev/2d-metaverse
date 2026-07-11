@@ -1,9 +1,6 @@
 /** REST auth against the backend. Returns a JWT used for socket handshake + LiveKit tokens. */
-import {
-  authFailureResponseSchema,
-  type AuthFailureResponse,
-  type AuthTokenResponse,
-} from "@metaverse/shared";
+import type { AuthFailureResponse, AuthTokenResponse } from "@metaverse/shared";
+import { parseAuthFailureResponse } from "@metaverse/shared/auth-failure";
 import { SERVER_URL } from "./config";
 
 export { USE_MOCK } from "./config";
@@ -34,8 +31,7 @@ async function postJson(path: string, body: unknown): Promise<Response> {
 
 async function authFailure(response: Response): Promise<AuthFailureResponse | null> {
   try {
-    const parsed = authFailureResponseSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
+    return parseAuthFailureResponse(await response.json());
   } catch {
     return null;
   }
