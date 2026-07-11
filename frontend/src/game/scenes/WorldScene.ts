@@ -31,6 +31,7 @@ import { seatTransition } from "../seatDoor";
 import { doorPassable, shouldAnnounceKnock, type RoomOpenState } from "../roomAccess";
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
+import { reconcilePresence } from "../connectionState";
 import { interactAction } from "../interaction";
 import { initOnAir, stepOnAir, type OnAirEffect, type OnAirInput, type OnAirState } from "../onAir";
 import { positionsEmitDue, moveSendDue } from "../throttle";
@@ -731,12 +732,18 @@ export default class WorldScene extends Phaser.Scene {
   private wireNet() {
     this.listeners.own(
       this.net.on("init", (p: { selfId: string; players: PlayerState[] }) => {
-        for (const pl of p.players) {
-          if (pl.id === this.net.selfId) {
-            this.player.setPosition(pl.x, pl.y);
-            this.playerLabel.setText(pl.name);
-          } else this.addRemote(pl);
+        const self = p.players.find((pl) => pl.id === this.net.selfId);
+        if (self) {
+          this.player.setPosition(self.x, self.y);
+          this.playerLabel.setText(self.name);
         }
+        // Reconcile fully against the authoritative snapshot: a re-emitted init
+        // after a socket recovery (#139) must not just add — it must also drop
+        // remotes that left while we were disconnected and re-snap survivors.
+        const diff = reconcilePresence(this.remotes.keys(), p.players, this.net.selfId);
+        for (const id of diff.remove) this.removeRemote(id);
+        for (const pl of diff.add) this.addRemote(pl);
+        for (const pl of diff.update) this.resnapRemote(pl);
       }),
     );
     this.listeners.own(this.net.on("player-joined", (p: PlayerState) => this.addRemote(p)));
@@ -1023,6 +1030,21 @@ export default class WorldScene extends Phaser.Scene {
     r.sprite.destroy();
     r.label.destroy();
     this.remotes.delete(id);
+  }
+
+  /**
+   * Re-snap an already-tracked remote to an authoritative pose (from an init
+   * reconciliation). Unlike a player-moved tick we hard-snap the sprite rather
+   * than interpolate — after a recovery gap the old position is meaningless, so
+   * sliding across the map would be a lie.
+   */
+  private resnapRemote(p: PlayerState) {
+    const r = this.remotes.get(p.id);
+    if (!r) return;
+    r.tx = p.x;
+    r.ty = p.y;
+    r.dir = p.dir;
+    r.sprite.setPosition(p.x, p.y);
   }
 
   private makeLabel(text: string) {

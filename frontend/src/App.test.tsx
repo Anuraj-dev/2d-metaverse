@@ -167,6 +167,51 @@ describe("App shell", () => {
     expect(media.worldAudio.start).toHaveBeenCalledTimes(1);
   });
 
+  it("surfaces a truthful reconnecting state on a transient socket drop", async () => {
+    render(<App />);
+    await enterAndInit();
+    await waitFor(() => expect(screen.getByText(/^connected$/)).toBeTruthy());
+
+    await emit(() => netMock.net.emit("socket-disconnect", { reason: "transport close" }));
+    await waitFor(() => expect(screen.getByText(/^reconnecting…$/)).toBeTruthy());
+  });
+
+  it("acknowledges a recovered reconnect, then settles back to connected", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<App />);
+      fireEvent.click(screen.getByText("enter-space"));
+      await act(async () => {
+        netMock.net.emit("socket-connect", { recovered: false });
+        netMock.net.emit("init", { selfId: SELF });
+      });
+      await act(async () => {
+        netMock.net.emit("socket-disconnect", { reason: "ping timeout" });
+        netMock.net.emit("socket-reconnecting", { attempt: 1 });
+        netMock.net.emit("socket-connect", { recovered: true });
+      });
+      expect(screen.getByText(/^reconnected$/)).toBeTruthy();
+      // The re-emitted authoritative init must not clear the acknowledgement.
+      await act(async () => {
+        netMock.net.emit("init", { selfId: SELF });
+      });
+      expect(screen.getByText(/^reconnected$/)).toBeTruthy();
+      await act(async () => {
+        await vi.runOnlyPendingTimersAsync();
+      });
+      expect(screen.getByText(/^connected$/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows disconnected when the server drops the socket for good", async () => {
+    render(<App />);
+    await enterAndInit();
+    await emit(() => netMock.net.emit("socket-disconnect", { reason: "io server disconnect" }));
+    await waitFor(() => expect(screen.getByText(/^disconnected$/)).toBeTruthy());
+  });
+
   it("arrives receive-only without issuing a device publish command", async () => {
     render(<App />);
     await enterAndInit();

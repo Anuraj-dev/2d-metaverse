@@ -27,6 +27,14 @@ import {
   type MeetingUiState,
 } from "./game/meetingUi";
 import { HANDOFF_IDLE, handoffReduce, type HandoffState } from "./game/portalHandoff";
+import {
+  CONNECTION_INITIAL,
+  RECOVERED_NOTICE_MS,
+  connectionReduce,
+  isLive,
+  type ConnectionEvent,
+  type ConnectionStatus,
+} from "./game/connectionState";
 import "./App.css";
 
 // Phaser (and the whole game scene) is heavy — load it only after entering.
@@ -73,9 +81,22 @@ interface PortalState {
 
 const SPACE_ID = "1";
 
+/** User-facing copy for each connection status (PRD 25.5). */
+const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
+  connecting: "connecting…",
+  connected: "connected",
+  reconnecting: "reconnecting…",
+  recovered: "reconnected",
+  gone: "disconnected",
+};
+
 export default function App() {
   const [entered, setEntered] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [connStatus, setConnStatus] = useState<ConnectionStatus>(CONNECTION_INITIAL);
+  // Truthful current status kept in a ref so the reducer always folds onto the
+  // latest value (React state is async; the socket fires bursts of lifecycle
+  // events). The single source of truth is `connectionReduce`.
+  const connStatusRef = useRef<ConnectionStatus>(CONNECTION_INITIAL);
   const [notice, setNotice] = useState<string | null>(null);
   const [selfId, setSelfId] = useState("");
   // Meeting lifecycle (PRD 10): reducer output for the HUD. (In-meeting chat is
@@ -96,23 +117,49 @@ export default function App() {
   // The media effect below rebinds this to feed "b-ready" into the handoff.
   const burstCovered = useRef<() => void>(() => {});
 
-  // Connection lifecycle: only show "connected" once init lands; a connect_error
-  // (e.g. rejected JWT) clears the session and returns the player to sign-in.
+  // Connection lifecycle (PRD 25.5): drive a truthful status surface from the raw
+  // socket.io events through the pure connectionReduce machine — connected /
+  // reconnecting / recovered / gone. A connect_error (e.g. rejected JWT) is the
+  // separate fatal path: it clears the session and returns the player to sign-in.
   useEffect(() => {
     if (!entered) return;
     const net = sharedNet();
+    let settleTimer: number | undefined;
+    const apply = (event: ConnectionEvent) => {
+      const next = connectionReduce(connStatusRef.current, event);
+      connStatusRef.current = next;
+      setConnStatus(next);
+      // The "recovered" acknowledgement is transient: hold it briefly so the
+      // convergence is visible, then settle to plain connected.
+      if (next === "recovered") {
+        window.clearTimeout(settleTimer);
+        settleTimer = window.setTimeout(() => apply({ type: "settle" }), RECOVERED_NOTICE_MS);
+      }
+    };
     const offInit = net.on("init", (p: { selfId: string }) => {
-      setConnected(true);
       setSelfId(p.selfId);
+      apply({ type: "init" });
     });
+    const offConnect = net.on<{ recovered: boolean }>("socket-connect", (p) =>
+      apply({ type: "connect", recovered: p.recovered }),
+    );
+    const offDisconnect = net.on<{ reason: string }>("socket-disconnect", (p) =>
+      apply({ type: "disconnect", reason: p.reason }),
+    );
+    const offReconnecting = net.on("socket-reconnecting", () => apply({ type: "reconnecting" }));
     const offErr = net.on("connect_error", (p: { message: string }) => {
       localStorage.removeItem("token");
-      setConnected(false);
+      connStatusRef.current = CONNECTION_INITIAL;
+      setConnStatus(CONNECTION_INITIAL);
       setEntered(false);
       setNotice(`Couldn't connect: ${p.message}. Please sign in again.`);
     });
     return () => {
+      window.clearTimeout(settleTimer);
       offInit();
+      offConnect();
+      offDisconnect();
+      offReconnecting();
       offErr();
     };
   }, [entered]);
@@ -461,9 +508,13 @@ export default function App() {
             />
           </Suspense>
         )}
-        <div className={`presence ${connected ? "" : "pending"}`} role="status">
+        <div
+          className={`presence presence-${connStatus}${isLive(connStatus) ? "" : " pending"}`}
+          role="status"
+          aria-live="polite"
+        >
           <span className="presence-dot" aria-hidden="true" />
-          {connected ? "connected" : "connecting…"}
+          {CONNECTION_LABELS[connStatus]}
         </div>
         {/* The single global control bar (mic/cam/settings) — mounted last so it
             layers above the lazy meeting/arcade overlays (PRD 20). */}

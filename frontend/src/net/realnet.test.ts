@@ -5,16 +5,24 @@ type Handler = (...args: unknown[]) => void;
 // Shared socket double, defined before the mock factory runs.
 const h = vi.hoisted(() => {
   const handlers: Record<string, Handler> = {};
+  const managerHandlers: Record<string, Handler> = {};
   const socket = {
     auth: undefined as unknown,
+    recovered: false,
     on: vi.fn((ev: string, cb: Handler) => {
       handlers[ev] = cb;
     }),
+    // The Manager (socket.io) surface — reconnection attempts fire here.
+    io: {
+      on: vi.fn((ev: string, cb: Handler) => {
+        managerHandlers[ev] = cb;
+      }),
+    },
     emit: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
   };
-  return { handlers, socket, io: vi.fn(() => socket) };
+  return { handlers, managerHandlers, socket, io: vi.fn(() => socket) };
 });
 
 vi.mock("socket.io-client", () => ({ io: h.io, Socket: class {} }));
@@ -27,8 +35,11 @@ beforeEach(() => {
   h.socket.emit.mockClear();
   h.socket.connect.mockClear();
   h.socket.disconnect.mockClear();
+  h.socket.io.on.mockClear();
   for (const k of Object.keys(h.handlers)) delete h.handlers[k];
+  for (const k of Object.keys(h.managerHandlers)) delete h.managerHandlers[k];
   h.socket.auth = undefined;
+  h.socket.recovered = false;
 });
 
 describe("RealNet adapter", () => {
@@ -69,6 +80,29 @@ describe("RealNet adapter", () => {
 
     h.handlers["connect_error"]?.(new Error("invalid token"));
     expect(seen).toEqual([{ message: "invalid token" }]);
+  });
+
+  it("surfaces socket lifecycle events for the connection-state machine", () => {
+    const net = new RealNet("http://api.test");
+    const connects: { recovered: boolean }[] = [];
+    const disconnects: { reason: string }[] = [];
+    const reconnecting: { attempt: number }[] = [];
+    net.on<{ recovered: boolean }>("socket-connect", (p) => connects.push(p));
+    net.on<{ reason: string }>("socket-disconnect", (p) => disconnects.push(p));
+    net.on<{ attempt: number }>("socket-reconnecting", (p) => reconnecting.push(p));
+
+    h.handlers["connect"]?.();
+    expect(connects).toEqual([{ recovered: false }]);
+
+    h.socket.recovered = true;
+    h.handlers["connect"]?.();
+    expect(connects).toEqual([{ recovered: false }, { recovered: true }]);
+
+    h.managerHandlers["reconnect_attempt"]?.(2);
+    expect(reconnecting).toEqual([{ attempt: 2 }]);
+
+    h.handlers["disconnect"]?.("transport close");
+    expect(disconnects).toEqual([{ reason: "transport close" }]);
   });
 
   it("captures selfId from init and forwards the payload", () => {

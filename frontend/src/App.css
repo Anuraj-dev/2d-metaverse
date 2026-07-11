@@ -580,6 +580,15 @@ html, body, #root {
   background: var(--accent2);
 }
 .presence.pending .presence-dot { background: #e8c468; }
+/* A restored session — briefly acknowledged in green before settling. */
+.presence-recovered { color: var(--accent2); }
+/* A drop the socket manager is retrying — amber, honest about the gap. */
+.presence-reconnecting { color: #e8c468; }
+.presence-reconnecting .presence-dot { animation: presence-pulse 1s ease-in-out infinite; }
+/* The link is gone and will not auto-recover — red, never faked as connected. */
+.presence-gone { color: #e2726e; }
+.presence-gone .presence-dot { background: #e2726e; }
+@keyframes presence-pulse { 50% { opacity: 0.3; } }
 
 /* ---------- Roster ---------- */
 .roster {
