@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { bus } from "../game/eventBus";
 import { setMediaPrefs } from "../media/mediaPrefs";
 
@@ -111,5 +111,31 @@ describe("ControlBar", () => {
     expect(media.worldAudio.setMicEnabled).toHaveBeenLastCalledWith(true);
     expect(screen.getByLabelText("Mute microphone")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe("Microphone on");
+  });
+
+  it("reverts the mic and announces when the transport denies the unmute (PRD 25.7)", async () => {
+    // A publisher confirms the capture was blocked; the optimistic on must revert.
+    media.worldAudio.setMicEnabled.mockResolvedValueOnce({ status: "denied" });
+    render(<ControlBar />);
+    fireEvent.click(screen.getByLabelText("Unmute microphone"));
+    // Optimistically flips on immediately...
+    expect(screen.getByLabelText("Mute microphone")).toBeTruthy();
+    // ...then the confirmed denial reverts it to muted and announces the reason.
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toBe(
+        "Microphone blocked — allow access in your browser",
+      );
+      expect(screen.getByLabelText("Unmute microphone")).toBeTruthy();
+    });
+  });
+
+  it("keeps the camera on when the transport confirms the publish", async () => {
+    media.roomVideo.setCamEnabled.mockResolvedValueOnce({ status: "live" });
+    render(<ControlBar />);
+    fireEvent.click(screen.getByLabelText("Turn camera on"));
+    await waitFor(() => expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(true));
+    // No revert: the control stays on and never shows a failure toast.
+    expect(screen.getByLabelText("Turn camera off")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Camera on");
   });
 });

@@ -285,10 +285,12 @@ export default function App() {
     // the stage room with a position-validated publish token; off air returns to
     // the audience subscription.
     const offOnAir = bus.on("stage-on-air", () => {
-      if (selfId) transition(() => stageVideo.goOnAir(SPACE_ID, selfId));
+      // The confirmed outcome drives StageScreen's LIVE truth via the transport's
+      // publication store (PRD 25.7); the sequencer only needs the settled void.
+      if (selfId) transition(async () => void (await stageVideo.goOnAir(SPACE_ID, selfId)));
     });
     const offOffAir = bus.on("stage-off-air", () => {
-      if (selfId) transition(() => stageVideo.goOffAir(SPACE_ID, selfId));
+      if (selfId) transition(async () => void (await stageVideo.goOffAir(SPACE_ID, selfId)));
     });
 
     // ---- Meeting lifecycle + portal handoff (PRD 10) ----------------------

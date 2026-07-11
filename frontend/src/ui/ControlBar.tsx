@@ -8,8 +8,9 @@ import {
   isScreenSharing,
   subscribeScreenShare,
 } from "../media/mediaControls";
-import { getMediaPrefs, subscribeMediaPrefs } from "../media/mediaPrefs";
-import { micToastText, camToastText } from "../game/controlBar";
+import { getMediaPrefs, setMediaPrefs, subscribeMediaPrefs } from "../media/mediaPrefs";
+import { outcomeNeedsAttention, type MediaOutcome } from "../media/publicationState";
+import { micToastText, camToastText, mediaFailureText } from "../game/controlBar";
 import Settings from "./Settings";
 import MicMeter from "./MicMeter";
 
@@ -52,18 +53,29 @@ export default function ControlBar() {
     toastTimer.current = window.setTimeout(() => setToast(""), TOAST_MS);
   };
 
-  const onMic = () => {
-    const on = !prefs.micOn;
-    setMic(on);
-    bus.emit("mic-toggle", { on });
-    flash(micToastText(on));
+  // Toggle a device optimistically (immediate icon flip + blip), then await the
+  // transport's confirmed outcome (PRD 25.7): if the publish was denied /
+  // unavailable / failed, revert the preference so the control stays truthful and
+  // announce the bounded reason instead of the optimistic "on" toast.
+  const toggleDevice = (
+    device: "mic" | "cam",
+    on: boolean,
+    apply: (on: boolean) => Promise<MediaOutcome>,
+    okText: string,
+  ) => {
+    bus.emit(device === "mic" ? "mic-toggle" : "cam-toggle", { on });
+    flash(okText);
+    void apply(on).then(({ status }) => {
+      // Only an attempted turn-on can fail meaningfully; a mute always succeeds.
+      if (on && outcomeNeedsAttention(status)) {
+        setMediaPrefs(device === "mic" ? { micOn: false } : { camOn: false });
+        flash(mediaFailureText(device, status));
+      }
+    });
   };
-  const onCam = () => {
-    const on = !prefs.camOn;
-    setCam(on);
-    bus.emit("cam-toggle", { on });
-    flash(camToastText(on));
-  };
+
+  const onMic = () => toggleDevice("mic", !prefs.micOn, setMic, micToastText(!prefs.micOn));
+  const onCam = () => toggleDevice("cam", !prefs.camOn, setCam, camToastText(!prefs.camOn));
   const onShare = () => {
     const on = !sharing;
     setScreenShare(on);

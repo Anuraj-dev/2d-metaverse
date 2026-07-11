@@ -13,28 +13,57 @@ import { worldAudio, roomVideo, stageVideo } from "./livekit";
 import { setCamEnabled as mockSetCam, setMicEnabled as mockSetMic } from "./localMedia";
 import { USE_MOCK } from "../net/auth";
 import { getMediaPrefs, setMediaPrefs } from "./mediaPrefs";
+import { worstOutcome, type MediaOutcome } from "./publicationState";
 
-export function setMic(on: boolean): void {
+/**
+ * A publisher's `setMic/CamEnabled` may be async (the LiveKit transport) or a
+ * plain no-op mock (`() => void`). Await either and normalise a missing return
+ * (mocks, mock-mode) to a successful outcome, so the aggregate never treats a
+ * legacy void as a failure.
+ */
+async function resolveOutcome(
+  result: MediaOutcome | undefined | Promise<MediaOutcome | undefined>,
+  on: boolean,
+): Promise<MediaOutcome> {
+  const value = await result;
+  return value ?? { status: on ? "live" : "off" };
+}
+
+/**
+ * Record the desired mic state (optimistic — the control bar reverts on a failed
+ * outcome) and fan it out to every active publisher, awaiting each so the bar can
+ * surface the truthful bounded outcome (PRD 25.7). The worst outcome across
+ * publishers wins (a denial anywhere beats a success elsewhere).
+ */
+export async function setMic(on: boolean): Promise<MediaOutcome> {
   setMediaPrefs({ micOn: on });
   if (USE_MOCK) {
     mockSetMic(on);
-    return;
+    return { status: on ? "live" : "off" };
   }
-  worldAudio.setMicEnabled(on);
-  roomVideo.setMicEnabled(on);
-  stageVideo.setMicEnabled(on);
+  return worstOutcome(
+    await Promise.all([
+      resolveOutcome(worldAudio.setMicEnabled(on), on),
+      resolveOutcome(roomVideo.setMicEnabled(on), on),
+      resolveOutcome(stageVideo.setMicEnabled(on), on),
+    ]),
+  );
 }
 
-export function setCam(on: boolean): void {
+export async function setCam(on: boolean): Promise<MediaOutcome> {
   setMediaPrefs({ camOn: on });
   if (USE_MOCK) {
     mockSetCam(on);
-    return;
+    return { status: on ? "live" : "off" };
   }
   // Proximity voice is audio-only; cameras publish to the room/meeting video and
   // the stage "Go Live" broadcast.
-  roomVideo.setCamEnabled(on);
-  stageVideo.setCamEnabled(on);
+  return worstOutcome(
+    await Promise.all([
+      resolveOutcome(roomVideo.setCamEnabled(on), on),
+      resolveOutcome(stageVideo.setCamEnabled(on), on),
+    ]),
+  );
 }
 
 /**
@@ -59,14 +88,10 @@ export function subscribeScreenShare(cb: () => void): () => void {
   return roomVideo.onScreenShareChanged(cb);
 }
 
-export function toggleMic(): boolean {
-  const on = !getMediaPrefs().micOn;
-  setMic(on);
-  return on;
+export function toggleMic(): Promise<MediaOutcome> {
+  return setMic(!getMediaPrefs().micOn);
 }
 
-export function toggleCam(): boolean {
-  const on = !getMediaPrefs().camOn;
-  setCam(on);
-  return on;
+export function toggleCam(): Promise<MediaOutcome> {
+  return setCam(!getMediaPrefs().camOn);
 }
