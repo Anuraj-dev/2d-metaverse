@@ -8,10 +8,10 @@ import { BlockCache, type BlockLoader } from "../src/blocks.js";
  */
 function loaderFrom(edges: Array<[blocker: string, blocked: string]>): BlockLoader {
   return {
-    listBlockedIds: async (userId) =>
-      edges.filter(([blocker]) => blocker === userId).map(([, blocked]) => blocked),
-    listBlockerIds: async (userId) =>
-      edges.filter(([, blocked]) => blocked === userId).map(([blocker]) => blocker),
+    listBlockedIds: (userId) =>
+      Promise.resolve(edges.filter(([blocker]) => blocker === userId).map(([, blocked]) => blocked)),
+    listBlockerIds: (userId) =>
+      Promise.resolve(edges.filter(([, blocked]) => blocked === userId).map(([blocker]) => blocker)),
   };
 }
 
@@ -87,11 +87,11 @@ describe("BlockCache", () => {
   it("ensureLoaded loads once and coalesces concurrent calls", async () => {
     let calls = 0;
     const loader: BlockLoader = {
-      listBlockedIds: async (u) => {
+      listBlockedIds: (u) => {
         calls += 1;
-        return u === "a" ? ["b"] : [];
+        return Promise.resolve(u === "a" ? ["b"] : []);
       },
-      listBlockerIds: async () => [],
+      listBlockerIds: () => Promise.resolve([]),
     };
     const cache = new BlockCache(loader);
     await Promise.all([cache.ensureLoaded("a"), cache.ensureLoaded("a")]);
