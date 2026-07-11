@@ -1,5 +1,5 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { type RateLimitInfo } from "express-rate-limit";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { z } from "zod";
 import {
@@ -54,7 +54,16 @@ const authLimiter = rateLimit({
   windowMs: RATE_LIMITS.authWindowMs,
   limit: RATE_LIMITS.authLimit,
   standardHeaders: "draft-8",
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: (request, response) => {
+    const resetTime = (request as typeof request & { rateLimit?: RateLimitInfo }).rateLimit?.resetTime;
+    const remainingMs = resetTime ? resetTime.getTime() - Date.now() : RATE_LIMITS.authWindowMs;
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.min(Math.ceil(remainingMs / 1000), Math.ceil(RATE_LIMITS.authWindowMs / 1000)),
+    );
+    response.status(429).json({ error: "rate-limited", retryAfterSeconds });
+  },
 });
 const arcadeScoreLimiter = rateLimit({
   windowMs: RATE_LIMITS.arcadeScoreWindowMs,
@@ -76,7 +85,7 @@ function isArcadeGame(value: string): value is ArcadeGame {
 api.post("/signup", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);
   if (!parsed.success) {
-    response.status(400).json({ error: "invalid-credentials", details: z.flattenError(parsed.error).fieldErrors });
+    response.status(400).json({ error: "validation" });
     return;
   }
   const passwordHash = await hashSecret(parsed.data.password);
@@ -85,7 +94,7 @@ api.post("/signup", authLimiter, async (request, response) => {
     response.status(200).json({ ok: true });
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
-      response.status(400).json({ error: "username-taken" });
+      response.status(409).json({ error: "username-taken" });
       return;
     }
     throw error;
@@ -95,7 +104,7 @@ api.post("/signup", authLimiter, async (request, response) => {
 api.post("/signin", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);
   if (!parsed.success) {
-    response.status(401).json({ error: "invalid-credentials" });
+    response.status(400).json({ error: "validation" });
     return;
   }
   const result = await pool.query<{ id: string; username: string; password_hash: string }>(

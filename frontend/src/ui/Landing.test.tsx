@@ -88,6 +88,17 @@ describe("Landing", () => {
     expect(onEntered).not.toHaveBeenCalled();
   });
 
+  it("announces retry guidance and restores the submit control", async () => {
+    auth.signIn.mockRejectedValueOnce(new Error("Too many attempts. Try again in 37 seconds."));
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.change(userField(), { target: { value: "ada" } });
+    fireEvent.change(passField(), { target: { value: "wrongpw" } });
+    fireEvent.click(submitBtn());
+
+    expect((await screen.findByRole("alert")).textContent).toContain("37 seconds");
+    expect(submitBtn().disabled).toBe(false);
+  });
+
   it("requires username and password", async () => {
     render(<Landing onEntered={() => {}} />);
     fireEvent.click(submitBtn());

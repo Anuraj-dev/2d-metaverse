@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import { dirSchema } from "./socket.js";
-import { ARCADE_GAMES, LIMITS, USERNAME_PATTERN } from "./constants.js";
+import { ARCADE_GAMES, LIMITS, RATE_LIMITS, USERNAME_PATTERN } from "./constants.js";
 
 /* ------------------------------- requests --------------------------------- */
 
@@ -52,6 +52,24 @@ export const arcadeScoreSchema = z.object({
 export type ArcadeScoreSubmission = z.infer<typeof arcadeScoreSchema>;
 
 /* ------------------------------- responses -------------------------------- */
+
+/**
+ * Bounded failure response shared by `POST /signup` and `POST /signin`.
+ * Details stay deliberately coarse: the wire never reflects credentials or
+ * arbitrary database/server text. Rate limiting is the only variant carrying
+ * metadata, capped to the configured auth window.
+ */
+export const authFailureResponseSchema = z.discriminatedUnion("error", [
+  z.strictObject({ error: z.literal("validation") }),
+  z.strictObject({ error: z.literal("username-taken") }),
+  z.strictObject({ error: z.literal("invalid-credentials") }),
+  z.strictObject({
+    error: z.literal("rate-limited"),
+    retryAfterSeconds: z.number().int().min(1).max(Math.ceil(RATE_LIMITS.authWindowMs / 1000)),
+  }),
+  z.strictObject({ error: z.literal("server-error") }),
+]);
+export type AuthFailureResponse = z.infer<typeof authFailureResponseSchema>;
 
 /** One leaderboard row: a player's best on a cabinet. */
 export const arcadeScoreEntrySchema = z.object({
