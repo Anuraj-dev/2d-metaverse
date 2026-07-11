@@ -77,7 +77,12 @@ export type AuthFailureResponse = z.infer<typeof authFailureResponseSchema>;
  * Identity and timestamps are deliberately absent: the server owns both.
  */
 export const analyticsClientEventSchema = z.discriminatedUnion("name", [
-  z.strictObject({ name: z.literal("session-started") }),
+  // Foundation-only production verification seam. Product feature events are
+  // added by their owning slices with bounded, privacy-reviewed properties.
+  z.strictObject({
+    name: z.literal("ingestion-probe"),
+    properties: z.strictObject({ nonce: z.uuid() }),
+  }),
 ]);
 export type AnalyticsClientEvent = z.infer<typeof analyticsClientEventSchema>;
 

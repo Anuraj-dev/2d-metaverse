@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sitPlayer, standPlayer } from "../../src/seat-store.js";
 import { redis } from "../../src/redis.js";
 import { pool } from "../../src/db.js";
+import { pruneExpiredAnalyticsEvents } from "../../src/analytics.js";
 import { api, createPlayer, createUser, startServer, teardown, uniqueName, TEST_PASSWORD, type TestServer } from "./helpers.js";
 
 let server: TestServer;
@@ -118,6 +119,23 @@ describe("signin", () => {
     );
     expect(recorded.rows[0]).toEqual({ actor_user_id: null, properties: { result: "validation" } });
   });
+
+  it("records an unexpected auth failure as a coarse anonymous server error", async () => {
+    await pool.query("ALTER TABLE users RENAME TO users_signin_failure_test");
+    try {
+      const result = await api(base, "/api/v1/signin", {
+        body: { username: uniqueName("server-error"), password: TEST_PASSWORD },
+      });
+      expect(result).toEqual({ status: 500, json: { error: "server-error" } });
+    } finally {
+      await pool.query("ALTER TABLE users_signin_failure_test RENAME TO users");
+    }
+    const recorded = await pool.query<{ actor_user_id: string | null; properties: Record<string, unknown> }>(
+      `SELECT actor_user_id, properties FROM analytics_events
+       WHERE event_name = 'signin-outcome' ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(recorded.rows[0]).toEqual({ actor_user_id: null, properties: { result: "server-error" } });
+  });
 });
 
 describe("analytics ingestion", () => {
@@ -125,7 +143,10 @@ describe("analytics ingestion", () => {
     const eventId = randomUUID();
     expect(
       (await api(base, "/api/v1/analytics/events", {
-        body: { eventId, event: { name: "session-started" } },
+        body: {
+          eventId,
+          event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+        },
       })).status,
     ).toBe(401);
 
@@ -141,7 +162,8 @@ describe("analytics ingestion", () => {
   it("server-stamps an authenticated event and deduplicates its id", async () => {
     const { token } = await createPlayer("analytics-idempotent");
     const eventId = randomUUID();
-    const body = { eventId, event: { name: "session-started" } };
+    const nonce = randomUUID();
+    const body = { eventId, event: { name: "ingestion-probe", properties: { nonce } } };
 
     const first = await api(base, "/api/v1/analytics/events", { token, body });
     expect(first.status).toBe(202);
@@ -169,15 +191,41 @@ describe("analytics ingestion", () => {
     );
     expect(stored.rows[0]?.count).toBe(1);
     expect(stored.rows[0]?.actor_user_id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(stored.rows[0]?.properties).toEqual({});
+    expect(stored.rows[0]?.properties).toEqual({ nonce });
     expect(stored.rows[0]?.expires_at.getTime()).toBeGreaterThan(stored.rows[0]?.occurred_at.getTime() ?? 0);
+  });
+
+  it("rejects an idempotency replay whose bounded payload changed", async () => {
+    const { token } = await createPlayer("analytics-payload-conflict");
+    const eventId = randomUUID();
+    expect(
+      (await api(base, "/api/v1/analytics/events", {
+        token,
+        body: {
+          eventId,
+          event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+        },
+      })).status,
+    ).toBe(202);
+    expect(
+      await api(base, "/api/v1/analytics/events", {
+        token,
+        body: {
+          eventId,
+          event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+        },
+      }),
+    ).toEqual({ status: 409, json: { error: "event-id-conflict" } });
   });
 
   it("does not let one authenticated student reuse another student's event id", async () => {
     const first = await createPlayer("analytics-owner-a");
     const second = await createPlayer("analytics-owner-b");
     const eventId = randomUUID();
-    const body = { eventId, event: { name: "session-started" } };
+    const body = {
+      eventId,
+      event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+    };
 
     expect((await api(base, "/api/v1/analytics/events", { token: first.token, body })).status).toBe(202);
     expect(await api(base, "/api/v1/analytics/events", { token: second.token, body })).toEqual({
@@ -186,7 +234,7 @@ describe("analytics ingestion", () => {
     });
   });
 
-  it("prunes expired records while accepting new events", async () => {
+  it("physically prunes expired records through the scheduled job's public operation", async () => {
     const expiredId = randomUUID();
     await pool.query(
       `INSERT INTO analytics_events
@@ -195,17 +243,31 @@ describe("analytics ingestion", () => {
                now() - interval '8 days', now() - interval '1 day')`,
       [expiredId],
     );
-    const { token } = await createPlayer("analytics-retention");
-    const accepted = await api(base, "/api/v1/analytics/events", {
-      token,
-      body: { eventId: randomUUID(), event: { name: "session-started" } },
-    });
-    expect(accepted.status).toBe(202);
+    await pruneExpiredAnalyticsEvents();
     const remaining = await pool.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM analytics_events WHERE event_id = $1",
       [expiredId],
     );
     expect(remaining.rows[0]?.count).toBe(0);
+  });
+
+  it("keeps expired rows outside the operator active-query boundary before cleanup", async () => {
+    const expiredId = randomUUID();
+    const activeId = randomUUID();
+    await pool.query(
+      `INSERT INTO analytics_events
+         (event_id, event_name, properties, occurred_at, expires_at)
+       VALUES ($1, 'signin-outcome', '{"result":"validation"}'::jsonb,
+               now() - interval '8 days', now() - interval '1 day'),
+              ($2, 'signin-outcome', '{"result":"success"}'::jsonb,
+               now(), now() + interval '1 day')`,
+      [expiredId, activeId],
+    );
+    const visible = await pool.query<{ event_id: string }>(
+      "SELECT event_id FROM active_analytics_events WHERE event_id = ANY($1::uuid[]) ORDER BY event_id",
+      [[expiredId, activeId]],
+    );
+    expect(visible.rows).toEqual([{ event_id: activeId }]);
   });
 });
 

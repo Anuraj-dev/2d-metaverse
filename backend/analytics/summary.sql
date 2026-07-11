@@ -4,7 +4,9 @@ SELECT date_trunc('day', occurred_at AT TIME ZONE 'UTC') AS utc_day,
        event_name,
        count(*) AS events,
        count(DISTINCT actor_user_id) FILTER (WHERE actor_user_id IS NOT NULL) AS authenticated_students
-  FROM analytics_events
+  FROM active_analytics_events
  WHERE occurred_at >= now() - interval '90 days'
+   AND expires_at > now()
+   AND event_name <> 'ingestion-probe'
  GROUP BY utc_day, event_name
  ORDER BY utc_day, event_name;

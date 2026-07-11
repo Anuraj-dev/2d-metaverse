@@ -20,6 +20,7 @@ interface StoredEvent {
   actor_user_id: string | null;
   event_name: string;
   occurred_at: Date;
+  properties_equal: boolean;
 }
 
 export interface AnalyticsIngestResult {
@@ -44,7 +45,6 @@ export async function pruneExpiredAnalyticsEvents(now: Date = new Date()): Promi
 }
 
 export async function recordSigninOutcome(response: Response, result: SigninOutcome): Promise<void> {
-  await pruneExpiredAnalyticsEvents();
   await pool.query(
     `INSERT INTO analytics_events
        (event_id, event_name, actor_user_id, properties, expires_at)
@@ -70,25 +70,24 @@ export async function ingestAnalyticsEvent(
   actorUserId: string,
   event: AnalyticsClientEvent,
 ): Promise<AnalyticsIngestResult> {
-  await pruneExpiredAnalyticsEvents();
   const inserted = await pool.query<{ occurred_at: Date }>(
     `INSERT INTO analytics_events
        (event_id, event_name, actor_user_id, properties, expires_at)
      VALUES ($1, $2, $3, $4::jsonb, now() + ($5 * interval '1 day'))
      ON CONFLICT (event_id) DO NOTHING
      RETURNING occurred_at`,
-    [eventId, event.name, actorUserId, JSON.stringify({}), ANALYTICS_RETENTION_DAYS],
+    [eventId, event.name, actorUserId, JSON.stringify(event.properties), ANALYTICS_RETENTION_DAYS],
   );
   const accepted = inserted.rows[0];
   if (accepted) return { acceptedAt: accepted.occurred_at, duplicate: false, conflict: false };
 
   const existing = await pool.query<StoredEvent>(
-    `SELECT actor_user_id, event_name, occurred_at
+    `SELECT actor_user_id, event_name, occurred_at, properties = $2::jsonb AS properties_equal
        FROM analytics_events WHERE event_id = $1`,
-    [eventId],
+    [eventId, JSON.stringify(event.properties)],
   );
   const row = existing.rows[0];
-  if (!row || row.actor_user_id !== actorUserId || row.event_name !== event.name) {
+  if (!row || row.actor_user_id !== actorUserId || row.event_name !== event.name || !row.properties_equal) {
     return { acceptedAt: row?.occurred_at ?? new Date(0), duplicate: false, conflict: true };
   }
   return { acceptedAt: row.occurred_at, duplicate: true, conflict: false };

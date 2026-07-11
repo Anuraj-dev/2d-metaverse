@@ -99,9 +99,12 @@ Product analytics is stored in `analytics_events`. Pre-auth sign-in outcomes are
 server-generated, anonymous records with only a coarse result. Authenticated
 client events enter through `POST /api/v1/analytics/events`; the server derives
 the actor from the JWT, stamps time, deduplicates the client event UUID, and
-accepts only event schemas exported by `@metaverse/shared`. Records expire after
-90 days (sign-in outcomes after 7 days), and each ingestion pass deletes expired
-rows through the indexed `expires_at` path.
+accepts only event schemas exported by `@metaverse/shared`. The foundation ships
+only an `ingestion-probe` verification event; feature events remain owned by
+their later slices. Records expire after 90 days (sign-in outcomes after 7 days).
+The backend prunes expired rows on startup and every six hours through the
+indexed `expires_at` path, independently of traffic; shutdown stops that job.
+Both operator queries also exclude rows whose expiry has passed.
 
 There is intentionally no public analytics read endpoint. Operators query with
 database credentials from the EC2/SSM operator path:
@@ -115,7 +118,8 @@ The export contains event UUID, allowlisted name/properties, server-derived acto
 UUID when authenticated, server timestamp, and expiry only. Do not join or add
 usernames, passwords, JWTs, IP addresses, chat/transcripts, precise coordinates,
 device identifiers, SDP, or raw error context. Extend the shared discriminated
-union and its privacy tests before emitting a new feature event.
+union and its privacy tests before emitting a new feature event. The summary
+excludes `ingestion-probe`, so deployment checks never become a pilot KPI.
 
 ## Contract details
 

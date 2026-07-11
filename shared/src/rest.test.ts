@@ -51,12 +51,18 @@ describe("analytics ingestion", () => {
   it("accepts only an allowlisted, bounded post-auth event envelope", () => {
     const event = {
       eventId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
-      event: { name: "session-started" },
+      event: {
+        name: "ingestion-probe",
+        properties: { nonce: "018f47a8-5f63-7c44-9b46-86c2d6e132b2" },
+      },
     };
 
     expect(analyticsIngestRequestSchema.safeParse(event).success).toBe(true);
     expect(
       analyticsIngestRequestSchema.safeParse({ ...event, event: { name: "password-captured" } }).success,
+    ).toBe(false);
+    expect(
+      analyticsIngestRequestSchema.safeParse({ ...event, event: { name: "session-started" } }).success,
     ).toBe(false);
     expect(
       analyticsIngestRequestSchema.safeParse({
