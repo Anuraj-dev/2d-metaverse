@@ -1,12 +1,14 @@
 # 2D Metaverse — State
-> Gather/Zep-style 2D metaverse (app name: **hyprverse**): walk a styled office campus, proximity voice/video, key-gated meeting rooms, arcade + board-game tables. · Last checkpoint: 2026-07-09 (morning session)
+> Gather/Zep-style 2D metaverse (app name: **hyprverse**): walk a styled office campus, proximity voice/video, admin-gated meeting rooms, arcade + board-game tables. · Last checkpoint: 2026-07-11 (product-thesis grilling)
 
 ## 🚧 In progress / next
-- **Zero open PRs, QA backlog clear.** Next: Raja may refine the floor-painted signage look (he approved it as "fine, refine later" — font size/contrast are one-line tweaks in `gen_campus.py`/`WorldScene.buildFloorName`).
+- **Approved agent-ready direction is in `docs/product-direction.md`.** Hyprverse is a private **Student Social World** for one bounded community: arrive, find familiar students, talk or join meetings, play or gather, continue together, and return. The document fixes the MVP boundary, game strategy, pilot, measurement model, product principles, foundation repairs, non-goals, and agent instructions. Missions, crews, progression, economies, academic platforms, and new game breadth are deferred hypotheses. No Wayfinder map, implementation spec, GitHub issues, or feature work exists yet. Next: define the first validation slice, then spec only the repairs and experience needed for that pilot.
+- **Zero implementation PRs; product-direction documentation is under review in PR #88.** The implementation backlog is intentionally not created yet. Existing floor-signage refinement remains optional.
 - CLAUDE.md cleanup still pending: model-delegation section expired 2026-07-06.
-- QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`; screenshots in the 2026-07-09 scratchpad `shots/`.
+- QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`, `qa-strategy-mrf9bvaz-kp3z`; latest strategy screenshots/raw browser reports are in `/tmp/metaverse-ux-audit/` (session-local).
 
 ## Status
+- **Research/design 2026-07-10:** completed repo/product architecture audit, production desktop/mobile/game QA, student-problem and competitor research, three strategic directions, weighted decision matrix, recommendation, and initiative portfolio in `docs/product-v2-strategy.md`. Current critical facts: no product analytics; portrait world has no touch controls; mic/cam default on; public chat lacks safety controls; absolute movement/physical actions are too client-trusted. The missing academic domain belonged to the superseded Study Guilds thesis and is not an MVP defect. Latest inspected GitHub CI/deploy runs were green; no full local gates were run. No GitHub issues were created.
 - **Shipped 2026-07-09 (this session):**
   - **PR #83** (PRD 24, #81): zep-style signage (plaques + ground labels, `gen_signs.py`/wooden sprites deleted) + area focus dim (`game/areaDim.ts`).
   - **PR #84** (PRD 24.1, Raja's visual feedback): ALL plaques removed; new `floorName` sign kind — big bold names painted on the floor inside each area, fading out (~300ms) when the player is inside (pure `focusAreaId`/`floorNameHidden` in `areaDim.ts`); Mandakini direction added at plaza; arcade dim fixed via authored full-interior `arcade_zone` map object (old cabinet-bbox `arcadeAreaRect` deleted; HUD map uses the zone too). Raja approved the look ("fine, refine later").

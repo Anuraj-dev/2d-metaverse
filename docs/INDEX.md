@@ -6,6 +6,8 @@
 | STATE.md | Current state — read this first on any fresh session |
 | decisions.md | Append-only log of load-bearing choices + why |
 | conventions.md | Stack, run/test commands, naming — quick-reference (CLAUDE.md is the full rulebook) |
+| product-direction.md | Owner-approved Hyprverse product direction, MVP boundaries, pilot, metrics, and agent handoff |
+| product-v2-strategy.md | Evidence-backed product/code/UX audit, strategic alternatives, and owner decision gate for Hyprverse Next |
 | old_context.md | Honest pre-tracking backstory reconstructed at adoption |
 | specs/ | Numbered specs for complex features (see /spec) |
 | sessions/ | One append-only log per day |

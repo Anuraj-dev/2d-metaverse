@@ -73,3 +73,6 @@
 
 ## 2026-07-09 — LiveKit server pinned v1.9.12 (not latest major line jump)
 **Why:** prod v1.9.1 predates the /rtc/v1 signaling path (added v1.9.10; v1.9.10 has a panic bug, v1.9.11/12 fix it) that livekit-client 2.19 requires. v1.9.12 = smallest safe jump with identical config keys; deploy script now pulls livekit so pin bumps actually roll out.
+
+## 2026-07-11 — Hyprverse is a private Student Social World for one launch community
+**Why:** Raja's original goal is a coherent campus where online students find familiar people, talk or meet, and play together. Study-first positioning was too narrow, while game-first positioning would create an expensive content treadmill. Launching with one reachable community concentrates presence and lets the basic social loop be validated before public discovery, academic workflows, missions, crews, progression, or economies are built. The canonical direction and MVP boundary are in `docs/product-direction.md`.
