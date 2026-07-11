@@ -3,7 +3,7 @@
 
 ## 🚧 In progress / next
 - **Approved agent-ready direction is in `docs/product-direction.md`.** Hyprverse is a private **Student Social World** for one bounded community: arrive, find familiar students, talk or join meetings, play or gather, continue together, and return. The document fixes the MVP boundary, game strategy, pilot, measurement model, product principles, foundation repairs, non-goals, and agent instructions. Missions, crews, progression, economies, academic platforms, and new game breadth are deferred hypotheses. No Wayfinder map, implementation spec, GitHub issues, or feature work exists yet. Next: define the first validation slice, then spec only the repairs and experience needed for that pilot.
-- **Zero open PRs; implementation backlog intentionally not created.** Existing floor-signage refinement remains optional.
+- **Zero implementation PRs; product-direction documentation is under review in PR #88.** The implementation backlog is intentionally not created yet. Existing floor-signage refinement remains optional.
 - CLAUDE.md cleanup still pending: model-delegation section expired 2026-07-06.
 - QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`, `qa-strategy-mrf9bvaz-kp3z`; latest strategy screenshots/raw browser reports are in `/tmp/metaverse-ux-audit/` (session-local).
 

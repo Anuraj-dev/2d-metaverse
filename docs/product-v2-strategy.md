@@ -1,6 +1,6 @@
 # Hyprverse Next — product and technical strategy audit
 
-> Status: research complete; product-thesis grilling in progress
+> Status: historical evidence and alternatives; owner direction approved on 2026-07-11
 > Audited commit: `ceb098d644fb`
 > Date: 2026-07-10
 > Decision gate: product thesis is approved; no implementation issues are created until the first pilot-validation slice and its specification are approved.
@@ -26,7 +26,7 @@ Important limitations:
 
 ## 1. Executive assessment
 
-Hyprverse has a credible realtime foundation but the wrong centre of gravity for an online-degree product.
+Hyprverse has a credible realtime foundation. This audit initially evaluated it through an online-degree-product lens; the owner later rejected that framing as the product centre.
 
 The codebase is stronger than a typical prototype: strict shared contracts, pure and tested state machines, server-authoritative board rules, private-room media isolation, robust CI, deployment gates, rollback, version stamps, and operational error reporting are genuine assets. They should be reused.
 
@@ -41,13 +41,15 @@ That produces four structural problems:
 
 The audit originally recommended a **course-aware study accountability network with an optional spatial campus**, provisionally called **Study Guilds Campus** in this report. On 2026-07-11 the owner rejected academic progress as the single product centre and approved a broader thesis: **Hyprverse is a Student Social World**. Study remains one valuable activity, alongside conversation, play, events, clubs, and collaboration; it is neither a replacement for formal learning nor the sole reason to stay.
 
-Its core loop should be:
+The audit's original, now-superseded Study Guilds loop was:
 
 > See the next academic pressure → commit to one bounded task → join a relevant peer or pod → focus → check out with an outcome → get or give help → schedule the next session.
 
+Do not implement that loop as the MVP. The approved loop is **arrive → see familiar students → join them → talk or meet → play or gather → continue together → return**, as defined in [`product-direction.md`](./product-direction.md).
+
 The metaverse becomes a social-presence and transition layer: useful for seeing who is available, joining a group, forming relationships, running events, and taking short social breaks. It should not be the only navigation model or the reason the product exists.
 
-Games should be demoted from product pillar to a tested supporting role. Snake is the best candidate for a polished 3–5 minute group break ritual. Connect Four has sound authoritative rules but weak game feel. 2048 is likely the “block game” referenced by the owner; it is correct but static, keyboard-only, and strategically disconnected. None should outrank analytics, media consent, mobile access, focus sessions, course context, pods, help, or safety.
+Games remain supporting activities inside the social world, not a standalone portal. Snake, Tic-Tac-Toe, and Connect Four should be polished only after foundation repairs; 2048 should leave primary discovery. Analytics, media consent, mobile access, safety, reliability, and truthful state remain higher-priority foundations. Course context, pods, and help systems are not approved MVP scope.
 
 ## 2. Current product and architecture map
 
@@ -494,7 +496,9 @@ Sensitivity:
 - Direction C can win if an institution is already willing to fund a pilot and accepts a narrow, non-white-label first version.
 - Without either external advantage, Direction A has the best balance of value, retention, reuse, risk, and validation speed.
 
-## 11. Recommended direction
+## 11. Historical recommendation — superseded
+
+> The following Study Guilds recommendation records the audit's original conclusion. The owner rejected it as Hyprverse's product centre on 2026-07-11. It is retained for decision history only and must not be used as implementation guidance.
 
 Choose **Direction A — Study Guilds Campus** as the product centre.
 
@@ -538,7 +542,9 @@ Do not begin with a full Q&A/reputation marketplace or a multi-tenant institutio
 - Test one scheduled “pod break” using Snake or Connect Four.
 - Invest only if the experiment improves study-session completion, return-to-next-block, or repeat-peer interaction without reducing academic progress.
 
-## 12. Initiative portfolio
+## 12. Historical initiative portfolio — superseded
+
+> This table preserves the audit's pre-decision proposals. It is not an approved backlog. Only work included by [`product-direction.md`](./product-direction.md) or a later owner-approved specification may be implemented.
 
 Legend: impact/effort/risk/validation use L/M/H; confidence is current strategic confidence, not implementation certainty.
 
@@ -577,22 +583,21 @@ Legend: impact/effort/risk/validation use L/M/H; confidence is current strategic
 - **Experiment:** concierge focus sessions, manual pods, live help, pod breaks, and one institutional design partner.
 - **Defer:** new games, 3D, large progression economies, AI tutoring, full LMS replacement, and broad multi-tenant platform work.
 
-## 13. Wayfinder and specification gate
+## 13. Specification gate
 
 The approved high-level thesis is intentionally not yet converted into a Wayfinder map or implementation issues.
 
 The owner has approved the broad destination: Hyprverse is a Student Social World for one bounded community, centred on entering, seeing familiar students, meeting or talking, and doing something together. Further concepts—Cooperative Campus Missions, group-first progression, crews, cosmetics, and world unlocks—are retention hypotheses, not MVP commitments. Destination grilling paused on 2026-07-11 when the abstraction obscured the simple product idea; the next step is to validate and polish the existing meet-and-play social-campus loop before selecting deeper progression systems.
 
-After approval, the next work should be:
+With the direction now approved, the implementation workflow is:
 
-1. Establish the destination and provisional domain language with one-at-a-time grilling.
-2. Chart the Wayfinder map and first investigation tickets; do not resolve a ticket in the charting session.
-3. Work through at most one Wayfinder decision ticket per session until the route is clear.
-4. Produce the phased plan, measurement model, technical changes, and epic structure from those decisions.
-5. Confirm the highest testing seams with the owner.
-6. Use `to-spec` to publish implementation-ready specs with `ready-for-agent` only after the direction and seams are approved.
+1. Confirm current code, production, issue, CI, and deployment state against the audit.
+2. Define the pilot measurement model and dependency-ordered vertical slices.
+3. Publish implementation-ready specifications and `ready-for-agent` issues.
+4. Deliver foundation repairs before arrival, media, world, and game polish.
+5. Gate every slice on independent review, CI, deployment health where applicable, and production QA.
 
-## 20. Open questions, risks, and decision log
+## 14. Open questions, risks, and decision log
 
 ### Open strategic questions
 
@@ -618,12 +623,12 @@ After approval, the next work should be:
 | 2026-07-10 | Confirmed fact | Current persistent domain is users/spaces/rooms/seats/arcade scores, not academic work. | Repository migrations, REST, shared contracts. |
 | 2026-07-10 | Confirmed fact | Current product retention and feature value are not measurable. | No product analytics found. |
 | 2026-07-10 | Confirmed fact | Realtime/media, shared contracts, state machines, tests, and deployment are reusable strengths. | Code and CI audit. |
-| 2026-07-10 | Recommended, awaiting owner | Choose Study Guilds Campus as the strategic centre. | Weighted decision matrix and competitor/behavioural research. |
-| 2026-07-10 | Recommended, awaiting owner | Make the world optional for task navigation and keep it for presence/relationships/events. | Spatial-tax evidence, production mobile/accessibility findings, empty-world risk. |
+| 2026-07-10 | Rejected by later owner decision | Choose Study Guilds Campus as the strategic centre. | Superseded by the 2026-07-11 Student Social World thesis. |
+| 2026-07-10 | Historical recommendation, not approved | Make the world optional for task navigation and keep it for presence/relationships/events. | Spatial-tax evidence remains useful, but the proposed non-spatial academic product is outside the approved MVP. |
 | 2026-07-10 | Recommended, awaiting owner | Freeze new games and validate one bounded social-break use before further investment. | No analytics; games do not connect to academic state; competitor loops reward useful action. |
 | 2026-07-11 | Reopened after owner feedback | Reconsider academic progress as the single primary outcome; evaluate Hyprverse as a student digital third place designed for valuable, long social sessions, with study as an anchor rather than a replacement for learning. | Owner wants sustained voluntary use and describes the experience as an overall chill game; raw screen time remains an unsafe and gameable success metric. |
 | 2026-07-11 | Owner-approved thesis | Hyprverse is a Student Social World: relationships and shared activities are the product centre; study is one activity, not the replacement for formal learning; games support the world rather than defining a standalone game portal. | Owner explicitly selected the social-world direction after comparing it with study-first and game-first alternatives. |
 | 2026-07-11 | Owner-approved launch constraint | Launch with one bounded student community rather than opening to all students. | Concentrated relevance and simultaneous presence are necessary to avoid an empty-world cold start. |
 | 2026-07-11 | Owner-approved core loop | Use the Social Momentum Loop: enter, notice friends, join them, choose a shared activity, earn or change something together, then continue into another activity. | Social momentum can support long voluntary sessions without making study or isolated mini-games the entire product. |
-| 2026-07-11 | Owner-approved activity backbone | Use short Cooperative Campus Missions to connect conversation, games, exploration, events, and collaboration into shared outcomes. | Missions can make current and future activities feel like one coherent social world rather than unrelated modules. |
-| 2026-07-11 | Owner-approved progression model | Make progression group-first through shared unlocks or world changes, while individuals receive cosmetics, titles, collections, and contribution records without power advantages. | Shared progress builds belonging; personal recognition preserves identity; excluding raw hours and power reduces unhealthy grinding and pay-to-win pressure. |
+| 2026-07-11 | Explored and then deferred | Use short Cooperative Campus Missions to connect conversation, games, exploration, events, and collaboration into shared outcomes. | The owner paused this direction and returned the MVP to validating the existing meet-and-play loop. |
+| 2026-07-11 | Explored and then deferred | Make progression group-first through shared unlocks or world changes, while individuals receive cosmetics, titles, collections, and contribution records without power advantages. | Progression, cosmetics, and world unlocks are later hypotheses, not MVP commitments. |

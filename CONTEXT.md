@@ -13,8 +13,12 @@ The first bounded student group invited into Hyprverse, selected because its mem
 _Avoid_: General public, all students, anonymous audience
 
 **Social Momentum Loop**:
-The recurring experience in which a student enters the world, notices familiar people, joins them, chooses a shared activity, earns or changes something together, and naturally continues into another activity.
+The recurring experience in which a student enters the world, notices familiar people, joins them, chooses a shared activity, and naturally continues into another activity.
 _Avoid_: Screen-time loop, isolated mini-game loop, study-only loop
+
+## Deferred hypothesis language
+
+The following terms record concepts explored during product discovery. They are not approved MVP scope and must not be treated as implementation commitments without a later owner-approved specification.
 
 **Cooperative Campus Mission**:
 A short, rotating objective completed with other students across the social world's existing activities, producing a shared outcome that encourages the group to continue together.
