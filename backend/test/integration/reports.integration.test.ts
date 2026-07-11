@@ -30,15 +30,15 @@ async function joinAs(token: string) {
 }
 
 /**
- * Have `authorToken`'s player say `text` in world chat and return the server's
- * stamped identity for that line, captured off a second listener's socket.
+ * Have the already-joined `author` socket say `text` in world chat and return the
+ * server's stamped identity for that line, captured off `listener` (which may be
+ * the author's own socket — the sender receives its own world broadcast).
  */
-async function sayAndCapture(
-  authorToken: string,
+async function say(
+  author: ClientSocket,
   listener: ClientSocket,
   text: string,
 ): Promise<{ id: string; messageId: string; text: string }> {
-  const author = await joinAs(authorToken);
   const received = once<{ id: string; messageId: string; text: string }>(listener, "chat");
   author.emit("chat", { text, scope: "world" });
   return received;
@@ -86,8 +86,9 @@ describe("POST /api/v1/reports", () => {
   it("binds actor/target/text server-side, persisting the smallest justified snapshot", async () => {
     const author = await createPlayer("rep-author");
     const reporter = await createPlayer("rep-reporter");
+    const authorSocket = await joinAs(author.token);
     const listener = await joinAs(reporter.token);
-    const line = await sayAndCapture(author.token, listener, "an abusive line");
+    const line = await say(authorSocket, listener, "an abusive line");
     expect(line.id).toBe(author.id); // server-stamped author, not client-supplied
 
     const result = await api(base, "/api/v1/reports", {
@@ -115,7 +116,7 @@ describe("POST /api/v1/reports", () => {
   it("refuses reporting your own message", async () => {
     const author = await createPlayer("rep-self");
     const self = await joinAs(author.token);
-    const line = await sayAndCapture(author.token, self, "my own words");
+    const line = await say(self, self, "my own words");
     const result = await api(base, "/api/v1/reports", {
       token: author.token,
       body: { messageId: line.messageId, category: "spam" },
@@ -129,8 +130,9 @@ describe("POST /api/v1/reports", () => {
   it("dedupes a repeat report from the same reporter idempotently", async () => {
     const author = await createPlayer("rep-dup-a");
     const reporter = await createPlayer("rep-dup-r");
+    const authorSocket = await joinAs(author.token);
     const listener = await joinAs(reporter.token);
-    const line = await sayAndCapture(author.token, listener, "spammy spammy");
+    const line = await say(authorSocket, listener, "spammy spammy");
 
     const first = await api(base, "/api/v1/reports", {
       token: reporter.token,
