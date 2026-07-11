@@ -5,6 +5,7 @@ import {
   boardMoveSchema,
   boardSitSchema,
   boardUpdateSchema,
+  chatCooldownSchema,
   chatSchema,
   joinSchema,
   meetingChatMessageSchema,
@@ -30,7 +31,7 @@ import {
   socketAuthSchema,
   whisperSchema,
 } from "./socket.js";
-import { BOARD_MOVE_REJECTIONS, LIMITS, MEETING_CANCEL_REASONS } from "./constants.js";
+import { BOARD_MOVE_REJECTIONS, CHAT_COOLDOWN_SCOPES, LIMITS, MEETING_CANCEL_REASONS } from "./constants.js";
 
 describe("socket handshake auth", () => {
   it("accepts a non-empty token", () => {
@@ -152,6 +153,20 @@ describe("server → client shapes", () => {
   it("allows a null playerId on seat-update (a freed seat)", () => {
     expect(seatUpdateSchema.safeParse({ roomId: "1", seatId: 0, playerId: null }).success).toBe(true);
     expect(seatUpdateSchema.safeParse({ roomId: "1", seatId: 0, playerId: "p1" }).success).toBe(true);
+  });
+  it("validates a chat-cooldown for every scope and rejects unknown scopes", () => {
+    for (const scope of CHAT_COOLDOWN_SCOPES) {
+      expect(chatCooldownSchema.safeParse({ scope, retryAfterMs: 4000 }).success).toBe(true);
+    }
+    expect(chatCooldownSchema.safeParse({ scope: "room", retryAfterMs: 4000 }).success).toBe(false);
+  });
+  it("rejects a chat-cooldown with a negative, fractional, or missing retryAfterMs, and extra keys", () => {
+    expect(chatCooldownSchema.safeParse({ scope: "world", retryAfterMs: -1 }).success).toBe(false);
+    expect(chatCooldownSchema.safeParse({ scope: "world", retryAfterMs: 1.5 }).success).toBe(false);
+    expect(chatCooldownSchema.safeParse({ scope: "world" }).success).toBe(false);
+    expect(chatCooldownSchema.safeParse({ scope: "world", retryAfterMs: 0, foo: 1 }).success).toBe(false);
+    // zero is valid (window already elapsed — retry immediately)
+    expect(chatCooldownSchema.safeParse({ scope: "world", retryAfterMs: 0 }).success).toBe(true);
   });
 });
 
