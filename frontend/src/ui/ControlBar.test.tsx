@@ -28,8 +28,10 @@ vi.mock("./MicMeter", () => ({ default: () => null }));
 import ControlBar from "./ControlBar";
 
 beforeEach(() => {
-  // Reset the shared desired-state singleton before each case.
-  setMediaPrefs({ micOn: true, camOn: true });
+  // A new browser session starts receive-only; tests that exercise turning a
+  // device off first opt in explicitly.
+  sessionStorage.clear();
+  setMediaPrefs({ micOn: false, camOn: false });
   media.worldAudio.setMicEnabled.mockClear();
   media.roomVideo.setMicEnabled.mockClear();
   media.roomVideo.setCamEnabled.mockClear();
@@ -43,8 +45,8 @@ afterEach(cleanup);
 describe("ControlBar", () => {
   it("renders mic, cam, a meeting-gated screen-share slot, and settings", () => {
     render(<ControlBar />);
-    expect(screen.getByLabelText("Mute microphone")).toBeTruthy();
-    expect(screen.getByLabelText("Turn camera off")).toBeTruthy();
+    expect(screen.getByLabelText("Unmute microphone")).toBeTruthy();
+    expect(screen.getByLabelText("Turn camera on")).toBeTruthy();
     // Screen share is disabled outside a meeting.
     const share = screen.getByLabelText("Share screen (available in meetings)") as HTMLButtonElement;
     expect(share.disabled).toBe(true);
@@ -74,6 +76,7 @@ describe("ControlBar", () => {
   });
 
   it("mutes the mic across every active publisher and announces it", () => {
+    setMediaPrefs({ micOn: true });
     render(<ControlBar />);
     let toggled: { on: boolean } | undefined;
     const off = bus.on<{ on: boolean }>("mic-toggle", (p) => (toggled = p));
@@ -93,6 +96,7 @@ describe("ControlBar", () => {
   });
 
   it("toggles the camera on the room and stage publishers and announces it", () => {
+    setMediaPrefs({ camOn: true });
     render(<ControlBar />);
     fireEvent.click(screen.getByLabelText("Turn camera off"));
     expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(false);
@@ -101,11 +105,11 @@ describe("ControlBar", () => {
     expect(screen.getByRole("status").textContent).toBe("Camera off");
   });
 
-  it("round-trips back to unmuted on a second click", () => {
+  it("explicitly enables the microphone and keeps the control truthful", () => {
     render(<ControlBar />);
-    fireEvent.click(screen.getByLabelText("Mute microphone"));
     fireEvent.click(screen.getByLabelText("Unmute microphone"));
     expect(media.worldAudio.setMicEnabled).toHaveBeenLastCalledWith(true);
     expect(screen.getByLabelText("Mute microphone")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Microphone on");
   });
 });

@@ -72,16 +72,22 @@ afterEach(async () => {
 });
 
 describe("stage publish replays the sticky media prefs (never comes up hot)", () => {
-  it.each([{ micOn: true }, { micOn: false }])(
-    "goOnAir applies micOn=$micOn from prefs",
-    async ({ micOn }) => {
-      setMediaPrefs({ micOn });
-      await stageVideo.goOnAir("1", "self");
-      expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(micOn);
-      // Voice broadcast never touches the camera.
-      expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
-    }
-  );
+  it("requests no device when stage publish starts in a consent-safe session", async () => {
+    setMediaPrefs({ micOn: false, camOn: false });
+
+    await stageVideo.goOnAir("1", "self");
+
+    expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+    expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+  });
+
+  it("replays an explicit microphone enable when going on air", async () => {
+    setMediaPrefs({ micOn: true });
+    await stageVideo.goOnAir("1", "self");
+    expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(true);
+    // Voice broadcast never touches the camera.
+    expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+  });
 
   it("re-going on air after an off-air interlude still respects a mute set meanwhile", async () => {
     await stageVideo.goOnAir("1", "self");
@@ -89,7 +95,7 @@ describe("stage publish replays the sticky media prefs (never comes up hot)", ()
     await stageVideo.goOffAir("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
     await stageVideo.goOnAir("1", "self");
-    expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
+    expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
   });
 
   it("goLive with the cam pref off comes up live but video-muted", async () => {
@@ -153,6 +159,7 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
   });
 
   it("audience mode ignores bar toggles (its token cannot publish)", async () => {
+    setMediaPrefs({ micOn: false, camOn: false });
     await stageVideo.joinAsAudience("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
     lk.localParticipant.setCameraEnabled.mockClear();

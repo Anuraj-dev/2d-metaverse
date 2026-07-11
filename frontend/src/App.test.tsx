@@ -29,6 +29,8 @@ const media = vi.hoisted(() => {
       goLive: ok(),
       leave: ok(),
       onTracks: vi.fn(() => () => {}),
+      setMicEnabled: vi.fn(),
+      setCamEnabled: vi.fn(),
     },
   };
 });
@@ -165,6 +167,18 @@ describe("App shell", () => {
     expect(media.worldAudio.start).toHaveBeenCalledTimes(1);
   });
 
+  it("arrives receive-only without issuing a device publish command", async () => {
+    render(<App />);
+    await enterAndInit();
+
+    await waitFor(() => expect(media.stageVideo.joinAsAudience).toHaveBeenCalled());
+    expect(media.worldAudio.setMicEnabled).not.toHaveBeenCalled();
+    expect(media.roomVideo.setMicEnabled).not.toHaveBeenCalled();
+    expect(media.roomVideo.setCamEnabled).not.toHaveBeenCalled();
+    expect(media.stageVideo.setMicEnabled).not.toHaveBeenCalled();
+    expect(media.stageVideo.setCamEnabled).not.toHaveBeenCalled();
+  });
+
   it("entering a private room stops world audio and detaches room + stage video", async () => {
     render(<App />);
     await enterAndInit();
@@ -173,6 +187,27 @@ describe("App shell", () => {
     expect(media.roomVideo.leave).toHaveBeenCalled();
     // No stage audio inside a private room (PRD 17 private-room exception).
     expect(media.stageVideo.leave).toHaveBeenCalled();
+  });
+
+  it("finishes world and stage privacy cut-offs before joining room media", async () => {
+    render(<App />);
+    await enterAndInit();
+    const order: string[] = [];
+    media.worldAudio.stop
+      .mockImplementationOnce(async () => void order.push("world-stop"))
+      .mockImplementationOnce(async () => void order.push("world-stop"));
+    media.roomVideo.leave.mockImplementationOnce(async () => void order.push("room-leave"));
+    media.stageVideo.leave.mockImplementationOnce(async () => void order.push("stage-leave"));
+    media.roomVideo.join.mockImplementationOnce(async () => void order.push("room-join"));
+
+    await emit(() => {
+      bus.emit("room-entered", { roomId: "D" });
+      netMock.net.emit("seat-update", { roomId: "D", playerId: SELF });
+    });
+
+    await waitFor(() => expect(order).toContain("room-join"));
+    expect(order.slice(0, 3)).toEqual(["world-stop", "room-leave", "stage-leave"]);
+    expect(order.indexOf("stage-leave")).toBeLessThan(order.indexOf("room-join"));
   });
 
   it("sitting (seat-update for self) stops world audio and joins the room video", async () => {

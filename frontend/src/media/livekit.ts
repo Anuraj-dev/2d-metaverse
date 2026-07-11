@@ -165,8 +165,11 @@ class WorldAudio {
       });
       await room.connect(url, token);
       // Respect the player's sticky mute (global control bar, PRD 20) instead of
-      // force-unmuting on every world (re)join.
-      await room.localParticipant.setMicrophoneEnabled(getMediaPrefs().micOn);
+      // force-unmuting on every world (re)join. A fresh connection has no local
+      // track, so a consent-safe cold start never touches the capture API.
+      if (getMediaPrefs().micOn) {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      }
     } catch (e) {
       console.warn("World audio unavailable:", e);
     }
@@ -329,8 +332,10 @@ class RoomVideo {
     // the connected room — the meeting still works receive-only.
     try {
       const wanted = getMediaPrefs();
-      await room.localParticipant.setCameraEnabled(wanted.camOn);
-      await room.localParticipant.setMicrophoneEnabled(wanted.micOn);
+      // A fresh room is unpublished. Do not touch capture APIs at all until the
+      // player has explicitly enabled that device in this browser session.
+      if (wanted.camOn) await room.localParticipant.setCameraEnabled(true);
+      if (wanted.micOn) await room.localParticipant.setMicrophoneEnabled(true);
     } catch (e) {
       console.warn("Applying media prefs to room failed:", e);
     }
@@ -504,7 +509,9 @@ class StageVideo {
         // coming up hot: going on air while muted yields an on-air-but-muted state
         // that the bar can unmute — the bar stays the single control surface.
         const wanted = getMediaPrefs();
-        await room.localParticipant.setMicrophoneEnabled(wanted.micOn);
+        if (wanted.micOn) {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        }
         if (opts.video && wanted.camOn) await this.applyCam(true);
       }
     } catch (e) {
