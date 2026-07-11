@@ -195,7 +195,7 @@ The work is divided into six milestones:
 - Tic-Tac-Toe and Connect Four remain server-authoritative through the shared rules and backend match machine.
 - Board presentation may animate only confirmed authoritative moves. Waiting, offer, acceptance, turn, win/draw, forfeit, disconnect grace, spectator, error, and rematch states are explicit.
 - Board controls expose keyboard navigation, labels, current state, and live result announcements.
-- 2048 is removed from primary discovery and messaging. Cabinet, registry, leaderboard, help, and lazy-load references must remain internally consistent; retirement must not leave dead interactions.
+- 2048 is retired because no pilot evidence justifies retaining it. Remove its cabinet, registry, renderer, rules, leaderboard surface, messaging, generated assets, and tests without breaking stored-score compatibility or leaving dead interactions/code.
 - No new games, multiplayer Snake rewrite, economy, or broad progression system is introduced.
 
 ## Delivery Slices and Blocking Edges
@@ -234,7 +234,7 @@ The GitHub issues created from this specification are the execution source of tr
 30. **Private meeting and portal accessibility completion** — blocked by connection convergence, confirmed media state, voice cohesion, accessible overlays, and reduced motion; extends the existing handoff rather than rewriting it.
 31. **Campus plausibility, furniture, and useful interactions** — blocked by interaction-state cohesion and geometry manifest.
 32. **Stage hall authored-world pass** — blocked by stage publishing truth and campus plausibility.
-33. **Remove 2048 from primary discovery** — no implementation blocker; retain dormant rules/API compatibility unless evidence justifies full deletion.
+33. **Retire 2048 cleanly** — no implementation blocker; remove every product/code surface while preserving a safe migration path for any stored historical scores.
 34. **Snake game-quality slice** — blocked by mobile/HUD accessibility, reduced motion, and pilot analytics.
 35. **Board rematch and disconnect lifecycle** — blocked by board-seat proximity and pilot analytics.
 36. **Tic-Tac-Toe presentation and accessibility** — blocked by board lifecycle, keyboard semantics, mobile/HUD accessibility, and reduced motion.
