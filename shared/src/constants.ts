@@ -269,6 +269,27 @@ export const LIMITS = {
 export const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
 
 /**
+ * Stable domain categories for the handled-operational-error reporting path
+ * (PRD 25.8). These replace ad hoc free-text messages: a caught operational
+ * failure is reported as a `{ category, reason }` pair drawn only from these
+ * allowlists, never as an arbitrary string that could leak sensitive content.
+ */
+export const OPERATIONAL_CATEGORIES = ["auth-transport", "reconnect", "media-publish"] as const;
+
+/** Bounded reasons for an `auth-transport` failure (token fetch / socket auth). */
+export const AUTH_TRANSPORT_REASONS = ["unauthorized", "network", "server-error"] as const;
+
+/** Bounded reasons for a `reconnect` outcome (mirrors the client connection state). */
+export const RECONNECT_REASONS = ["reconnecting", "recovered", "gone"] as const;
+
+/**
+ * Bounded reasons for a `media-publish` failure. Kept in lockstep with the
+ * frontend `MediaFailure` union (`media/publicationState.ts`): denied,
+ * unavailable, failed.
+ */
+export const MEDIA_PUBLISH_REASONS = ["denied", "unavailable", "failed"] as const;
+
+/**
  * Rate-limit windows and other timing constants enforced server-side. Kept here so
  * the magic numbers behind the contract's abuse protections live in one place.
  */
