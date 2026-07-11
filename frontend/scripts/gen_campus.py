@@ -276,6 +276,38 @@ fill(ground, (AX0 + AX1) // 2 - 3, (AY0 + AY1) // 2,
 fill(ground, ARCADE_DOOR_X, AY0, ARCADE_DOOR_X + ARCADE_DOOR_W - 1, AY0, STONE)
 fill(ground, 79, 89, 80, 93, STONE)
 
+# ── Tree ground clearing (PRD 25.32: no tree grows from concrete) ────────────
+# Trees are authored in the park, but a few footprints reach into the plaza /
+# path stone fills (e.g. the plaza `fill(ground, 12, 26, 107, 60, STONE)`),
+# which left trunks/canopies rendering straight out of cracked stone. Clear the
+# ground under every tree footprint back to base grass BEFORE the detail passes
+# so the grass-variety scatter and the stone edge-trim pass wrap each planter
+# with a clean grass↔stone border and no tree tile ever sits on concrete.
+# Collision is unaffected — the trunk stays a solid wall tile (below); only the
+# visual `ground` layer changes, so the walls layer and the derived server
+# geometry manifest are untouched by this pass.
+TREES_BIG = [(3, 2), (12, 3), (20, 2), (6, 12), (16, 11), (23, 13),
+             (3, 20), (13, 20), (22, 21), (8, 27), (18, 27),
+             (3, 36), (12, 35), (21, 36), (6, 47), (15, 47), (23, 47),
+             (49, 63), (49, 71)]
+TREES_SMALL = [(9, 6), (25, 7), (11, 15), (2, 28), (25, 30), (9, 39),
+               (19, 39), (2, 51), (19, 51), (26, 51)]
+
+
+def tree_footprint(block, tx, ty):
+    """Yield every (x, y) tile cell a tree block occupies."""
+    for ry, row in enumerate(block):
+        for rx in range(len(row)):
+            yield tx + rx, ty + ry
+
+
+for _tx, _ty in TREES_BIG:
+    for _fx, _fy in tree_footprint(TREE_BIG, _tx, _ty):
+        ground[idx(_fx, _fy)] = GRASS
+for _tx, _ty in TREES_SMALL:
+    for _fx, _fy in tree_footprint(TREE_SMALL, _tx, _ty):
+        ground[idx(_fx, _fy)] = GRASS
+
 # ── GROUND DETAIL PASSES (PRD 12 fix round 1: ground variety) ────────────────
 GRASS_FAMILY = {GRASS, GRASS_T1, GRASS_T2, GRASS_T3, GRASS_T4, GRASS_SPR1, GRASS_SPR2}
 
@@ -367,12 +399,8 @@ for y in range(1, H - 1):
 #    (decor_above), the trunk row is solid (walls layer → collision), and the
 #    ground shadow row sits under the player (ground_decor). Positions avoid
 #    every E2E waypoint corridor (all inside HQ/plaza) and the path arteries.
-TREES_BIG = [(3, 2), (12, 3), (20, 2), (6, 12), (16, 11), (23, 13),
-             (3, 20), (13, 20), (22, 21), (8, 27), (18, 27),
-             (3, 36), (12, 35), (21, 36), (6, 47), (15, 47), (23, 47),
-             (49, 63), (49, 71)]
-TREES_SMALL = [(9, 6), (25, 7), (11, 15), (2, 28), (25, 30), (9, 39),
-               (19, 39), (2, 51), (19, 51), (26, 51)]
+#    Coordinates (TREES_BIG / TREES_SMALL) and the base grass clearing under
+#    each footprint are defined above, before the ground detail passes.
 tree_cells = set()
 
 
