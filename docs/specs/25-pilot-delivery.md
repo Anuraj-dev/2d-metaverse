@@ -100,6 +100,7 @@ The work is divided into six milestones:
 - Every implementation ticket is one coherent vertical slice and one PR unless its specification explicitly permits a smaller split.
 - Every agent that writes code works in an isolated worktree based on the current mainline.
 - Slices that share `App`, `WorldScene`, shared socket/REST contracts, media transport, or board UI are serialized.
+- Slices that change the campus generator, generated map, furniture, stage layout, or E2E waypoints are also serialized even when their product concerns differ.
 - Conventional commits are required. Visible authorship remains Raja's; no agent credits are added.
 - The main checkout must remain clean between merges. Existing user changes are never absorbed into a feature branch.
 - Full lint, typecheck, test, build, integration, bundle, and E2E verification run only in GitHub CI. An implementer may run only the specific test files touched by the slice.
@@ -218,39 +219,40 @@ The GitHub issues created from this specification are the execution source of tr
 6. **Consent-safe media defaults** — blocked by LiveKit environment parity.
 7. **Confirmed media publication state** — blocked by consent-safe defaults and client connection state.
 8. **Handled operational error reporting** — blocked by client connection state and confirmed media state.
-9. **Pilot reliability analytics** — blocked by truthful auth, client connection state, confirmed media state, and operational reporting.
-10. **Chat anti-spam and typed cooldown feedback** — no blockers; serialize shared socket files with authority work.
-11. **Report ingestion and moderation trail** — blocked by chat anti-spam; adds server-stamped message identity and bounded retention.
-12. **Local mute and persistent block** — blocked by report ingestion because message identity and per-recipient delivery are shared seams.
-13. **Moderator review and reversible action** — blocked by report ingestion and persistent block.
-14. **Accessible overlay and focus primitive** — no blockers.
-15. **Keyboard and semantic interaction repair** — blocked by accessible overlay primitive.
-16. **Mobile landing and portrait controls** — blocked by client connection state, consent-safe media defaults, and keyboard semantics.
-17. **Small-screen HUD collision pass** — blocked by mobile portrait controls.
-18. **Global reduced-motion behaviour** — blocked by accessible overlay primitive.
-19. **Generated server geometry manifest** — no blockers; must land before Phase E map edits.
-20. **Authoritative movement envelope and correction** — blocked by recovered position preservation and geometry manifest.
-21. **Server walkability and collision validation** — blocked by movement envelope and geometry manifest.
-22. **Door and private-seat proximity validation** — blocked by movement/collision authority.
-23. **Board-seat proximity validation** — blocked by movement/collision authority.
-24. **Stage authorization hardening** — blocked by movement/collision authority and generated geometry.
-25. **Presence/activity read model and social arrival** — blocked only by the initial analytics contract; includes the validated pilot schedule source and truthful locate/view actions, not join mutation.
-26. **Server-authorised join person/activity** — blocked by the activity read model, movement/collision authority, and door/seat proximity.
-27. **Interaction-state cohesion** — blocked by authorised joining, accessible overlays, and keyboard semantics.
-28. **Voice feedback and privacy-state cohesion** — blocked by confirmed media state, mobile/HUD accessibility, and reduced-motion behaviour.
-29. **Stage publishing and audience truth** — blocked by stage authorization, confirmed media state, voice cohesion, accessible overlays, and reduced motion.
-30. **Private meeting and portal accessibility completion** — blocked by connection convergence, confirmed media state, voice cohesion, accessible overlays, and reduced motion; extends the existing handoff rather than rewriting it.
-31. **Campus geometry and walkability repair** — blocked by geometry manifest; covers tree/ground plausibility, collisions, routes, thresholds, and E2E waypoints.
-32. **Campus furniture and visual plausibility** — blocked by campus geometry; covers clutter, desk placement, sightlines, and authored-area screenshots without adding interactions.
-33. **Meaningful campus object interactions** — blocked by interaction-state cohesion and furniture plausibility; each object needs a real event, room, notice, collaboration, or social action.
-34. **Stage hall authored-world pass** — blocked by stage publishing truth and campus geometry; must verify hierarchy, lighting/ambience, seating, walkability, interaction feedback, and spectator experience.
-35. **Retire 2048 cleanly** — no implementation blocker; remove every product/code surface while preserving a safe migration path for any stored historical scores.
-36. **Snake game-quality and bounded social presentation** — blocked by mobile/HUD accessibility, reduced motion, and pilot analytics; includes sound/visual feedback and an evidence-based social-context decision.
-37. **Board rematch and disconnect lifecycle** — blocked by board-seat proximity and pilot analytics.
-38. **Tic-Tac-Toe presentation and accessibility** — blocked by board lifecycle, keyboard semantics, mobile/HUD accessibility, and reduced motion.
-39. **Connect Four presentation** — blocked by board lifecycle and Tic-Tac-Toe extraction when the shared board panel changes.
-40. **Pilot cohort/query verification** — blocked by feature-owned analytics; verifies event joins, repeat-group/return calculations, retention, and operator export without adding cross-feature emissions.
-41. **Maya production acceptance and pilot release** — blocked by every implementation slice, green CI, deployment health, and documentation checkpoint.
+9. **Analytics contract and ingestion foundation** — blocked by truthful auth; ships the allowlisted schema, pre-auth server emission, authenticated client ingestion, server timestamps, idempotency, retention, and query seam without feature-specific events.
+10. **Pilot reliability analytics** — blocked by analytics foundation, client connection state, confirmed media state, and operational reporting.
+11. **Chat anti-spam and typed cooldown feedback** — no blockers; serialize shared socket files with authority work.
+12. **Report ingestion and moderation trail** — blocked by chat anti-spam; adds server-stamped message identity and bounded retention.
+13. **Local mute and persistent block** — blocked by report ingestion because message identity and per-recipient delivery are shared seams.
+14. **Moderator review and reversible action** — blocked by report ingestion and persistent block.
+15. **Accessible overlay and focus primitive** — no blockers.
+16. **Keyboard and semantic interaction repair** — blocked by accessible overlay primitive.
+17. **Mobile landing and portrait controls** — blocked by client connection state, consent-safe media defaults, and keyboard semantics.
+18. **Small-screen HUD collision pass** — blocked by mobile portrait controls.
+19. **Global reduced-motion behaviour** — blocked by accessible overlay primitive.
+20. **Generated server geometry manifest** — no blockers; must land before Phase E map edits.
+21. **Authoritative movement envelope and correction** — blocked by recovered position preservation and geometry manifest.
+22. **Server walkability and collision validation** — blocked by movement envelope and geometry manifest.
+23. **Door and private-seat proximity validation** — blocked by movement/collision authority.
+24. **Board-seat proximity validation** — blocked by movement/collision authority.
+25. **Stage authorization hardening** — blocked by movement/collision authority and generated geometry.
+26. **Presence/activity read model and social arrival** — blocked only by analytics foundation; includes the validated pilot schedule source and truthful locate/view actions, not join mutation.
+27. **Server-authorised join person/activity** — blocked by the activity read model, movement/collision authority, and door/seat proximity.
+28. **Interaction-state cohesion** — blocked by authorised joining, accessible overlays, and keyboard semantics.
+29. **Voice feedback and privacy-state cohesion** — blocked by confirmed media state, mobile/HUD accessibility, and reduced-motion behaviour.
+30. **Stage publishing and audience truth** — blocked by stage authorization, confirmed media state, voice cohesion, accessible overlays, and reduced motion.
+31. **Private meeting and portal accessibility completion** — blocked by connection convergence, confirmed media state, voice cohesion, accessible overlays, and reduced motion; extends the existing handoff rather than rewriting it.
+32. **Campus geometry and walkability repair** — blocked by geometry manifest; covers tree/ground plausibility, collisions, routes, thresholds, and E2E waypoints.
+33. **Campus furniture and visual plausibility** — blocked by campus geometry; covers clutter, desk placement, sightlines, and authored-area screenshots without adding interactions.
+34. **Meaningful campus object interactions** — blocked by interaction-state cohesion and furniture plausibility; each object needs a real event, room, notice, collaboration, or social action.
+35. **Stage hall authored-world pass** — blocked by stage publishing truth and campus furniture plausibility; must verify hierarchy, lighting/ambience, seating, walkability, interaction feedback, and spectator experience.
+36. **Retire 2048 cleanly** — no implementation blocker; remove every product/code surface while preserving a safe migration path for any stored historical scores.
+37. **Snake game-quality and bounded social presentation** — blocked by mobile/HUD accessibility, reduced motion, and reliability analytics; includes sound/visual feedback and an evidence-based social-context decision.
+38. **Board rematch and disconnect lifecycle** — blocked by board-seat proximity and analytics foundation.
+39. **Tic-Tac-Toe presentation and accessibility** — blocked by board lifecycle, keyboard semantics, mobile/HUD accessibility, and reduced motion.
+40. **Connect Four presentation** — blocked by board lifecycle and Tic-Tac-Toe extraction when the shared board panel changes.
+41. **Pilot cohort/query verification** — blocked by feature-owned analytics; verifies event joins, repeat-group/return calculations, retention, and operator export without adding cross-feature emissions.
+42. **Maya production acceptance and pilot release** — blocked by every implementation slice, green CI, deployment health, and documentation checkpoint.
 
 ## Testing Decisions
 
