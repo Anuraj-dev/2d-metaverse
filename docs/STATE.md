@@ -1,9 +1,9 @@
 # 2D Metaverse — State
-> Gather/Zep-style 2D metaverse (app name: **hyprverse**): walk a styled office campus, proximity voice/video, admin-gated meeting rooms, arcade + board-game tables. · Last checkpoint: 2026-07-11 (product-thesis grilling)
+> Gather/Zep-style 2D metaverse (app name: **hyprverse**): walk a styled office campus, proximity voice/video, admin-gated meeting rooms, arcade + board-game tables. · Last checkpoint: 2026-07-11 (pilot delivery specification)
 
 ## 🚧 In progress / next
-- **Approved agent-ready direction is in `docs/product-direction.md`.** Hyprverse is a private **Student Social World** for one bounded community: arrive, find familiar students, talk or join meetings, play or gather, continue together, and return. The document fixes the MVP boundary, game strategy, pilot, measurement model, product principles, foundation repairs, non-goals, and agent instructions. Missions, crews, progression, economies, academic platforms, and new game breadth are deferred hypotheses. No Wayfinder map, implementation spec, GitHub issues, or feature work exists yet. Next: define the first validation slice, then spec only the repairs and experience needed for that pilot.
-- **Zero implementation PRs; product-direction documentation is under review in PR #88.** The implementation backlog is intentionally not created yet. Existing floor-signage refinement remains optional.
+- **Approved direction is merged in PR #88 and the implementation architecture is in `docs/specs/25-pilot-delivery.md` (PR #89).** Hyprverse is a private **Student Social World** for one bounded community: arrive, find familiar students, talk or join meetings, play or gather, continue together, and return. PRD 25 defines the acceptance model, fixed findings, 42 dependency-ordered vertical slices, TDD seams, review/CI/deploy gates, and final Maya verification. Missions, crews, progression, economies, academic platforms, and new game breadth remain deferred.
+- **Zero implementation PRs and zero implementation issues.** Next: independently approve and merge PR #89, publish its dependency-ordered GitHub issues, then start the unblocked frontier. Existing floor-signage refinement remains optional.
 - CLAUDE.md cleanup still pending: model-delegation section expired 2026-07-06.
 - QA leftovers: throwaway prod accounts `qa-fable-p1/p2`, `qascout1x/2x`, `probe_x`, `probe_y1`, `qa-strategy-mrf9bvaz-kp3z`; latest strategy screenshots/raw browser reports are in `/tmp/metaverse-ux-audit/` (session-local).
 

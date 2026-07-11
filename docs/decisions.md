@@ -76,3 +76,6 @@
 
 ## 2026-07-11 — Hyprverse is a private Student Social World for one launch community
 **Why:** Raja's original goal is a coherent campus where online students find familiar people, talk or meet, and play together. Study-first positioning was too narrow, while game-first positioning would create an expensive content treadmill. Launching with one reachable community concentrates presence and lets the basic social loop be validated before public discovery, academic workflows, missions, crews, progression, or economies are built. The canonical direction and MVP boundary are in `docs/product-direction.md`.
+
+## 2026-07-11 — Pilot delivery is a dependency graph of reviewed vertical slices
+**Why:** Privacy, safety, access, authority, reliability, and measurement defects can invalidate pilot results, while the arrival, media, world, and game work overlaps in a few coordination hotspots. PRD 25 sequences narrow end-to-end slices, keeps full verification in CI, requires independent review per slice, chooses usable phone portrait and landscape controls for the pilot, generates server geometry from the authored map, and preserves the existing shared-contract, state-machine, media-isolation, and server-authoritative board architecture.

@@ -10,6 +10,7 @@
 | product-v2-strategy.md | Evidence-backed product/code/UX audit, strategic alternatives, and owner decision gate for Hyprverse Next |
 | old_context.md | Honest pre-tracking backstory reconstructed at adoption |
 | specs/ | Numbered specs for complex features (see /spec) |
+| specs/25-pilot-delivery.md | Dependency-ordered implementation and acceptance architecture for the Student Social World pilot |
 | sessions/ | One append-only log per day |
 
 > Also at repo root: `CLAUDE.md` — the authoritative detailed operating rules (monorepo layout, shared-contract
