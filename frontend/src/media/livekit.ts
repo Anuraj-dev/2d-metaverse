@@ -27,6 +27,7 @@ import { getMediaPrefs } from "./mediaPrefs";
 import {
   INITIAL_PUBLICATION,
   classifyMediaError,
+  outcomeNeedsAttention,
   publicationReduce,
   type MediaOutcome,
   type MediaPublicationEvent,
@@ -672,7 +673,11 @@ class StageVideo {
    */
   async goLive(spaceId: string, selfId: string): Promise<MediaOutcome> {
     if (this.mode === "performer" && this.room) {
-      return this.applyCamOutcome(getMediaPrefs().camOn);
+      // Already broadcasting (voice on air): "Go Live" just applies the cam per
+      // the sticky pref. A pref-off cam is a muted-but-live slot (`off`), NOT a
+      // failure — so keep reporting `live`; only a real capture denial surfaces.
+      const cam = await this.applyCamOutcome(getMediaPrefs().camOn);
+      return outcomeNeedsAttention(cam.status) ? cam : { status: "live" };
     }
     await this.leave();
     const outcome = await this.open(spaceId, selfId, { publish: true, video: true });

@@ -221,6 +221,14 @@ describe("stage publication state is confirmed, never optimistic", () => {
     off();
   });
 
+  it("goLive while already on air with cam-off pref stays live, not a false failure", async () => {
+    setMediaPrefs({ micOn: true, camOn: false });
+    await stageVideo.goOnAir("1", "self"); // voice on air, no video
+    const outcome = await stageVideo.goLive("1", "self");
+    expect(outcome).toEqual({ status: "live" });
+    expect(stageVideo.getPublicationStatus()).toBe("live");
+  });
+
   it("going off air rests the publication status back to off", async () => {
     await stageVideo.goOnAir("1", "self");
     expect(stageVideo.getPublicationStatus()).toBe("live");
