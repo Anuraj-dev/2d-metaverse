@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  authTransportReason,
   buildOperationalReport,
   createOperationalReporter,
   reconnectReason,
@@ -14,6 +15,20 @@ describe("reconnectReason", () => {
   it("returns null for healthy/transient-normal statuses", () => {
     expect(reconnectReason("connecting")).toBeNull();
     expect(reconnectReason("connected")).toBeNull();
+  });
+});
+
+describe("authTransportReason", () => {
+  it("maps a network throw and notable HTTP statuses to a bounded reason", () => {
+    expect(authTransportReason({ kind: "network" })).toBe("network");
+    expect(authTransportReason({ kind: "http", status: 401 })).toBe("unauthorized");
+    expect(authTransportReason({ kind: "http", status: 500 })).toBe("server-error");
+    expect(authTransportReason({ kind: "http", status: 503 })).toBe("server-error");
+  });
+  it("returns null for expected app-level outcomes (not transport failures)", () => {
+    expect(authTransportReason({ kind: "http", status: 400 })).toBeNull(); // validation
+    expect(authTransportReason({ kind: "http", status: 409 })).toBeNull(); // username taken
+    expect(authTransportReason({ kind: "http", status: 429 })).toBeNull(); // rate limited
   });
 });
 

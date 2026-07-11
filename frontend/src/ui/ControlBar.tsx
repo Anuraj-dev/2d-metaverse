@@ -11,6 +11,7 @@ import {
 import { getMediaPrefs, setMediaPrefs, subscribeMediaPrefs } from "../media/mediaPrefs";
 import { outcomeNeedsAttention, type MediaOutcome } from "../media/publicationState";
 import { micToastText, camToastText, mediaFailureText } from "../game/controlBar";
+import { getOperationalReporter } from "../operationalReport";
 import Settings from "./Settings";
 import MicMeter from "./MicMeter";
 
@@ -70,6 +71,8 @@ export default function ControlBar() {
       if (on && outcomeNeedsAttention(status)) {
         setMediaPrefs(device === "mic" ? { micOn: false } : { camOn: false });
         flash(mediaFailureText(device, status));
+        // `status` is narrowed to a bounded MediaFailure here — report it once.
+        getOperationalReporter().reportMediaPublishFailure(status);
       }
     });
   };

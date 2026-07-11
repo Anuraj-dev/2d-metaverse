@@ -62,6 +62,22 @@ export function reconnectReason(status: ConnectionStatus): ReconnectReason | nul
 }
 
 /**
+ * Pure decision: which auth-transport outcomes are worth reporting, and under
+ * what bounded reason. A network/fetch throw is `network`; an HTTP 401 is
+ * `unauthorized`; a 5xx is `server-error`. Expected app-level outcomes
+ * (validation 400, username-taken 409, rate-limited 429) are NOT transport
+ * failures — they return null and are never reported.
+ */
+export function authTransportReason(
+  outcome: { kind: "network" } | { kind: "http"; status: number }
+): AuthTransportReason | null {
+  if (outcome.kind === "network") return "network";
+  if (outcome.status === 401) return "unauthorized";
+  if (outcome.status >= 500) return "server-error";
+  return null;
+}
+
+/**
  * Build the POST body for one operational report, truncating the coarse fields
  * to the shared beacon caps. `url` is a pathname only (no query/hash) so it
  * cannot carry tokens or coordinates.
