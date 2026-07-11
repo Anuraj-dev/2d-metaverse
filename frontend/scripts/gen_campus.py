@@ -581,9 +581,13 @@ def furn(key, tx, ty, solid):
 
 # Park — the tile trees above carry the canopy now; sprinkle swaying shrubs
 # between them (skipping any spot a tree footprint occupies).
+# NB: the old (18, 38) shrub was dropped (PRD 25.33) — it sat directly on the
+# plaza "Campus Map" info board (interactable at tile 18,38) and the welcome-desk
+# body, blocking the prompt and reading as clutter over the sign. The row keeps
+# its (8, 38)/(25, 38) shrubs so the park edge still reads planted.
 for tx, ty in [(8, 8), (16, 8), (24, 9), (11, 18), (22, 18),
                (5, 23), (15, 23), (20, 28), (25, 23),
-               (8, 38), (18, 38), (25, 38), (10, 47), (24, 47)]:
+               (8, 38), (25, 38), (10, 47), (24, 47)]:
     if (tx, ty) not in tree_cells:
         furn("f_plant_big", tx, ty, True)
 for tx, ty in [(6,6),(14,11),(21,6),(9,20),(18,24),
@@ -600,13 +604,15 @@ furn("f_clock", 95, 30, False)
 for tx, ty in [(14, 28), (14, 58), (105, 28), (105, 58)]:
     furn("f_plant_big", tx, ty, True)
 
-# Cafe — round tables + chairs in a grid, plus bar items on the west wall
+# Cafe — round tables + chairs, plus bar items on the west wall. PRD 25.33:
+# thinned from a packed 6×3 grid (18 tables) to 4 wider-pitched columns (12
+# tables) so the terrace reads as a relaxed lounge with walkable aisles instead
+# of a wall-to-wall canteen. Columns stay on the stone terrace (x=5-47) with the
+# side chair at col+1.
 for tx, ty in [(8,65),(8,71),(8,77),
-               (15,65),(15,71),(15,77),
-               (22,65),(22,71),(22,77),
-               (29,65),(29,71),(29,77),
-               (36,65),(36,71),(36,77),
-               (44,65),(44,71),(44,77)]:
+               (19,65),(19,71),(19,77),
+               (30,65),(30,71),(30,77),
+               (41,65),(41,71),(41,77)]:
     furn("f_table_small", tx, ty, False)
     furn("f_chair",       tx, ty + 1, False)
     furn("f_chair_side",  tx + 1, ty, False)
@@ -618,15 +624,18 @@ furn("f_sofa_small", 50, 82, True)
 for tx, ty in [(2, 85), (52, 65)]:
     furn("f_plant_big", tx, ty, True)
 
-# Coworking — desk pods in two rows
-for tx, ty in [(60,65),(67,65),(74,65),(81,65),(88,65),(95,65),(102,65)]:
+# Coworking — desk pods in two rows. PRD 25.33: the SE deck was the flagged
+# "meaningless coworking clutter" (a solid 7+6 wall of identical desks). Thinned
+# to 5+4 staggered pods at a wider (12-tile) pitch so there are real walkable
+# aisles between pods and the open-plan office reads intentional, not packed.
+for tx, ty in [(60,65),(72,65),(84,65),(96,65),(108,65)]:
     furn("f_desk",  tx, ty, True)
     furn("f_chair", tx, ty + 1, False)
-for tx, ty in [(60,73),(67,73),(74,73),(81,73),(88,73),(95,73)]:
+for tx, ty in [(66,73),(78,73),(90,73),(102,73)]:
     furn("f_desk2", tx, ty, True)
     furn("f_chair", tx, ty + 1, False)
-furn("f_desk_boss",    102, 73, True)
-furn("f_chair_boss",   102, 74, False)
+furn("f_desk_boss",    114, 73, True)
+furn("f_chair_boss",   114, 74, False)
 furn("f_bookshelf_tall", 58, 63, True)
 furn("f_bookshelf_tall", 58, 80, True)
 for tx, ty in [(115, 63), (115, 80)]:
@@ -641,9 +650,11 @@ for ry in (20, 23, 26, 29, 32):
     for rx in range(84, 116, 3):
         furn("f_chair", rx, ry, False)
 
-# HQ lobby — welcome desk + plants by entrance
-furn("f_desk",       54, 20, True)
-furn("f_chair",      54, 21, False)
+# HQ lobby — welcome desk + plants by entrance. PRD 25.33: nudged one tile west
+# (54→53) so the desk body no longer clips the "Today's Agenda" whiteboard
+# interactable zone (tiles 55-56,19-20), keeping the agenda reachable.
+furn("f_desk",       53, 20, True)
+furn("f_chair",      53, 21, False)
 furn("f_plant_big",  32,  3, True)
 furn("f_plant_big",  77,  3, True)
 furn("f_bookshelf_tall", 32, 10, True)
