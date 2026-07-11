@@ -82,3 +82,6 @@
 
 ## 2026-07-11 — Pilot delivery is a dependency graph of reviewed vertical slices
 **Why:** Privacy, safety, access, authority, reliability, and measurement defects can invalidate pilot results, while the arrival, media, world, and game work overlaps in a few coordination hotspots. PRD 25 sequences narrow end-to-end slices, keeps full verification in CI, requires independent review per slice, chooses usable phone portrait and landscape controls for the pilot, generates server geometry from the authored map, and preserves the existing shared-contract, state-machine, media-isolation, and server-authoritative board architecture.
+
+## 2026-07-11 — Product analytics is server-stamped, allowlisted, and operator-read
+**Why:** Pilot measurement must not become a second identity/content collection system. Pre-auth sign-in outcomes therefore use anonymous server-generated attempt UUIDs and coarse results retained for 7 days; authenticated client events derive actor and time on the server, pass a strict shared allowlist, deduplicate by event UUID, and expire after 90 days. Reads stay behind operator database credentials through reviewed SQL summary/export files; there is no public analytics read API. Each later feature slice must extend the shared event union with its own bounded privacy-reviewed schema before emission.

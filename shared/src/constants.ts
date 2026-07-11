@@ -288,6 +288,9 @@ export const RATE_LIMITS = {
   /** Client-error beacon sink limiter (per IP). */
   clientErrorWindowMs: 60_000,
   clientErrorLimit: 10,
+  /** Authenticated product-analytics ingestion limiter (per student). */
+  analyticsWindowMs: 60_000,
+  analyticsLimit: 120,
   /** Arcade high-score submit limiter (per IP). */
   arcadeScoreWindowMs: 60_000,
   arcadeScoreLimit: 30,
