@@ -7,6 +7,7 @@ import { dirSchema } from "./socket.js";
 import {
   ACTIVE_SPACE_KINDS,
   ARCADE_GAMES,
+  BLOCK_ACK_STATUSES,
   LIMITS,
   PRESENCE_ACTIVITY_KINDS,
   RATE_LIMITS,
@@ -73,6 +74,17 @@ export const reportCreateSchema = z.strictObject({
   note: z.string().trim().min(1).max(LIMITS.reportNoteMax).optional(),
 });
 export type ReportCreateRequest = z.infer<typeof reportCreateSchema>;
+
+/**
+ * `POST /api/v1/blocks` body (PRD 25.13): persistently block another player. The
+ * client supplies only the target's player id; the blocker is bound server-side
+ * from the authenticated session (a client can never block on someone's behalf).
+ * The same shape is reused for `DELETE /api/v1/blocks` (unblock).
+ */
+export const blockCreateSchema = z.strictObject({
+  targetId: z.string().min(1).max(LIMITS.playerIdMax),
+});
+export type BlockCreateRequest = z.infer<typeof blockCreateSchema>;
 
 /* ------------------------------- responses -------------------------------- */
 
@@ -264,6 +276,41 @@ export const reportFailureResponseSchema = z.discriminatedUnion("error", [
   }),
 ]);
 export type ReportFailureResponse = z.infer<typeof reportFailureResponseSchema>;
+
+/**
+ * `POST`/`DELETE /api/v1/blocks` success response (PRD 25.13): a visible,
+ * idempotent acknowledgement of the requested transition (see `BLOCK_ACK_STATUSES`).
+ */
+export const blockAckSchema = z.strictObject({
+  status: z.enum(BLOCK_ACK_STATUSES),
+});
+export type BlockAck = z.infer<typeof blockAckSchema>;
+
+/**
+ * `GET /api/v1/blocks` response (PRD 25.13): the requesting player's own block
+ * list — the ids they have blocked. The client loads this on connect to mute the
+ * blocked users' media/speaking locally; server-side delivery filtering does the
+ * symmetric, authoritative work regardless of what the client holds.
+ */
+export const blockListSchema = z.strictObject({
+  blocked: z.array(z.string().min(1).max(LIMITS.playerIdMax)),
+});
+export type BlockList = z.infer<typeof blockListSchema>;
+
+/**
+ * Bounded failure response for the block endpoints (PRD 25.13). Deliberately
+ * coarse — it never reflects the target's presence or server internals.
+ */
+export const blockFailureResponseSchema = z.discriminatedUnion("error", [
+  z.strictObject({ error: z.literal("validation") }),
+  z.strictObject({ error: z.literal("cannot-block-self") }),
+  z.strictObject({ error: z.literal("unauthorized") }),
+  z.strictObject({
+    error: z.literal("rate-limited"),
+    retryAfterSeconds: z.number().int().min(1).max(Math.ceil(RATE_LIMITS.blockWindowMs / 1000)),
+  }),
+]);
+export type BlockFailureResponse = z.infer<typeof blockFailureResponseSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({

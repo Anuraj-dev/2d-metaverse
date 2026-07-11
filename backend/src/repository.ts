@@ -152,3 +152,50 @@ export async function insertReport(input: ReportInput): Promise<"created" | "dup
   );
   return (result.rowCount ?? 0) > 0 ? "created" : "duplicate";
 }
+
+/* ------------------------------ blocks (PRD 25.13) ------------------------- */
+
+/**
+ * Persist a directed block, deduping on (blocker, blocked). Returns `"blocked"`
+ * when a fresh row was written, or `"already-blocked"` when it existed (idempotent).
+ */
+export async function insertBlock(blockerId: string, blockedId: string): Promise<"blocked" | "already-blocked"> {
+  const result = await pool.query<{ blocker_id: string }>(
+    `INSERT INTO blocks (blocker_id, blocked_id)
+     VALUES ($1, $2)
+     ON CONFLICT (blocker_id, blocked_id) DO NOTHING
+     RETURNING blocker_id`,
+    [blockerId, blockedId]
+  );
+  return (result.rowCount ?? 0) > 0 ? "blocked" : "already-blocked";
+}
+
+/**
+ * Remove a directed block. Returns `"unblocked"` when a row was deleted, or
+ * `"not-blocked"` when there was nothing to remove (idempotent).
+ */
+export async function removeBlock(blockerId: string, blockedId: string): Promise<"unblocked" | "not-blocked"> {
+  const result = await pool.query(
+    "DELETE FROM blocks WHERE blocker_id = $1 AND blocked_id = $2",
+    [blockerId, blockedId]
+  );
+  return (result.rowCount ?? 0) > 0 ? "unblocked" : "not-blocked";
+}
+
+/** The ids a user has blocked (outgoing edges). */
+export async function listBlockedIds(blockerId: string): Promise<string[]> {
+  const result = await pool.query<{ blocked_id: string }>(
+    "SELECT blocked_id FROM blocks WHERE blocker_id = $1",
+    [blockerId]
+  );
+  return result.rows.map((row) => row.blocked_id);
+}
+
+/** The ids that have blocked a user (incoming edges). */
+export async function listBlockerIds(blockedId: string): Promise<string[]> {
+  const result = await pool.query<{ blocker_id: string }>(
+    "SELECT blocker_id FROM blocks WHERE blocked_id = $1",
+    [blockedId]
+  );
+  return result.rows.map((row) => row.blocker_id);
+}
