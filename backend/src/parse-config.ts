@@ -24,6 +24,12 @@ const schema = z.object({
   // The stage is no longer key-gated either (PRD 17): a publish-capable stage
   // token is granted by validating the requester's server-known position.
   MAP_JSON_URL: z.string().default("/assets/maps/campus.json"),
+  // Moderator allowlist (PRD 25.14): a comma-separated list of operator user ids
+  // (uuids). This is the ONLY source of moderator authority — room admins get no
+  // global power. Fail-safe: absent/empty ⇒ NO moderators. Each entry must be a
+  // valid uuid, so a typo can never silently widen the allowlist. Parsed into the
+  // derived `moderatorIds` array below.
+  MODERATOR_USER_IDS: z.string().default(""),
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
   GIT_SHA: z.string().default("dev"),
   // Socket timing knobs. Overridden only by tests (to exercise the join-timeout
@@ -44,7 +50,29 @@ export type AppConfig = ParsedEnv & {
   liveKitApiUrl: string;
   corsOrigins: string[];
   trustProxy: boolean;
+  moderatorIds: string[];
 };
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Parse the moderator allowlist from its raw env string. Fail-safe and strict:
+ * blanks are dropped, entries are lower-cased and de-duplicated, and every
+ * surviving entry MUST be a well-formed uuid — a malformed id throws rather than
+ * silently granting (or denying) moderator power. Empty/absent ⇒ [] (no moderators).
+ */
+export function parseModeratorIds(raw: string): string[] {
+  const ids = raw
+    .split(",")
+    .map((id) => id.trim().toLowerCase())
+    .filter(Boolean);
+  for (const id of ids) {
+    if (!UUID_PATTERN.test(id)) {
+      throw new ConfigError("invalid MODERATOR_USER_IDS entry (expected uuid)", id);
+    }
+  }
+  return [...new Set(ids)];
+}
 
 /**
  * Raised instead of exiting the process, so tests can assert on rejection
@@ -85,6 +113,7 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
     ...parsed.data,
     liveKitApiUrl: parsed.data.LIVEKIT_API_URL ?? parsed.data.LIVEKIT_URL.replace(/^ws/, "http"),
     corsOrigins: parsed.data.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
-    trustProxy: parsed.data.TRUST_PROXY === "true"
+    trustProxy: parsed.data.TRUST_PROXY === "true",
+    moderatorIds: parseModeratorIds(parsed.data.MODERATOR_USER_IDS)
   };
 }

@@ -30,7 +30,8 @@ import { config } from "./config.js";
 import { getGeometryManifest } from "./geometry.js";
 import { validateMove } from "./movement.js";
 import { childLogger } from "./logger.js";
-import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
+import { getRoom, getSeatIds, getSpace, getSuspension, seatExists, spaceExists } from "./repository.js";
+import { isSuspended } from "./suspension.js";
 import { checkRateLimit, isRateLimitExceeded, redis, storeReportableMessage } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
@@ -79,6 +80,19 @@ const boardKey = (spaceId: string, tableId: string) => `board:${spaceId}:${table
 const roomAdminKey = (roomId: string) => `room-admin:${roomId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
+
+/**
+ * Immediately drop a user's live session (PRD 25.14). Called when a moderator
+ * suspends them so the suspension takes effect without waiting for a reconnect.
+ * Returns true when a live socket was found and disconnected. Sockets are keyed
+ * by userId (= playerId), so this is a single-map lookup.
+ */
+export function disconnectUser(userId: string): boolean {
+  const socket = activeSockets.get(userId);
+  if (!socket) return false;
+  socket.disconnect(true);
+  return true;
+}
 
 /**
  * Socket-id "rooms" of every connected player in a block relation with `authorId`
@@ -335,9 +349,24 @@ export function createGameServer(httpServer: HttpServer) {
       next(new Error("unauthorized"));
       return;
     }
-    socket.data.userId = user.id;
-    socket.data.username = user.username;
-    next();
+    // Suspension gate (PRD 25.14): a suspended user cannot open a socket. One
+    // indexed PK lookup on connect (not per-message) — cheap for a connection
+    // event, and reading the row directly avoids any cache-coherency window when
+    // a moderator suspends/reverses moments earlier.
+    void getSuspension(user.id)
+      .then((record) => {
+        if (isSuspended(record, Date.now())) {
+          next(new Error("suspended"));
+          return;
+        }
+        socket.data.userId = user.id;
+        socket.data.username = user.username;
+        next();
+      })
+      .catch((error: unknown) => {
+        childLogger({ module: "socket" }).error({ err: error }, "suspension check failed");
+        next(new Error("unauthorized"));
+      });
   });
 
   io.on("connection", (socket) => {

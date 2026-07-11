@@ -4,6 +4,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import helmet from "helmet";
 import { api } from "./api.js";
 import { beginSigninAttempt, safelyRecordSigninOutcome } from "./analytics.js";
+import { moderation } from "./moderation.js";
 import { createClientErrorsRouter } from "./client-errors.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
@@ -63,6 +64,7 @@ export function createApp(): express.Express {
       response.status(503).json({ ok: false, sha: config.GIT_SHA });
     }
   });
+  app.use("/api/v1/mod", moderation);
   app.use("/api/v1", api);
   app.use((_request, response) => response.status(404).json({ error: "not-found" }));
   app.use(async (error: unknown, _request: Request, response: Response, _next: NextFunction) => {

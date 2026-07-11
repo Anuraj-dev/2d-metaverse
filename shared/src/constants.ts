@@ -113,6 +113,21 @@ export const BLOCK_ACK_STATUSES = ["blocked", "already-blocked", "unblocked", "n
 export type BlockAckStatus = (typeof BLOCK_ACK_STATUSES)[number];
 
 /**
+ * Moderation lifecycle of a single report (PRD 25.14). `open` awaits review;
+ * `dismissed` was reviewed with no action; `actioned` was reviewed and led to a
+ * warn/suspension against the target.
+ */
+export const REPORT_STATUSES = ["open", "dismissed", "actioned"] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+/**
+ * The reversible moderator actions (PRD 25.14). Permanent bans and content
+ * deletion are deliberately out of the pilot. Every one is audit-logged.
+ */
+export const MODERATION_ACTIONS = ["dismiss", "warn", "suspend", "unsuspend"] as const;
+export type ModerationAction = (typeof MODERATION_ACTIONS)[number];
+
+/**
  * TTL (seconds) on the server's bounded snapshot of a broadcast chat line kept so
  * a later report can bind the authoritative author/text without trusting the
  * client or retaining a full transcript (PRD 25.12). One hour bounds how long a
@@ -333,6 +348,10 @@ export const LIMITS = {
   /** Report ingestion (PRD 25.12): the referenced server message id + optional note. */
   reportMessageIdMax: 64,
   reportNoteMax: 300,
+  /** Moderation (PRD 25.14): the free-text reason a moderator may attach to a
+   *  warn/suspension, and the ceiling on how many reports one list page returns. */
+  moderationReasonMax: 300,
+  moderationReportsMax: 200,
   /** Server-side sanity ceiling for movement coordinates. */
   moveCoordMax: 100_000,
   /** Credentials. */
@@ -412,6 +431,11 @@ export const RATE_LIMITS = {
    *  human curating their block list, well below an automated abuse vector. */
   blockWindowMs: 60_000,
   blockLimit: 30,
+  /** Moderator action limiter (per IP; PRD 25.14). A moderator surface is used by
+   *  a handful of trusted operators — comfortably above human review pace, well
+   *  below a runaway script. */
+  moderationWindowMs: 60_000,
+  moderationLimit: 60,
 } as const;
 
 /**

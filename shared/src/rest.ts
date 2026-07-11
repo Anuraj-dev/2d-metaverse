@@ -13,6 +13,7 @@ import {
   RATE_LIMITS,
   REPORT_ACK_STATUSES,
   REPORT_CATEGORIES,
+  REPORT_STATUSES,
   USERNAME_PATTERN,
 } from "./constants.js";
 
@@ -85,6 +86,39 @@ export const blockCreateSchema = z.strictObject({
   targetId: z.string().min(1).max(LIMITS.playerIdMax),
 });
 export type BlockCreateRequest = z.infer<typeof blockCreateSchema>;
+
+/**
+ * `POST /api/v1/mod/warn` body (PRD 25.14): record a warning against a user. The
+ * actor is bound server-side from the authenticated moderator session; the client
+ * supplies only the target id and an optional short reason.
+ */
+export const moderationWarnSchema = z.strictObject({
+  targetId: z.string().min(1).max(LIMITS.playerIdMax),
+  reason: z.string().trim().min(1).max(LIMITS.moderationReasonMax).optional(),
+});
+export type ModerationWarnRequest = z.infer<typeof moderationWarnSchema>;
+
+/**
+ * `POST /api/v1/mod/suspend` body (PRD 25.14): suspend a user until a server
+ * timestamp (epoch ms). Suspension denies new auth/socket/media-token access and
+ * disconnects live sessions; it is reversible. The server additionally rejects a
+ * timestamp that is not in the future.
+ */
+export const moderationSuspendSchema = z.strictObject({
+  targetId: z.string().min(1).max(LIMITS.playerIdMax),
+  until: z.number().int().positive().finite(),
+  reason: z.string().trim().min(1).max(LIMITS.moderationReasonMax).optional(),
+});
+export type ModerationSuspendRequest = z.infer<typeof moderationSuspendSchema>;
+
+/**
+ * `POST /api/v1/mod/unsuspend` body (PRD 25.14): reverse a suspension, restoring
+ * the target's access. Idempotent — reversing a non-suspended user is a no-op.
+ */
+export const moderationUnsuspendSchema = z.strictObject({
+  targetId: z.string().min(1).max(LIMITS.playerIdMax),
+});
+export type ModerationUnsuspendRequest = z.infer<typeof moderationUnsuspendSchema>;
 
 /* ------------------------------- responses -------------------------------- */
 
@@ -312,6 +346,73 @@ export const blockFailureResponseSchema = z.discriminatedUnion("error", [
   }),
 ]);
 export type BlockFailureResponse = z.infer<typeof blockFailureResponseSchema>;
+
+/**
+ * One report as surfaced on the moderator review list (`GET /api/v1/mod/reports`,
+ * PRD 25.14). The moderator surface returns exactly the bounded context the report
+ * already holds (author/target ids, category, scope, the smallest justified message
+ * snapshot, optional note, timestamps) — no wider transcript is ever assembled.
+ */
+export const moderationReportSchema = z.strictObject({
+  id: z.string(),
+  reporterId: z.string(),
+  targetId: z.string(),
+  messageId: z.string(),
+  messageText: z.string(),
+  scope: z.string(),
+  category: z.enum(REPORT_CATEGORIES),
+  note: z.string().nullable(),
+  status: z.enum(REPORT_STATUSES),
+  createdAt: z.string(),
+});
+export type ModerationReport = z.infer<typeof moderationReportSchema>;
+
+/** `GET /api/v1/mod/reports` response (PRD 25.14): open reports, newest first. */
+export const moderationReportListSchema = z.strictObject({
+  reports: z.array(moderationReportSchema),
+});
+export type ModerationReportList = z.infer<typeof moderationReportListSchema>;
+
+/**
+ * Success acknowledgement for the mutating moderator actions (dismiss/warn/
+ * suspend/unsuspend). Coarse by design — the durable record is the audit log and
+ * the DB row, not this response.
+ */
+export const moderationActionAckSchema = z.strictObject({
+  ok: z.literal(true),
+});
+export type ModerationActionAck = z.infer<typeof moderationActionAckSchema>;
+
+/**
+ * Bounded failure response for the moderator endpoints (PRD 25.14). `not-found`
+ * is deliberately reused both for a genuinely-missing report AND for every
+ * non-moderator access (unauthenticated, bad token, or authenticated-but-not-
+ * allowlisted) so the moderator route surface never confirms its own existence to
+ * a non-moderator (403-vs-404: we always answer 404 for authorization failures).
+ */
+export const moderationFailureResponseSchema = z.discriminatedUnion("error", [
+  z.strictObject({ error: z.literal("validation") }),
+  z.strictObject({ error: z.literal("invalid-until") }),
+  z.strictObject({ error: z.literal("target-not-found") }),
+  z.strictObject({ error: z.literal("not-found") }),
+  z.strictObject({
+    error: z.literal("rate-limited"),
+    retryAfterSeconds: z.number().int().min(1).max(Math.ceil(RATE_LIMITS.moderationWindowMs / 1000)),
+  }),
+]);
+export type ModerationFailureResponse = z.infer<typeof moderationFailureResponseSchema>;
+
+/**
+ * The bounded refusal returned when a SUSPENDED user attempts to authenticate
+ * (`POST /signin`), open a socket, or fetch a media token (PRD 25.14). Carries
+ * only the expiry (epoch ms) so the client can show when access returns — never
+ * the moderator, reason, or any server internals.
+ */
+export const suspendedResponseSchema = z.strictObject({
+  error: z.literal("suspended"),
+  until: z.number().int().positive(),
+});
+export type SuspendedResponse = z.infer<typeof suspendedResponseSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({
