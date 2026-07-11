@@ -100,4 +100,48 @@ describe("ChatBox persistent panel", () => {
     submitChat("hey room");
     expect(netMock.net.chat).toHaveBeenCalledWith("hey room", "room");
   });
+
+  // PRD 25.16: Tab is intercepted only when a real whisper completion exists.
+  function joinPlayers() {
+    act(() =>
+      netMock.net.emit("init", {
+        selfId: "me",
+        players: [
+          { id: "me", name: "raja" },
+          { id: "p2", name: "bob" },
+          { id: "p3", name: "bobby" },
+        ],
+      }),
+    );
+  }
+
+  it("intercepts Tab to complete a whisper name when a match exists", () => {
+    render(<ChatBox />);
+    joinPlayers();
+    const input = screen.getByLabelText("Chat message");
+    fireEvent.change(input, { target: { value: "/w bo" } });
+    const ev = fireEvent.keyDown(input, { key: "Tab" });
+    // preventDefault was called (event returns false), and the input completed.
+    expect(ev).toBe(false);
+    expect((input as HTMLInputElement).value).toBe("/w bob");
+  });
+
+  it("lets Tab leave chat when no whisper completion applies", () => {
+    render(<ChatBox />);
+    joinPlayers();
+    const input = screen.getByLabelText("Chat message");
+    fireEvent.change(input, { target: { value: "hello there" } });
+    // Tab is not consumed (default not prevented) so focus can move out of chat.
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect((input as HTMLInputElement).value).toBe("hello there");
+  });
+
+  it("lets Tab leave chat on a whisper prefix that matches no one", () => {
+    render(<ChatBox />);
+    joinPlayers();
+    const input = screen.getByLabelText("Chat message");
+    fireEvent.change(input, { target: { value: "/w zzz" } });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect((input as HTMLInputElement).value).toBe("/w zzz");
+  });
 });

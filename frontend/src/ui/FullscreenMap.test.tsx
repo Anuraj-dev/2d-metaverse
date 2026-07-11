@@ -46,6 +46,32 @@ describe("FullscreenMap", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  // PRD 25.16: an accessible player list is the keyboard/SR alternative to the
+  // pointer-only canvas dots.
+  it("renders a labelled player list with one locate button per named player", () => {
+    render(<FullscreenMap info={info} dots={dots} onClose={() => {}} />);
+    const nav = screen.getByRole("navigation", { name: "People on the map" });
+    expect(nav).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Locate You (you)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Locate bob" })).toBeTruthy();
+  });
+
+  it("locates a player from the list via the bus and closes (no teleport)", () => {
+    const onClose = vi.fn();
+    let located: { id: string } | undefined;
+    const off = bus.on<{ id: string }>("locate", (p) => (located = p));
+    render(<FullscreenMap info={info} dots={dots} onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: "Locate bob" }));
+    expect(located).toEqual({ id: "p2" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("shows an empty-state message when no players are named", () => {
+    render(<FullscreenMap info={info} dots={[]} onClose={() => {}} />);
+    expect(screen.getByText(/No one else is here/i)).toBeTruthy();
+  });
+
   it("locates a clicked player via the bus and closes (view-only, no teleport)", () => {
     const onClose = vi.fn();
     let located: { id: string } | undefined;
