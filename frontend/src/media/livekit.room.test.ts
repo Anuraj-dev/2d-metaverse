@@ -76,6 +76,25 @@ afterEach(async () => {
 });
 
 describe("RoomVideo.join failure cleanup", () => {
+  it("joins a room receive-only on a consent-safe cold start", async () => {
+    setMediaPrefs({ micOn: false, camOn: false });
+
+    await roomVideo.join("42");
+
+    expect(roomVideo.lkRoom).not.toBeNull();
+    expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+    expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+  });
+
+  it("replays devices explicitly enabled earlier in the browser session", async () => {
+    setMediaPrefs({ micOn: true, camOn: true });
+
+    await roomVideo.join("42");
+
+    expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+    expect(lk.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
+  });
+
   it("a failed connect resets lkRoom to null and notifies onRoomChanged", async () => {
     lk.connect.mockRejectedValueOnce(new Error("connect failed"));
     const changed = vi.fn();

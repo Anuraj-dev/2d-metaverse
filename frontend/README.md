@@ -176,6 +176,24 @@ values the handlers consume.
 The React↔Phaser boundary is the typed `game/eventBus.ts`; App-shell media
 sequencing (`App.tsx`) is covered with React Testing Library + jsdom.
 
+### Media consent and session preferences
+
+Microphone and camera start **off** for a new browser session. Joining the world,
+a private room/meeting, or the stage audience still connects to receive remote
+media, but it does not call a local capture/publish API until the player explicitly
+enables that device from the global control bar. Stage audience tokens remain
+subscribe-only; starting a performer connection also honours the same device prefs
+and therefore stays muted/camera-off until explicitly enabled.
+
+An explicit mic/camera choice is stored in `sessionStorage`. It follows the player
+across world → room/meeting → stage transitions and survives reloads in the same
+tab page-session, but it is deliberately **not** stored in `localStorage`. An empty
+page session starts off; closing the tab normally ends that session (browsers may
+copy `sessionStorage` when a tab is explicitly duplicated). Missing, blocked, or
+malformed session storage also falls back to off. Entering a private room keeps the
+existing serialized privacy handoff: world and stage media are detached before room
+media may join.
+
 **Where new game logic goes:** any new gameplay rule (audio zones, portal triggers,
 mini-game rules, …) is written as a pure module with its tests, and the scene only
 gains a call site. "Logic in the scene" is a review smell — put it in a pure module.
