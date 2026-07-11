@@ -6,20 +6,17 @@ import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
-import Game2048 from "./Game2048";
 import type { ArcadeGameProps } from "./gameTypes";
 import "./arcade.css";
 
 const GAMES: Record<ArcadeGame, ComponentType<ArcadeGameProps>> = {
   snake: SnakeGame,
   flappy: FlappyGame,
-  "2048": Game2048,
 };
 
 const CONTROLS: Record<ArcadeGame, string> = {
   snake: "Arrows / WASD to steer",
   flappy: "Space / ↑ / click to flap",
-  "2048": "Arrows / WASD to slide",
 };
 
 export interface ArcadeOverlayProps {

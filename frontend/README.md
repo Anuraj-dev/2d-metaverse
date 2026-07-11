@@ -155,7 +155,6 @@ into the modules).
 | `game/arcade/prng.ts` | seeded mulberry32 PRNG (deterministic, serializable seed) |
 | `game/arcade/snake.ts` | Snake tick/turn/eat/collision rules |
 | `game/arcade/flappy.ts` | Flappy gravity/flap/pipe/collision rules |
-| `game/arcade/game2048.ts` | 2048 slide+merge semantics (incl. no-move detection) |
 | `game/boardTable.ts` | board-table view model: snapshot + selfId → grid/whose-turn/offer/spectator/status + click→move (rules themselves live in `@metaverse/shared`) |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
@@ -520,7 +519,7 @@ rule (games stay audio-agnostic; the mixer decides the blip).
 **Architecture — pure rules, thin renderers, audio-agnostic:**
 
 - **Rules** live in pure modules under `src/game/arcade/` — `snake.ts`,
-  `flappy.ts`, `game2048.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
+  `flappy.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
   plain values out; no Phaser/net/DOM imports. Randomness flows through the
   serializable `rngSeed` in each state, so *a given seed + input script always
   reproduces a run* (asserted by determinism tests). Each module lands with its
@@ -529,7 +528,7 @@ rule (games stay audio-agnostic; the mixer decides the blip).
   own a canvas/DOM surface, run the module's tick/reduce on a loop, draw the
   returned state, and report score/game-over upward. No game *rules* in a
   renderer or the scene. The overlay (`ArcadeOverlay.tsx`) and its game modules
-  are **lazy-loaded** — a separate chunk, so snake/flappy/2048 never bloat the
+  are **lazy-loaded** — a separate chunk, so snake/flappy never bloat the
   entry bundle.
 - **Sound stays out of game logic:** games emit domain events on `eventBus`
   (`arcade-point`, `arcade-over`, `arcade-flap`); `open-arcade` opens the

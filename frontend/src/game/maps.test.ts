@@ -181,11 +181,11 @@ describe("campus arcade cabinets (PRD 11)", () => {
     return o.properties?.find((p) => p.name === name)?.value;
   }
 
-  const ARCADE_GAMES = new Set(["snake", "flappy", "2048"]);
+  const ARCADE_GAMES = new Set(["snake", "flappy"]);
 
-  it("places exactly three arcade interactables, each with a valid game id + label", () => {
+  it("places exactly two arcade interactables, each with a valid game id + label", () => {
     const arcades = objects("interactables").filter((o) => prop(o, "interactType") === "arcade");
-    expect(arcades).toHaveLength(3);
+    expect(arcades).toHaveLength(2);
     const games = arcades.map((o) => prop(o, "game"));
     expect(new Set(games)).toEqual(ARCADE_GAMES);
     for (const o of arcades) {
@@ -237,9 +237,9 @@ describe("campus arcade hall (PRD 16)", () => {
     // canonical rooms stay exactly 1-6 (asserted in audioZones.test.ts).
   });
 
-  it("relocates the three cabinets together into the southern hall (well clear of the plaza)", () => {
+  it("relocates the cabinets together into the southern hall (well clear of the plaza)", () => {
     const cabinets = objects("furniture").filter((o) => o.name.startsWith("f_arcade_"));
-    expect(cabinets.length).toBe(3);
+    expect(cabinets.length).toBe(2);
     for (const c of cabinets) {
       // Deep south of spawn (row 44 = 704px) — the cabinets moved out of the
       // old plaza cluster (~row 50) into the far-south hall (row 96 = 1536px).

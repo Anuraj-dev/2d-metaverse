@@ -69,10 +69,16 @@ describe("client error report", () => {
 describe("arcade score submission", () => {
   it("accepts a valid score for a known game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake", score: 12 }).success).toBe(true);
-    expect(arcadeScoreSchema.safeParse({ game: "2048", score: 0 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "flappy", score: 0 }).success).toBe(true);
   });
   it("rejects an unknown game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "pong", score: 1 }).success).toBe(false);
+  });
+  it("rejects the retired 2048 game id (PRD 25.36)", () => {
+    // 2048 was retired: it is no longer in ARCADE_GAMES, so the enum rejects any
+    // new submission for it. Stored historical rows keyed on the free-text `game`
+    // column are untouched — this only closes the write path.
+    expect(arcadeScoreSchema.safeParse({ game: "2048", score: 0 }).success).toBe(false);
   });
   it("rejects a negative, non-integer, or over-cap score", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake", score: -1 }).success).toBe(false);
