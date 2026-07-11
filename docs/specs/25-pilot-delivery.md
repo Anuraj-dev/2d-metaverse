@@ -137,16 +137,22 @@ The work is divided into six milestones:
 
 - Operational crash monitoring remains separate from product analytics but shares privacy and rate-limit discipline.
 - Caught operational failures receive a bounded reporting path; reports exclude chat/transcripts, JWTs, passwords, precise coordinates, SDP, raw device identifiers, and unbounded stacks/context.
-- Analytics events use an allowlisted shared schema, authenticated ingestion, server timestamps, idempotency, explicit retention, and a documented query/export surface.
+- Analytics events use an allowlisted shared schema, server timestamps, idempotency, explicit retention, and a documented query/export surface. Authenticated client ingestion begins only after sign-in.
+- Pre-authentication sign-in outcomes are emitted by the server route with a short-lived attempt identifier and coarse result code; they never include a username, password, IP address in the analytics record, or client-supplied identity.
 - Initial events cover sign-in outcome, world-load outcome and duration, reconnect start/outcome, media enable/outcome, media failure, and crash-free-session denominator.
-- Later events add first meaningful interaction, concurrent shared session, chat/voice/meeting/game starts and completions, activity transitions, repeated interaction, next-day/week return, block/report, and moderation outcome.
+- Every later vertical feature slice owns its event schema, emission, privacy review, and tests for first meaningful interaction, concurrent shared session, chat/voice/meeting/game starts and completions, activity transitions, repeated interaction, next-day/week return, block/report, and moderation outcome. There is no late cross-cutting instrumentation PR.
 - Analytics must not reward raw hours, idle presence, or chat volume.
 
 ### Safety and authority
 
 - World chat is server-throttled and schema-limited.
-- Mute is local and immediate; block prevents unwanted direct/whisper visibility and contact according to the safety specification; report creates a bounded moderation record and visible acknowledgement.
+- Chat mute is local, immediate, and reversible; it hides the selected student's user-authored chat for that browser session without changing server delivery or media.
+- Block is persistent and server-owned. Per-recipient world, room, meeting, and whisper delivery filters messages when either party has blocked the other; direct whispers are rejected in both directions. The frontend also mutes that student's LiveKit audio/video tracks and hides their speaking feedback. Presence/name remains visible for spatial safety and authoritative world state. Unblock restores only future communication; blocked history is not replayed.
+- Block never suppresses system, room-admin, meeting-lifecycle, moderation, or safety acknowledgements.
+- Report creates a bounded moderation record and visible acknowledgement. The server stamps message identity/author/time; the reporter may choose a category and optional short note but cannot forge author or arbitrary transcript context.
 - Moderation records minimise content retention while preserving actor, target, category, timestamps, and the smallest justified message reference/snapshot.
+- Pilot moderators are an operator-provisioned allowlist of authenticated user IDs loaded from validated server configuration. The backend verifies the current user on every moderation request; room administrators have no moderator authority.
+- Moderator actions are dismiss report, warn, or suspend until a server timestamp. Suspension blocks new auth/socket/media-token access and disconnects active sessions; it is reversible by a moderator and every action/reversal is audit logged. Permanent bans and content deletion are outside the pilot.
 - Server movement validation uses elapsed time, configured speed/tolerance, world bounds, and authoritative last position. Suspicious moves are rejected/corrected and observable.
 - Knock, room seat, board seat/move, stage publish, and other physical actions require server-validated proximity to canonical geometry.
 - Geometry authority is not duplicated casually; the slice must document the single manifest or generated boundary used by frontend and backend.
@@ -164,7 +170,8 @@ The work is divided into six milestones:
 
 ### Arrival and joining
 
-- Arrival shows online people and active rooms, meetings, games, stage/gatherings, plus the next scheduled community activity when data exists.
+- Arrival shows online people and active rooms, meetings, games, stage/gatherings, plus the next scheduled community activity.
+- Pilot scheduled activities come from a versioned, schema-validated repository configuration deployed with the backend. Each entry has an id, title, UTC start/end, destination/activity id, and optional short description. Invalid or expired configuration fails safely; operators update it through a reviewed configuration PR rather than a new events platform.
 - Empty, loading, offline, and failed arrival states are visually and semantically distinct.
 - Join-person and join-activity actions reuse server authority. They may place the student at an approved threshold or focus/route them, but never create arbitrary client teleport.
 - Walking remains available for presence and serendipity; invited or already-active experiences avoid unnecessary wandering.
@@ -187,11 +194,12 @@ The work is divided into six milestones:
 - Desk clutter is reduced. Interactable objects need a social-loop purpose and a specific action or information outcome.
 - Existing floor-painted area names and approved signage conventions remain unchanged unless a concrete regression is found.
 - New or changed assets match the established pixel-art direction and include attribution.
-- Stage-hall improvements preserve server position validation and media isolation.
+- Stage-hall improvements preserve server position validation and media isolation while making presenter focus, audience seating, walkability, lighting/ambience, interaction feedback, and spectator sightlines visually obvious in both idle and live states.
 
 ### Games
 
-- Snake rules remain deterministic and pure with seeded state. Timing/input buffering, progression, difficulty, collision fairness, pause/focus/touch, scoring, restart, and reduced motion are specified as observable reducer/renderer behaviour.
+- Snake rules remain deterministic and pure with seeded state. Timing/input buffering, progression, difficulty, collision fairness, pause/focus/touch, scoring, restart, reduced motion, sound/visual feedback, and clear level/game-over presentation are specified as observable reducer/renderer behaviour.
+- Snake must evaluate one bounded social presentation—spectator-visible runs, friendly rounds, or shared-session context—and ship it only if it can reuse trusted run state without an unjustified multiplayer rewrite.
 - Tic-Tac-Toe and Connect Four remain server-authoritative through the shared rules and backend match machine.
 - Board presentation may animate only confirmed authoritative moves. Waiting, offer, acceptance, turn, win/draw, forfeit, disconnect grace, spectator, error, and rematch states are explicit.
 - Board controls expose keyboard navigation, labels, current state, and live result announcements.
@@ -226,21 +234,23 @@ The GitHub issues created from this specification are the execution source of tr
 22. **Door and private-seat proximity validation** — blocked by movement/collision authority.
 23. **Board-seat proximity validation** — blocked by movement/collision authority.
 24. **Stage authorization hardening** — blocked by movement/collision authority and generated geometry.
-25. **Presence/activity read model and social arrival** — blocked by pilot analytics, mobile/HUD accessibility, and physical-action authority; starts with truthful locate/view actions.
+25. **Presence/activity read model and social arrival** — blocked only by the initial analytics contract; includes the validated pilot schedule source and truthful locate/view actions, not join mutation.
 26. **Server-authorised join person/activity** — blocked by the activity read model, movement/collision authority, and door/seat proximity.
 27. **Interaction-state cohesion** — blocked by authorised joining, accessible overlays, and keyboard semantics.
 28. **Voice feedback and privacy-state cohesion** — blocked by confirmed media state, mobile/HUD accessibility, and reduced-motion behaviour.
 29. **Stage publishing and audience truth** — blocked by stage authorization, confirmed media state, voice cohesion, accessible overlays, and reduced motion.
 30. **Private meeting and portal accessibility completion** — blocked by connection convergence, confirmed media state, voice cohesion, accessible overlays, and reduced motion; extends the existing handoff rather than rewriting it.
-31. **Campus plausibility, furniture, and useful interactions** — blocked by interaction-state cohesion and geometry manifest.
-32. **Stage hall authored-world pass** — blocked by stage publishing truth and campus plausibility.
-33. **Retire 2048 cleanly** — no implementation blocker; remove every product/code surface while preserving a safe migration path for any stored historical scores.
-34. **Snake game-quality slice** — blocked by mobile/HUD accessibility, reduced motion, and pilot analytics.
-35. **Board rematch and disconnect lifecycle** — blocked by board-seat proximity and pilot analytics.
-36. **Tic-Tac-Toe presentation and accessibility** — blocked by board lifecycle, keyboard semantics, mobile/HUD accessibility, and reduced motion.
-37. **Connect Four presentation** — blocked by board lifecycle and Tic-Tac-Toe extraction when the shared board panel changes.
-38. **Social-loop analytics completion** — blocked by arrival, interactions, voice, meetings, stage, campus, and games.
-39. **Maya production acceptance and pilot release** — blocked by every implementation slice, green CI, deployment health, and documentation checkpoint.
+31. **Campus geometry and walkability repair** — blocked by geometry manifest; covers tree/ground plausibility, collisions, routes, thresholds, and E2E waypoints.
+32. **Campus furniture and visual plausibility** — blocked by campus geometry; covers clutter, desk placement, sightlines, and authored-area screenshots without adding interactions.
+33. **Meaningful campus object interactions** — blocked by interaction-state cohesion and furniture plausibility; each object needs a real event, room, notice, collaboration, or social action.
+34. **Stage hall authored-world pass** — blocked by stage publishing truth and campus geometry; must verify hierarchy, lighting/ambience, seating, walkability, interaction feedback, and spectator experience.
+35. **Retire 2048 cleanly** — no implementation blocker; remove every product/code surface while preserving a safe migration path for any stored historical scores.
+36. **Snake game-quality and bounded social presentation** — blocked by mobile/HUD accessibility, reduced motion, and pilot analytics; includes sound/visual feedback and an evidence-based social-context decision.
+37. **Board rematch and disconnect lifecycle** — blocked by board-seat proximity and pilot analytics.
+38. **Tic-Tac-Toe presentation and accessibility** — blocked by board lifecycle, keyboard semantics, mobile/HUD accessibility, and reduced motion.
+39. **Connect Four presentation** — blocked by board lifecycle and Tic-Tac-Toe extraction when the shared board panel changes.
+40. **Pilot cohort/query verification** — blocked by feature-owned analytics; verifies event joins, repeat-group/return calculations, retention, and operator export without adding cross-feature emissions.
+41. **Maya production acceptance and pilot release** — blocked by every implementation slice, green CI, deployment health, and documentation checkpoint.
 
 ## Testing Decisions
 
