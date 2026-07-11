@@ -283,7 +283,7 @@ describe("meeting chat anti-spam (PRD 25.11)", () => {
     // The cooldown is enforced on the meeting-chat send regardless of whether a
     // live meeting exists — being in a room is enough to type; the limiter guards
     // the send itself. The window is 20 per player, so the 21st is refused.
-    const a = await adminInRoom("mca", "1");
+    const a = await adminInRoom("spamc", "1");
     for (let index = 0; index < 20; index += 1) {
       a.socket.emit("meeting-chat", { text: `spam ${index}` });
     }
