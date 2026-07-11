@@ -176,6 +176,40 @@ values the handlers consume.
 The React↔Phaser boundary is the typed `game/eventBus.ts`; App-shell media
 sequencing (`App.tsx`) is covered with React Testing Library + jsdom.
 
+### Accessible dialog primitive (PRD 25.15)
+
+`ui/Dialog.tsx` is the one accessible modal seam for HUD overlays. Render it only
+while the overlay is open (overlays stay mount-controlled — the primitive owns
+*behaviour*, not open/close state). While mounted it provides:
+
+- `role="dialog"` + `aria-modal="true"` with an accessible name (`label` or
+  `labelledBy`);
+- initial focus into the panel's first control (falling back to the panel);
+- **Escape-to-close** and **backdrop-click-to-close** (`closeOnBackdrop`,
+  default on);
+- **Tab focus containment** that wraps at both ends (pure maths in
+  `ui/focusTrap.ts`, exhaustively unit-tested);
+- **background inertness** (`inert` + `aria-hidden`) on the world canvas and
+  non-urgent HUD;
+- **focus restoration** to whatever was focused before it opened;
+- **nested-dialog** support via a shared open-stack — only the topmost dialog
+  answers Escape/Tab, so overlays peel one layer at a time.
+
+Migrated overlays: the Help sheet (`HelpOverlay`), interactable modals
+(`InteractableModal`), and the fullscreen campus map (`FullscreenMap`). The
+Settings↔map mutual exclusion (`map-open`/`settings-open` on the bus) is
+untouched.
+
+**Urgent-HUD exception (documented rule).** Background inertness deliberately
+**exempts** any element carrying `data-dialog-keep-live`, and those elements'
+controls are woven into the focus-containment ring. Today that marks the media
+`ControlBar` and the room knock/approval HUD (`RoomAdminPanel`, `KnockStatus`),
+so a user can still toggle mic/cam and an admin can still approve a knock while
+an overlay is open. Mark any future always-urgent region the same way — nothing
+else escapes the trap. The primitive does not change world movement-key handling
+(the map still coordinates via `map-open`); comprehensive world-input-leak
+handling is slice 25.16's concern.
+
 ### Media consent and session preferences
 
 Microphone and camera start **off** for a new browser session. Joining the world,
