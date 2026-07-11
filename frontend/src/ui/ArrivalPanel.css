@@ -1,0 +1,105 @@
+/* Social-arrival HUD (PRD 25.26). Top-left, mirroring the roster's chrome so the
+   arrival surface reads as part of the same HUD system. Small-screen collision
+   tuning is owned by a later HUD pass. */
+.arrival {
+  position: absolute;
+  top: 52px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 240px;
+  z-index: 5;
+}
+
+.arrival-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text, #e7ecf5);
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.arrival-head:hover { filter: brightness(1.1); }
+
+.arrival-body {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  width: 100%;
+  max-height: 46vh;
+  overflow-y: auto;
+  font-size: 12px;
+  color: var(--text, #e7ecf5);
+}
+
+.arrival-status {
+  margin: 0 0 6px;
+  color: var(--muted, #9aa4b8);
+  line-height: 1.35;
+}
+
+.arrival-schedule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent, #6ea8fe) 16%, transparent);
+}
+
+.arrival-group { margin-top: 6px; }
+.arrival-group-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #9aa4b8);
+}
+.arrival-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.arrival-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 6px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.arrival-row:hover { background: var(--panel-hover, #232838); }
+.arrival-row-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arrival-row-meta {
+  color: var(--muted, #9aa4b8);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.arrival-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #6ea8fe);
+  flex-shrink: 0;
+}

@@ -9,6 +9,7 @@
  * (`auth: { token }`), never in `join`.
  */
 import { z } from "zod";
+import type { PresenceSnapshot } from "./rest.js";
 import {
   ADMIN_CHANGE_REASONS,
   BOARD_END_REASONS,
@@ -435,4 +436,5 @@ export interface ServerToClientEvents {
   "meeting-chat": (payload: MeetingChatMessage) => void;
   "board-update": (payload: BoardUpdatePayload) => void;
   "board-error": (payload: BoardErrorPayload) => void;
+  "presence-snapshot": (payload: PresenceSnapshot) => void;
 }

@@ -9,6 +9,9 @@ import {
   clientErrorSchema,
   credentialsSchema,
   liveKitSchema,
+  pilotScheduleEntrySchema,
+  pilotScheduleSchema,
+  presenceSnapshotSchema,
   spaceInfoSchema,
 } from "./rest.js";
 import { LIMITS } from "./constants.js";
@@ -91,6 +94,96 @@ describe("analytics ingestion", () => {
       analyticsIngestFailureSchema.safeParse({ error: "rate-limited", retryAfterSeconds: 60 }).success,
     ).toBe(true);
     expect(analyticsIngestFailureSchema.safeParse({ error: "unaudited-event" }).success).toBe(false);
+  });
+
+  it("accepts the social-arrival events with only bounded, identity-free properties", () => {
+    const envelope = (event: unknown) => ({
+      eventId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
+      event,
+    });
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "social-arrival-viewed", properties: { onlineCount: 7, activeSpaces: 2, hasSchedule: true } }),
+      ).success,
+    ).toBe(true);
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "presence-locate", properties: { targetKind: "meeting" } }),
+      ).success,
+    ).toBe(true);
+    // Counts are bounded and negatives rejected.
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "social-arrival-viewed", properties: { onlineCount: -1, activeSpaces: 0, hasSchedule: false } }),
+      ).success,
+    ).toBe(false);
+    // No identity leakage: extra keys (a username/target id) are rejected by strictObject.
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "presence-locate", properties: { targetKind: "room", targetId: "alice" } }),
+      ).success,
+    ).toBe(false);
+    // "world" and "arcade" are not locate targets in the read model's active spaces,
+    // but "world" is a valid presence kind; arcade is not observable so it is rejected.
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "presence-locate", properties: { targetKind: "arcade" } }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+describe("pilot schedule", () => {
+  const entry = {
+    id: "welcome-week",
+    title: "Welcome mixer",
+    startsAt: "2026-07-11T17:00:00.000Z",
+    endsAt: "2026-07-11T18:00:00.000Z",
+    activityId: "room:commons",
+    description: "Say hi at the commons.",
+  };
+
+  it("accepts a well-formed entry and rejects a backwards interval", () => {
+    expect(pilotScheduleEntrySchema.safeParse(entry).success).toBe(true);
+    expect(pilotScheduleEntrySchema.safeParse({ ...entry, description: undefined }).success).toBe(true);
+    expect(
+      pilotScheduleEntrySchema.safeParse({ ...entry, endsAt: "2026-07-11T16:00:00.000Z" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an over-long title and unknown keys, and validates an array", () => {
+    expect(pilotScheduleEntrySchema.safeParse({ ...entry, title: "x".repeat(LIMITS.scheduleTitleMax + 1) }).success).toBe(false);
+    expect(pilotScheduleEntrySchema.safeParse({ ...entry, secret: "x" }).success).toBe(false);
+    expect(pilotScheduleSchema.safeParse([entry]).success).toBe(true);
+    expect(pilotScheduleSchema.safeParse([]).success).toBe(true);
+  });
+});
+
+describe("presence snapshot", () => {
+  it("accepts a populated read model and rejects an unobservable arcade activity", () => {
+    const snapshot = {
+      spaceId: "1",
+      people: [
+        { id: "a", name: "alice", activity: "world", place: null },
+        { id: "b", name: "bob", activity: "meeting", place: "Commons" },
+      ],
+      activeSpaces: [{ kind: "meeting", id: "room:commons", label: "Commons", count: 2 }],
+      nextScheduled: null,
+    };
+    expect(presenceSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(
+      presenceSnapshotSchema.safeParse({
+        ...snapshot,
+        people: [{ id: "a", name: "alice", activity: "arcade", place: null }],
+      }).success,
+    ).toBe(false);
+    // activeSpaces never describes the open world.
+    expect(
+      presenceSnapshotSchema.safeParse({
+        ...snapshot,
+        activeSpaces: [{ kind: "world", id: "x", label: "Campus", count: 1 }],
+      }).success,
+    ).toBe(false);
   });
 });
 
