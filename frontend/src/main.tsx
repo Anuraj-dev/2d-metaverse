@@ -3,6 +3,12 @@ import "./index.css";
 import App from "./App.tsx";
 import { installErrorBeacon } from "./errorBeacon";
 import { SERVER_URL, USE_MOCK } from "./net/config";
+import { initReducedMotion } from "./ui/reducedMotionBridge";
+
+// PRD 25.19: resolve the global reduced-motion preference and stamp the root
+// `data-reduced-motion` attribute before first paint, so CSS overrides apply
+// without a flash and Phaser/Motion read a settled value.
+initReducedMotion();
 
 // Ship uncaught errors to the backend log stream — real backend mode only
 // (mock mode has no server to receive them). Never blocks or breaks the app.

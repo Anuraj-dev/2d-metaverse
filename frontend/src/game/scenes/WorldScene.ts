@@ -38,6 +38,7 @@ import { tintForHour } from "../dayNight";
 import { CANVAS_FONT_FAMILY } from "../uiFont";
 import { terrainFromTiledMap, type TiledMapLike } from "../../ui/minimapTerrain";
 import { ListenerScope } from "../listenerScope";
+import { isReducedMotion } from "../../ui/reducedMotionBridge";
 
 const ZOOM = 2.2;
 // Portal Phase A (PRD 10): camera punch-in toward the table over ~350ms. The
@@ -534,6 +535,9 @@ export default class WorldScene extends Phaser.Scene {
   private addSway(img: Phaser.GameObjects.Image) {
     img.setOrigin(0.5, 1);
     img.y += img.height / 2; // keep the base anchored where it was drawn
+    // Reduced motion (PRD 25.19): the sway is a purely decorative infinite
+    // loop — leave the sprite upright and skip the tween entirely.
+    if (isReducedMotion()) return;
     this.tweens.add({
       targets: img,
       angle: { from: -2.2, to: 2.2 },
@@ -570,6 +574,10 @@ export default class WorldScene extends Phaser.Scene {
     this.listeners.own(() => this.scale.off("resize", applyTint));
 
     // Ambient motes: a soft 3px dot texture drifting slowly across the world.
+    // Reduced motion (PRD 25.19): this is a nonessential infinite particle
+    // drift — skip it. The day/night tint above is a slow static-looking color
+    // wash (no perceptible movement), so it stays.
+    if (isReducedMotion()) return;
     const dotKey = "ambient-mote";
     if (!this.textures.exists(dotKey)) {
       const g = this.make.graphics({ x: 0, y: 0 }, false);
@@ -929,6 +937,15 @@ export default class WorldScene extends Phaser.Scene {
     if (!sprite) return;
     const cam = this.cameras.main;
     cam.stopFollow();
+    // Reduced motion (PRD 25.19): cut straight to the target and drop the
+    // sprite-scale pulse; still centre on them and resume follow shortly after.
+    if (isReducedMotion()) {
+      cam.centerOn(sprite.x, sprite.y);
+      this.time.delayedCall(1500, () =>
+        cam.startFollow(this.player, true, 0.12, 0.12)
+      );
+      return;
+    }
     cam.pan(sprite.x, sprite.y, 450, "Sine.easeInOut");
     this.tweens.add({
       targets: sprite,
@@ -1436,9 +1453,16 @@ export default class WorldScene extends Phaser.Scene {
   private portalIn() {
     if (this.scene.isSleeping()) return;
     const cam = this.cameras.main;
+    // Reduced motion (PRD 25.19): skip the pan/fade/zoom cinematic movement but
+    // NEVER skip the handoff — Phase A must still capture the backdrop, emit
+    // `portal-phase-a-done`, and sleep the scene. We only replace the animated
+    // camera punch-in with an instant cut (state transition preserved).
+    const reduced = isReducedMotion();
     cam.stopFollow();
-    cam.pan(this.player.x, this.player.y, PORTAL_MS, "Sine.easeInOut");
-    cam.fadeOut(PORTAL_FADE_MS, 0, 0, 0);
+    if (!reduced) {
+      cam.pan(this.player.x, this.player.y, PORTAL_MS, "Sine.easeInOut");
+      cam.fadeOut(PORTAL_FADE_MS, 0, 0, 0);
+    }
     // All Phase A wiring (which gate guards which effect, and in what order)
     // lives in runPortalCinematic; the scene only supplies real Phaser effects.
     runPortalCinematic(
@@ -1450,6 +1474,13 @@ export default class WorldScene extends Phaser.Scene {
       },
       {
         startZoom: (onZoomComplete) => {
+          if (reduced) {
+            // Instant cut to the peak zoom, then advance synchronously — the
+            // snapshot/emit/sleep sequence runs exactly as in the animated path.
+            cam.setZoom(ZOOM * PORTAL_ZOOM_FACTOR);
+            onZoomComplete();
+            return;
+          }
           cam.zoomTo(
             ZOOM * PORTAL_ZOOM_FACTOR,
             PORTAL_MS,
@@ -1487,7 +1518,9 @@ export default class WorldScene extends Phaser.Scene {
     cam.resetFX();
     cam.setZoom(ZOOM);
     cam.startFollow(this.player, true, 0.12, 0.12);
-    cam.fadeIn(250, 0, 0, 0);
+    // Reduced motion (PRD 25.19): resetFX already cleared any fade, so the world
+    // is visible instantly — skip the fade-in reveal.
+    if (!isReducedMotion()) cam.fadeIn(250, 0, 0, 0);
   }
 
   private emitPositions(time: number) {
