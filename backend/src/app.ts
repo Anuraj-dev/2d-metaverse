@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { createClientErrorsRouter } from "./client-errors.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
+import { geometryManifestReady } from "./geometry.js";
 import { childLogger, logger } from "./logger.js";
 import { redis } from "./redis.js";
 import { requestLog, requestLogger } from "./request-logger.js";
@@ -45,6 +46,12 @@ export function createApp(): express.Express {
 
   app.get("/health/live", (_request, response) => response.json({ ok: true, sha: config.GIT_SHA }));
   app.get("/health/ready", async (_request, response) => {
+    // An invalid/stale geometry manifest makes the server unfit to serve — report
+    // it before (and independently of) the datastore checks.
+    if (!geometryManifestReady()) {
+      response.status(503).json({ ok: false, sha: config.GIT_SHA, reason: "geometry-manifest" });
+      return;
+    }
     try {
       await Promise.all([pool.query("SELECT 1"), redis.ping()]);
       response.json({ ok: true, sha: config.GIT_SHA });
