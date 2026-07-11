@@ -331,14 +331,16 @@ export default class WorldScene extends Phaser.Scene {
 
   /** Release sources that outlive the scene; safe for shutdown + destroy races. */
   private releaseListeners = () => {
-    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.releaseListeners);
-    this.events.off(Phaser.Scenes.Events.DESTROY, this.releaseListeners);
-    this.listeners.dispose();
-
-    if (import.meta.env.DEV && this.devTools) {
-      const target = window as unknown as { __mv?: unknown };
-      if (target.__mv === this.devTools) delete target.__mv;
-      this.devTools = null;
+    try {
+      this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.releaseListeners);
+      this.events.off(Phaser.Scenes.Events.DESTROY, this.releaseListeners);
+      this.listeners.dispose();
+    } finally {
+      if (import.meta.env.DEV && this.devTools) {
+        const target = window as unknown as { __mv?: unknown };
+        if (target.__mv === this.devTools) delete target.__mv;
+        this.devTools = null;
+      }
     }
   };
 

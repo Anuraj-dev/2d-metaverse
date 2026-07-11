@@ -211,6 +211,7 @@ interface SceneProbe {
   events: FakeEmitter;
   scale: FakeEmitter;
   touchAxis: { x: number; y: number };
+  listeners: { own(unsubscribe: () => void): void };
   create(): void;
 }
 
@@ -244,5 +245,18 @@ describe("WorldScene lifecycle boundary", () => {
     scene.events.emit("destroy");
     expect(net.listenerCount("player-left")).toBe(0);
     expect(scene.scale.listenerCount("resize")).toBe(0);
+  });
+
+  it("clears the development hook even when an owned cleanup fails", () => {
+    const scene = new WorldScene() as unknown as SceneProbe;
+    scene.registry.set("net", new FakeNet());
+    scene.create();
+    expect((window as unknown as { __mv?: unknown }).__mv).toBeDefined();
+    scene.listeners.own(() => {
+      throw new Error("cleanup failed");
+    });
+
+    expect(() => scene.events.emit("shutdown")).toThrow("cleanup failed");
+    expect((window as unknown as { __mv?: unknown }).__mv).toBeUndefined();
   });
 });
