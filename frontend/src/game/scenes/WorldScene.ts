@@ -37,6 +37,7 @@ import { positionsEmitDue, moveSendDue } from "../throttle";
 import { tintForHour } from "../dayNight";
 import { CANVAS_FONT_FAMILY } from "../uiFont";
 import { terrainFromTiledMap, type TiledMapLike } from "../../ui/minimapTerrain";
+import { ListenerScope } from "../listenerScope";
 
 const ZOOM = 2.2;
 // Portal Phase A (PRD 10): camera punch-in toward the table over ~350ms. The
@@ -102,6 +103,9 @@ interface BoardSeat {
 }
 
 export default class WorldScene extends Phaser.Scene {
+  /** Global/process listener ownership; renewed for each scene create cycle. */
+  private listeners = new ListenerScope();
+  private devTools: { sitAt: (roomId: string, seatId: number) => boolean } | null = null;
   private net!: Net;
   private player!: Phaser.Physics.Arcade.Sprite;
   private playerLabel!: Phaser.GameObjects.Text;
@@ -187,6 +191,13 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   create() {
+    // A scene restart reuses this instance. Release any prior ownership scope,
+    // then bind both terminal lifecycle events to the same idempotent teardown.
+    this.releaseListeners();
+    this.listeners = new ListenerScope();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseListeners);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseListeners);
+
     this.net = this.registry.get("net") as Net;
     CHARS.forEach((c) => createCharAnims(this, c));
 
@@ -300,7 +311,7 @@ export default class WorldScene extends Phaser.Scene {
     this.net.connect(authToken(), "1");
 
     if (import.meta.env.DEV) {
-      (window as unknown as { __mv: unknown }).__mv = {
+      const devTools = {
         sitAt: (roomId: string, seatId: number) => {
           const seat = this.seats.find(
             (s) => s.roomId === roomId && s.seatId === seatId
@@ -313,8 +324,25 @@ export default class WorldScene extends Phaser.Scene {
           return true;
         },
       };
+      this.devTools = devTools;
+      (window as unknown as { __mv: unknown }).__mv = devTools;
     }
   }
+
+  /** Release sources that outlive the scene; safe for shutdown + destroy races. */
+  private releaseListeners = () => {
+    try {
+      this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.releaseListeners);
+      this.events.off(Phaser.Scenes.Events.DESTROY, this.releaseListeners);
+      this.listeners.dispose();
+    } finally {
+      if (import.meta.env.DEV && this.devTools) {
+        const target = window as unknown as { __mv?: unknown };
+        if (target.__mv === this.devTools) delete target.__mv;
+        this.devTools = null;
+      }
+    }
+  };
 
   private parseObjects(map: Phaser.Tilemaps.Tilemap) {
     const doorObjs = map.getObjectLayer("doorZones")?.objects ?? [];
@@ -539,6 +567,7 @@ export default class WorldScene extends Phaser.Scene {
     applyTint();
     this.time.addEvent({ delay: 30_000, loop: true, callback: applyTint });
     this.scale.on("resize", applyTint);
+    this.listeners.own(() => this.scale.off("resize", applyTint));
 
     // Ambient motes: a soft 3px dot texture drifting slowly across the world.
     const dotKey = "ambient-mote";
@@ -700,81 +729,115 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private wireNet() {
-    this.net.on("init", (p: { selfId: string; players: PlayerState[] }) => {
-      for (const pl of p.players) {
-        if (pl.id === this.net.selfId) {
-          this.player.setPosition(pl.x, pl.y);
-          this.playerLabel.setText(pl.name);
-        } else this.addRemote(pl);
-      }
-    });
-    this.net.on("player-joined", (p: PlayerState) => this.addRemote(p));
-    this.net.on(
-      "player-moved",
-      (p: { id: string; x: number; y: number; dir: Dir }) => {
-        const r = this.remotes.get(p.id);
-        if (!r) return;
-        r.tx = p.x;
-        r.ty = p.y;
-        r.dir = p.dir;
-      }
+    this.listeners.own(
+      this.net.on("init", (p: { selfId: string; players: PlayerState[] }) => {
+        for (const pl of p.players) {
+          if (pl.id === this.net.selfId) {
+            this.player.setPosition(pl.x, pl.y);
+            this.playerLabel.setText(pl.name);
+          } else this.addRemote(pl);
+        }
+      }),
     );
-    this.net.on("player-left", (p: { id: string }) => this.removeRemote(p.id));
+    this.listeners.own(this.net.on("player-joined", (p: PlayerState) => this.addRemote(p)));
+    this.listeners.own(
+      this.net.on(
+        "player-moved",
+        (p: { id: string; x: number; y: number; dir: Dir }) => {
+          const r = this.remotes.get(p.id);
+          if (!r) return;
+          r.tx = p.x;
+          r.ty = p.y;
+          r.dir = p.dir;
+        },
+      ),
+    );
+    this.listeners.own(
+      this.net.on("player-left", (p: { id: string }) => this.removeRemote(p.id)),
+    );
   }
 
   private wireUi() {
-    bus.on("room-entered", (p: { roomId: string }) => {
-      this.enteredRooms.add(p.roomId);
-      this.currentRoom = p.roomId;
-      bus.emit("stop-knocking");
-      this.refreshDoor(p.roomId);
-    });
+    this.listeners.own(
+      bus.on("room-entered", (p: { roomId: string }) => {
+        this.enteredRooms.add(p.roomId);
+        this.currentRoom = p.roomId;
+        bus.emit("stop-knocking");
+        this.refreshDoor(p.roomId);
+      }),
+    );
     // Server admitted this client (knock approved / walked into an open door):
     // unlock the room. A denial/timeout just clears the knocking UI.
-    this.net.on("knock-result", (p: { roomId: string; result: "approved" | "denied" | "timeout" }) => {
-      if (p.result === "approved") bus.emit("room-entered", { roomId: p.roomId });
-      else bus.emit("stop-knocking");
-    });
+    this.listeners.own(
+      this.net.on(
+        "knock-result",
+        (p: { roomId: string; result: "approved" | "denied" | "timeout" }) => {
+          if (p.result === "approved") bus.emit("room-entered", { roomId: p.roomId });
+          else bus.emit("stop-knocking");
+        },
+      ),
+    );
     // Door visibility follows the room's open state for everyone near it.
-    this.net.on("room-open-state", (p: { roomId: string; allowAll: boolean; atCapacity: boolean }) => {
-      this.roomOpenState.set(p.roomId, { allowAll: p.allowAll, atCapacity: p.atCapacity });
-      this.refreshDoor(p.roomId);
-    });
+    this.listeners.own(
+      this.net.on(
+        "room-open-state",
+        (p: { roomId: string; allowAll: boolean; atCapacity: boolean }) => {
+          this.roomOpenState.set(p.roomId, { allowAll: p.allowAll, atCapacity: p.atCapacity });
+          this.refreshDoor(p.roomId);
+        },
+      ),
+    );
     // Authoritative board-seat occupancy: mirror every snapshot so we can refuse a
     // sit onto a taken seat and reconcile an optimistic sit the server rejected.
-    this.net.on<BoardUpdatePayload>(SERVER_EVENTS.boardUpdate, (snap) => this.onBoardUpdate(snap));
+    this.listeners.own(
+      this.net.on<BoardUpdatePayload>(SERVER_EVENTS.boardUpdate, (snap) =>
+        this.onBoardUpdate(snap),
+      ),
+    );
     // A rejected sit (seat lost to a simultaneous sitter, or already seated
     // elsewhere) rolls back our optimistic local seat — the server picks the winner.
-    this.net.on<BoardErrorPayload>(SERVER_EVENTS.boardError, (err) => {
-      if (err.reason === "seat-taken") this.releaseBoardSeat();
-    });
-    bus.on("do-sit", () => {
-      if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
-      else this.trySit();
-    });
-    bus.on("do-stand", () => {
-      if (this.boardSeated) this.boardStand();
-      else this.stand();
-    });
-    bus.on("portal-enter", () => this.portalIn());
-    bus.on("portal-exit", () => this.portalOut());
-    bus.on("locate", (p: { id: string }) => this.locate(p.id));
-    bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p));
-    bus.on("do-interact", () => (this.interactQueued = true));
+    this.listeners.own(
+      this.net.on<BoardErrorPayload>(SERVER_EVENTS.boardError, (err) => {
+        if (err.reason === "seat-taken") this.releaseBoardSeat();
+      }),
+    );
+    this.listeners.own(
+      bus.on("do-sit", () => {
+        if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
+        else this.trySit();
+      }),
+    );
+    this.listeners.own(
+      bus.on("do-stand", () => {
+        if (this.boardSeated) this.boardStand();
+        else this.stand();
+      }),
+    );
+    this.listeners.own(bus.on("portal-enter", () => this.portalIn()));
+    this.listeners.own(bus.on("portal-exit", () => this.portalOut()));
+    this.listeners.own(bus.on("locate", (p: { id: string }) => this.locate(p.id)));
+    this.listeners.own(
+      bus.on("move-axis", (p: { x: number; y: number }) => (this.touchAxis = p)),
+    );
+    this.listeners.own(bus.on("do-interact", () => (this.interactQueued = true)));
     // Speaking rings (PRD 20): the active-speaker set from the shared media seam.
-    bus.on("speaking", (p: { ids: string[] }) => {
-      this.speakingIds = new Set(p.ids);
-    });
+    this.listeners.own(
+      bus.on("speaking", (p: { ids: string[] }) => {
+        this.speakingIds = new Set(p.ids);
+      }),
+    );
     // Fullscreen map (PRD 20): capture movement while it is open.
-    bus.on("map-open", () => (this.mapOpen = true));
-    bus.on("map-close", () => (this.mapOpen = false));
+    this.listeners.own(bus.on("map-open", () => (this.mapOpen = true)));
+    this.listeners.own(bus.on("map-close", () => (this.mapOpen = false)));
     // Stage on-air confirm prompt (PRD 17): the HUD returns the player's choice.
-    bus.on("stage-confirm", () => this.applyOnAir({ type: "confirm" }));
-    bus.on("stage-decline", () => this.applyOnAir({ type: "decline" }));
+    this.listeners.own(bus.on("stage-confirm", () => this.applyOnAir({ type: "confirm" })));
+    this.listeners.own(bus.on("stage-decline", () => this.applyOnAir({ type: "decline" })));
     // Arcade overlay closed → wake the world scene it slept under.
-    bus.on("close-arcade", () => {
-      if (this.scene.isSleeping()) this.scene.wake();
-    });
+    this.listeners.own(
+      bus.on("close-arcade", () => {
+        if (this.scene.isSleeping()) this.scene.wake();
+      }),
+    );
   }
 
   /** Advance the pure on-air machine and surface its effect on the bus. */
@@ -880,8 +943,10 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private wireChat() {
-    this.net.on("chat", (m: { id: string; text: string }) =>
-      this.showChatBubble(m.id, m.text)
+    this.listeners.own(
+      this.net.on("chat", (m: { id: string; text: string }) =>
+        this.showChatBubble(m.id, m.text),
+      ),
     );
   }
 
