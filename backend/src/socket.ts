@@ -321,7 +321,8 @@ export function createGameServer(httpServer: HttpServer) {
       boardInputs.push({ id, label: boardTableLabel(id), seated });
     }
 
-    const stageOccupantIds = online.filter((p) => isInStageZone(p.x, p.y)).map((p) => p.id);
+    const stageZones = getGeometryManifest().stageZones;
+    const stageOccupantIds = online.filter((p) => isInStageZone(stageZones, p.x, p.y)).map((p) => p.id);
     const nextScheduled = nextScheduledActivity(loadPilotSchedule());
 
     return buildPresenceSnapshot({
