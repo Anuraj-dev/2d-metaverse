@@ -69,13 +69,20 @@ export type BoardMatchPhase = (typeof BOARD_MATCH_PHASES)[number];
 export const BOARD_END_REASONS = ["win", "draw", "forfeit"] as const;
 export type BoardEndReason = (typeof BOARD_END_REASONS)[number];
 
-/** Reasons the server rejects a board action (typed error to the client). */
+/**
+ * Reasons the server rejects a board action (typed error to the client).
+ * `too-far` (PRD 25.24) gates the `board-sit` entry point: claiming a plaza
+ * board chair requires authoritative anchor proximity to that chair's tile, so a
+ * remote sit is refused rather than silently dropped (honest walk-ups, which
+ * only offer the sit at the chair, are unaffected).
+ */
 export const BOARD_MOVE_REJECTIONS = [
   "not-seated",
   "not-your-turn",
   "illegal-move",
   "no-match",
   "seat-taken",
+  "too-far",
 ] as const;
 export type BoardMoveRejection = (typeof BOARD_MOVE_REJECTIONS)[number];
 
@@ -111,6 +118,26 @@ export type ReportAckStatus = (typeof REPORT_ACK_STATUSES)[number];
  */
 export const BLOCK_ACK_STATUSES = ["blocked", "already-blocked", "unblocked", "not-blocked"] as const;
 export type BlockAckStatus = (typeof BLOCK_ACK_STATUSES)[number];
+
+/**
+ * Moderation lifecycle of a single report (PRD 25.14). `open` awaits review;
+ * `dismissed` was reviewed with no action; `actioned` was reviewed and led to a
+ * warn/suspension against the target.
+ */
+export const REPORT_STATUSES = ["open", "dismissed", "actioned"] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+export const OPERATIONAL_CATEGORIES = ["auth-transport", "reconnect", "media-publish"] as const;
+export const AUTH_TRANSPORT_REASONS = ["unauthorized", "network", "server-error"] as const;
+export const RECONNECT_REASONS = ["reconnecting", "recovered", "gone"] as const;
+export const MEDIA_PUBLISH_REASONS = ["denied", "unavailable", "failed"] as const;
+
+/**
+ * The reversible moderator actions (PRD 25.14). Permanent bans and content
+ * deletion are deliberately out of the pilot. Every one is audit-logged.
+ */
+export const MODERATION_ACTIONS = ["dismiss", "warn", "suspend", "unsuspend"] as const;
+export type ModerationAction = (typeof MODERATION_ACTIONS)[number];
 
 /**
  * TTL (seconds) on the server's bounded snapshot of a broadcast chat line kept so
@@ -178,9 +205,23 @@ export function roomDisplayName(roomId: string): string {
 
 /**
  * Terminal outcome of a knock, delivered to the knocker (PRD 14). `canceled` is
- * client-initiated and never sent back, so it is not on the wire.
+ * client-initiated and never sent back, so it is not on the wire. `too-far`
+ * (PRD 25.23) is the authoritative-proximity denial: the server refuses a knock
+ * whose knocker is not actually standing at that room's door.
  */
-export const KNOCK_RESULTS = ["approved", "denied", "timeout"] as const;
+export const KNOCK_RESULTS = ["approved", "denied", "timeout", "too-far"] as const;
+
+/**
+ * Why the server refused a private-seat sit (PRD 25.23), delivered to the
+ * would-be sitter on `seat-denied`. Distinct from a lost seat race (which stays
+ * a `seat-update` naming the real occupant): these are authority failures a
+ * spoofed client triggers — claiming a room it never entered (`not-in-room`),
+ * lacking a live access grant (`no-access`), or sitting from across the map
+ * (`too-far`). A typed denial rather than a silent drop so the client never
+ * hangs in a phantom-seated state.
+ */
+export const SEAT_DENY_REASONS = ["not-in-room", "no-access", "too-far"] as const;
+export type SeatDenyReason = (typeof SEAT_DENY_REASONS)[number];
 
 /** How adminship was conferred, carried on `admin-changed` (PRD 14). */
 export const ADMIN_CHANGE_REASONS = ["initial", "succession"] as const;
@@ -333,6 +374,10 @@ export const LIMITS = {
   /** Report ingestion (PRD 25.12): the referenced server message id + optional note. */
   reportMessageIdMax: 64,
   reportNoteMax: 300,
+  /** Moderation (PRD 25.14): the free-text reason a moderator may attach to a
+   *  warn/suspension, and the ceiling on how many reports one list page returns. */
+  moderationReasonMax: 300,
+  moderationReportsMax: 200,
   /** Server-side sanity ceiling for movement coordinates. */
   moveCoordMax: 100_000,
   /** Credentials. */
@@ -369,27 +414,6 @@ export const LIMITS = {
 
 /** Allowed username characters (lowercase alphanumerics, dash, underscore). */
 export const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
-
-/**
- * Stable domain categories for the handled-operational-error reporting path
- * (PRD 25.8). These replace ad hoc free-text messages: a caught operational
- * failure is reported as a `{ category, reason }` pair drawn only from these
- * allowlists, never as an arbitrary string that could leak sensitive content.
- */
-export const OPERATIONAL_CATEGORIES = ["auth-transport", "reconnect", "media-publish"] as const;
-
-/** Bounded reasons for an `auth-transport` failure (token fetch / socket auth). */
-export const AUTH_TRANSPORT_REASONS = ["unauthorized", "network", "server-error"] as const;
-
-/** Bounded reasons for a `reconnect` outcome (mirrors the client connection state). */
-export const RECONNECT_REASONS = ["reconnecting", "recovered", "gone"] as const;
-
-/**
- * Bounded reasons for a `media-publish` failure. Kept in lockstep with the
- * frontend `MediaFailure` union (`media/publicationState.ts`): denied,
- * unavailable, failed.
- */
-export const MEDIA_PUBLISH_REASONS = ["denied", "unavailable", "failed"] as const;
 
 /**
  * Rate-limit windows and other timing constants enforced server-side. Kept here so
@@ -433,6 +457,11 @@ export const RATE_LIMITS = {
    *  human curating their block list, well below an automated abuse vector. */
   blockWindowMs: 60_000,
   blockLimit: 30,
+  /** Moderator action limiter (per IP; PRD 25.14). A moderator surface is used by
+   *  a handful of trusted operators — comfortably above human review pace, well
+   *  below a runaway script. */
+  moderationWindowMs: 60_000,
+  moderationLimit: 60,
 } as const;
 
 /**

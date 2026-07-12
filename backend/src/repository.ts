@@ -199,3 +199,137 @@ export async function listBlockerIds(blockedId: string): Promise<string[]> {
   );
   return result.rows.map((row) => row.blocker_id);
 }
+
+/* --------------------------- moderation (PRD 25.14) ------------------------ */
+
+/** Does a user exist? Used before recording an action against a target id. */
+export async function userExists(userId: string): Promise<boolean> {
+  const result = await pool.query("SELECT 1 FROM users WHERE id = $1", [userId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** One report row as surfaced to a moderator (snapshot the report already holds). */
+export interface ReportRow {
+  id: string;
+  reporterId: string;
+  targetId: string;
+  messageId: string;
+  messageText: string;
+  scope: string;
+  category: string;
+  note: string | null;
+  status: string;
+  createdAt: string;
+}
+
+/** The open review queue, newest first, capped. */
+export async function listOpenReports(limit: number): Promise<ReportRow[]> {
+  const result = await pool.query<{
+    id: string;
+    reporter_id: string;
+    target_id: string;
+    message_id: string;
+    message_text: string;
+    scope: string;
+    category: string;
+    note: string | null;
+    status: string;
+    created_at: Date;
+  }>(
+    `SELECT id, reporter_id, target_id, message_id, message_text, scope, category, note, status, created_at
+     FROM reports WHERE status = 'open' ORDER BY created_at DESC LIMIT $1`,
+    [limit]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    reporterId: row.reporter_id,
+    targetId: row.target_id,
+    messageId: row.message_id,
+    messageText: row.message_text,
+    scope: row.scope,
+    category: row.category,
+    note: row.note,
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
+  }));
+}
+
+/**
+ * Transition a report's review status. Returns the report's target id when a row
+ * was updated (so the caller can audit-log it), or null when no such report
+ * existed. `moderatorId` records who reviewed it.
+ */
+export async function setReportStatus(
+  reportId: string,
+  status: "dismissed" | "actioned",
+  moderatorId: string
+): Promise<{ targetId: string } | null> {
+  const result = await pool.query<{ target_id: string }>(
+    `UPDATE reports SET status = $2, reviewed_by = $3, reviewed_at = now()
+     WHERE id = $1 RETURNING target_id`,
+    [reportId, status, moderatorId]
+  );
+  const row = result.rows[0];
+  return row ? { targetId: row.target_id } : null;
+}
+
+/** The current suspension expiry (epoch ms) for a user, or null if none on record. */
+export async function getSuspension(userId: string): Promise<{ suspendedUntil: number } | null> {
+  const result = await pool.query<{ suspended_until: Date }>(
+    "SELECT suspended_until FROM suspensions WHERE user_id = $1",
+    [userId]
+  );
+  const row = result.rows[0];
+  return row ? { suspendedUntil: row.suspended_until.getTime() } : null;
+}
+
+/** Set (or replace) a user's suspension. `until` is epoch ms. */
+export async function upsertSuspension(
+  userId: string,
+  until: number,
+  actorId: string,
+  reason?: string
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO suspensions (user_id, suspended_until, reason, actor_id)
+     VALUES ($1, to_timestamp($2 / 1000.0), $3, $4)
+     ON CONFLICT (user_id) DO UPDATE
+       SET suspended_until = EXCLUDED.suspended_until,
+           reason = EXCLUDED.reason,
+           actor_id = EXCLUDED.actor_id,
+           created_at = now()`,
+    [userId, until, reason ?? null, actorId]
+  );
+}
+
+/** Remove a user's suspension (reversal). Returns true when a row was deleted. */
+export async function deleteSuspension(userId: string): Promise<boolean> {
+  const result = await pool.query("DELETE FROM suspensions WHERE user_id = $1", [userId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Fields of one durable moderation audit row. */
+export interface ModerationActionInput {
+  actorId: string;
+  targetId: string | null;
+  action: "dismiss" | "warn" | "suspend" | "unsuspend";
+  reportId?: string | null;
+  suspendUntil?: number | null;
+  reason?: string | null;
+}
+
+/** Append one row to the moderation audit trail. */
+export async function recordModerationAction(input: ModerationActionInput): Promise<void> {
+  await pool.query(
+    `INSERT INTO moderation_actions (actor_id, target_id, action, report_id, suspend_until, reason)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      input.actorId,
+      input.targetId,
+      input.action,
+      input.reportId ?? null,
+      input.suspendUntil != null ? new Date(input.suspendUntil) : null,
+      input.reason ?? null,
+    ]
+  );
+}

@@ -23,6 +23,7 @@ import {
   LIMITS,
   MEETING_CANCEL_REASONS,
   MOVEMENT_REJECTIONS,
+  SEAT_DENY_REASONS,
 } from "./constants.js";
 import { BOARD_GAMES } from "./games/board.js";
 
@@ -277,6 +278,19 @@ export const seatUpdateSchema = z.object({
 });
 export type SeatUpdatePayload = z.infer<typeof seatUpdateSchema>;
 
+/**
+ * The server refused THIS client's private-seat sit (PRD 25.23), sent only to
+ * the would-be sitter. Unlike a lost seat race (a `seat-update` naming the real
+ * occupant), this is an authority failure — see `SEAT_DENY_REASONS`. Strict: a
+ * new contract with no legacy payloads to tolerate.
+ */
+export const seatDeniedSchema = z.strictObject({
+  roomId: z.string(),
+  seatId: z.number(),
+  reason: z.enum(SEAT_DENY_REASONS),
+});
+export type SeatDeniedPayload = z.infer<typeof seatDeniedSchema>;
+
 /* ---------------------- server → client: meeting lifecycle ----------------- */
 /* These schemas are strict (unknown keys REJECT, not strip): they are new
  * contracts with no legacy payloads to tolerate, so passthrough data is a bug
@@ -468,6 +482,7 @@ export interface ServerToClientEvents {
   "room-open-state": (payload: RoomOpenStatePayload) => void;
   "capacity-alert": (payload: CapacityAlertPayload) => void;
   "seat-update": (payload: SeatUpdatePayload) => void;
+  "seat-denied": (payload: SeatDeniedPayload) => void;
   "meeting-countdown": (payload: MeetingCountdownPayload) => void;
   "meeting-countdown-canceled": (payload: MeetingCountdownCanceledPayload) => void;
   "meeting-started": (payload: MeetingStartedPayload) => void;

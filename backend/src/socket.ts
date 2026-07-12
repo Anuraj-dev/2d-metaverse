@@ -30,8 +30,10 @@ import { blocks } from "./block-cache.js";
 import { config } from "./config.js";
 import { getGeometryManifest } from "./geometry.js";
 import { createWalkability, validateMove, type Walkability } from "./movement.js";
+import { PROXIMITY_TOLERANCE_TILES, nearRoomDoor, nearSeat } from "./proximity.js";
 import { childLogger } from "./logger.js";
-import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
+import { getRoom, getSeatIds, getSpace, getSuspension, seatExists, spaceExists } from "./repository.js";
+import { isSuspended } from "./suspension.js";
 import { checkRateLimit, isRateLimitExceeded, redis, storeReportableMessage } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
@@ -94,6 +96,19 @@ const boardKey = (spaceId: string, tableId: string) => `board:${spaceId}:${table
 const roomAdminKey = (roomId: string) => `room-admin:${roomId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
+
+/**
+ * Immediately drop a user's live session (PRD 25.14). Called when a moderator
+ * suspends them so the suspension takes effect without waiting for a reconnect.
+ * Returns true when a live socket was found and disconnected. Sockets are keyed
+ * by userId (= playerId), so this is a single-map lookup.
+ */
+export function disconnectUser(userId: string): boolean {
+  const socket = activeSockets.get(userId);
+  if (!socket) return false;
+  socket.disconnect(true);
+  return true;
+}
 
 /**
  * Socket-id "rooms" of every connected player in a block relation with `authorId`
@@ -351,9 +366,24 @@ export function createGameServer(httpServer: HttpServer) {
       next(new Error("unauthorized"));
       return;
     }
-    socket.data.userId = user.id;
-    socket.data.username = user.username;
-    next();
+    // Suspension gate (PRD 25.14): a suspended user cannot open a socket. One
+    // indexed PK lookup on connect (not per-message) — cheap for a connection
+    // event, and reading the row directly avoids any cache-coherency window when
+    // a moderator suspends/reverses moments earlier.
+    void getSuspension(user.id)
+      .then((record) => {
+        if (isSuspended(record, Date.now())) {
+          next(new Error("suspended"));
+          return;
+        }
+        socket.data.userId = user.id;
+        socket.data.username = user.username;
+        next();
+      })
+      .catch((error: unknown) => {
+        childLogger({ module: "socket" }).error({ err: error }, "suspension check failed");
+        next(new Error("unauthorized"));
+      });
   });
 
   io.on("connection", (socket) => {
@@ -609,6 +639,23 @@ export function createGameServer(httpServer: HttpServer) {
       if (socket.data.currentRoomId === parsed.data.roomId) return;
       const room = await getRoom(parsed.data.roomId);
       if (!room || room.spaceId !== spaceId) return;
+      // Authoritative door proximity (PRD 25.23): a knock is a physical action —
+      // the knocker must actually be standing at THIS room's door. Checked
+      // against the server's own last-accepted position (`moveAnchor`), never a
+      // client-supplied coordinate, so a remote/cross-room knock cannot admit.
+      // A typed `too-far` result (not a silent drop) keeps the knocker's UI from
+      // hanging on a "Knocking…" state that will never resolve.
+      const manifest = getGeometryManifest();
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y };
+      const tolerance = PROXIMITY_TOLERANCE_TILES * manifest.tile.size;
+      if (!nearRoomDoor(anchor, manifest.doors, room.id, tolerance)) {
+        log.child({ module: "proximity" }).warn(
+          { event: "knock_denied", reason: "too-far", roomId: room.id },
+          "knock rejected: not at door",
+        );
+        socket.emit("knock-result", { roomId: room.id, result: "too-far" });
+        return;
+      }
       // Anti-harassment: cap knock attempts per player+room.
       if (await isRateLimitExceeded(`knock:${playerId}:${room.id}`, KNOCK_LIMIT, KNOCK_WINDOW_SECONDS)) return;
       socket.data.knockRoomId = room.id;
@@ -656,8 +703,31 @@ export function createGameServer(httpServer: HttpServer) {
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
       const room = await getRoom(parsed.data.roomId);
-      const hasAccess = await redis.exists(`room-access:${playerId}:${parsed.data.roomId}`);
-      if (!room || room.spaceId !== spaceId || !hasAccess || !(await seatExists(room.id, parsed.data.seatId))) return;
+      if (!room || room.spaceId !== spaceId || !(await seatExists(room.id, parsed.data.seatId))) return;
+
+      // Authoritative sit gate (PRD 25.23): acquiring a private seat requires
+      // server-tracked current-room membership (the socket's joined room, NOT a
+      // client-claimed roomId), a live access grant, AND anchor proximity to the
+      // seat coordinate. Each failure is a TYPED `seat-denied` (never a silent
+      // drop) so a spoofed client cannot phantom-sit and honest UI never hangs.
+      // Ordered cheapest-first; membership catches the "claiming a room I never
+      // entered / left" case before any geometry work.
+      const denySeat = (reason: "not-in-room" | "no-access" | "too-far"): void => {
+        log.child({ module: "proximity" }).warn(
+          { event: "seat_denied", reason, roomId: room.id, seatId: parsed.data.seatId },
+          "seat-sit rejected",
+        );
+        socket.emit("seat-denied", { roomId: room.id, seatId: parsed.data.seatId, reason });
+      };
+      if (socket.data.currentRoomId !== room.id) return denySeat("not-in-room");
+      if (!(await redis.exists(`room-access:${playerId}:${room.id}`))) return denySeat("no-access");
+      const manifest = getGeometryManifest();
+      const seat = manifest.seats.find(
+        (s) => s.roomId === room.id && s.seatId === parsed.data.seatId,
+      );
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y };
+      const tolerance = PROXIMITY_TOLERANCE_TILES * manifest.tile.size;
+      if (!seat || !nearSeat(anchor, seat, manifest.tile.size, tolerance)) return denySeat("too-far");
 
       const result = await sitPlayer(playerId, room.id, parsed.data.seatId);
       if (!result.ok) {
@@ -690,6 +760,28 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = boardSitSchema.safeParse(payload);
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
+      // Authoritative sit gate (PRD 25.24): claiming a plaza board chair requires
+      // anchor proximity to THAT chair's tile — checked against the server's own
+      // last-accepted position (`moveAnchor`), never a client coordinate. Board
+      // seats are public (ungated by room entry), so proximity is the ONLY gate
+      // here (unlike private seats). A miss is a typed `board-error` (too-far),
+      // not a silent drop, and the match machine is never dispatched — so a
+      // spoofed remote sit cannot arm an offer. Honest clients only surface the
+      // sit at the chair, so this never denies a real walk-up.
+      const manifest = getGeometryManifest();
+      const chair = manifest.boardSeats.find(
+        (s) => s.tableId === parsed.data.tableId && s.seat === parsed.data.seat,
+      );
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y };
+      const tolerance = PROXIMITY_TOLERANCE_TILES * manifest.tile.size;
+      if (!chair || !nearSeat(anchor, chair, manifest.tile.size, tolerance)) {
+        log.child({ module: "proximity" }).warn(
+          { event: "board_sit_denied", reason: "too-far", tableId: parsed.data.tableId, seat: parsed.data.seat },
+          "board-sit rejected",
+        );
+        socket.emit("board-error", { tableId: parsed.data.tableId, reason: "too-far" });
+        return;
+      }
       boards.dispatch(spaceId, parsed.data.tableId, { type: "sit", seat: parsed.data.seat as 0 | 1, playerId });
     }));
 

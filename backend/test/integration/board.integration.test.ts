@@ -10,7 +10,17 @@ import { io, type Socket as ClientSocket } from "socket.io-client";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { BoardErrorPayload, BoardUpdatePayload } from "@metaverse/shared";
 import { redis } from "../../src/redis.js";
-import { createPlayer, once, onceMatching, sleep, startServer, teardown, type TestServer } from "./helpers.js";
+import {
+  createPlayer,
+  expectSilence,
+  once,
+  onceMatching,
+  sleep,
+  startServer,
+  teardown,
+  walkToBoardSeat,
+  type TestServer,
+} from "./helpers.js";
 
 const LEAVE_GRACE_MS = Number(process.env.LEAVE_GRACE_MS);
 
@@ -51,16 +61,20 @@ function boardError(player: Player, tableId: string): Promise<BoardErrorPayload>
   return onceMatching<BoardErrorPayload>(player.socket, "board-error", (e) => e.tableId === tableId);
 }
 
-/** Sit both players, accept, and return once the match is active. */
-async function startMatch(tableId: string, a: Player, b: Player): Promise<void> {
+/** Sit both players, accept, and return the snapshot once the match is active. */
+async function startMatch(tableId: string, a: Player, b: Player): Promise<BoardUpdatePayload> {
   const offered = board(b, tableId, (u) => u.phase === "offer");
+  // PRD 25.24: the server gates board-sit on anchor proximity to the chair, so
+  // each player must physically walk onto their chair before claiming the seat.
+  walkToBoardSeat(a.socket, tableId, 0);
+  walkToBoardSeat(b.socket, tableId, 1);
   a.socket.emit("board-sit", { tableId, seat: 0 });
   b.socket.emit("board-sit", { tableId, seat: 1 });
   await offered;
   const active = board(a, tableId, (u) => u.phase === "active");
   a.socket.emit("board-accept", { tableId });
   b.socket.emit("board-accept", { tableId });
-  await active;
+  return active;
 }
 
 beforeAll(async () => {
@@ -198,5 +212,43 @@ describe("board tables — socket seam", () => {
     const final = await over;
     expect(final.reason).toBe("win");
     expect(final.state?.result).toMatchObject({ status: "won", winner: 1 });
+  });
+
+  // PRD 25.24: board-sit requires authoritative proximity to the chair tile.
+  describe("board-seat proximity gate", () => {
+    it("accepts a sit from a player who has walked onto the chair", async () => {
+      const a = await joinPlayer("bpa");
+      const seated = board(a, "ttt-1", (u) => u.seats[0]?.id === a.selfId);
+      walkToBoardSeat(a.socket, "ttt-1", 0);
+      a.socket.emit("board-sit", { tableId: "ttt-1", seat: 0 });
+      const snap = await seated;
+      expect(snap.seats[0]?.id).toBe(a.selfId);
+    });
+
+    it("rejects a remote sit (never walked to the chair) with too-far and leaves the seat empty", async () => {
+      const a = await joinPlayer("bpr");
+      // No walk: the player's anchor is still at spawn, far from the plaza chair.
+      const denied = boardError(a, "ttt-1");
+      a.socket.emit("board-sit", { tableId: "ttt-1", seat: 0 });
+      expect((await denied).reason).toBe("too-far");
+      // The match machine was never dispatched, so the spoofer never lands in a
+      // seat and no offer is armed. (A stray empty "waiting" reset broadcast from
+      // a prior test's teardown can reach the shared space — that's not our sit,
+      // so the predicate only flags an update where THIS player claimed the chair
+      // or a match was armed.)
+      await expectSilence(
+        a.socket,
+        "board-update",
+        300,
+        (u: BoardUpdatePayload) => u.tableId === "ttt-1" && (u.phase !== "waiting" || u.seats.some((s) => s?.id === a.selfId)),
+      );
+    });
+
+    it("still starts a legitimate match once both players walk up", async () => {
+      const a = await joinPlayer("bpm");
+      const b = await joinPlayer("bpn");
+      const active = await startMatch("ttt-1", a, b);
+      expect(active.seats.map((s) => s?.id)).toEqual([a.selfId, b.selfId]);
+    });
   });
 });

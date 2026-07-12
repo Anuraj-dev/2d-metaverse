@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import type { Socket as ClientSocket } from "socket.io-client";
 import { createServer } from "../../src/app.js";
 import { issueToken } from "../../src/auth.js";
+import { getGeometryManifest } from "../../src/geometry.js";
 import { pool } from "../../src/db.js";
 import { migrate } from "../../src/migrate.js";
 import { hashSecret } from "../../src/password.js";
@@ -167,4 +168,70 @@ export async function expectSilence(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/* --------- door/seat proximity positioning (PRD 25.23 gated flows) ----------
+ * The server now requires authoritative door proximity to knock and seat
+ * proximity (plus tracked room membership) to sit — checked against each
+ * socket's own move-anchor. So a test must physically walk a player to the door
+ * before knocking / to the seat before sitting. Coordinates are derived from the
+ * authoritative geometry manifest (not hardcoded) so they follow a regenerated
+ * campus automatically. */
+
+function doorCenter(roomId: string): { x: number; y: number } {
+  const door = getGeometryManifest().doors.find((d) => d.roomId === roomId);
+  if (!door) throw new Error(`no door geometry for room ${roomId}`);
+  return { x: door.x + Math.floor(door.width / 2), y: door.y + Math.floor(door.height / 2) };
+}
+
+function seatCenter(roomId: string, seatId: number): { x: number; y: number } {
+  const manifest = getGeometryManifest();
+  const seat = manifest.seats.find((s) => s.roomId === roomId && s.seatId === seatId);
+  if (!seat) throw new Error(`no seat geometry for room ${roomId} seat ${seatId}`);
+  const half = Math.floor(manifest.tile.size / 2);
+  return { x: seat.x + half, y: seat.y + half };
+}
+
+/**
+ * Walk `socket` to a room's door — call immediately before emitting `knock`.
+ * The move to the door is a player's FIRST move, which re-anchors from spawn
+ * regardless of distance and is always accepted; the server sets `moveAnchor`
+ * synchronously before the following `knock` handler runs, so no wait is needed.
+ */
+export function walkToDoor(socket: ClientSocket, roomId: string): void {
+  const { x, y } = doorCenter(roomId);
+  socket.emit("move", { x, y, dir: "down" });
+}
+
+/**
+ * Walk an admitted `socket` from its door anchor onto a seat — call immediately
+ * before emitting `seat-sit`. The door→seat step is a SECOND move (speed-
+ * checked): a settle delay grows the time-integrated speed budget past the
+ * ≤112px intra-room distance so the step is in-envelope and the anchor advances
+ * onto the seat before the sit is validated.
+ */
+export async function walkToSeat(socket: ClientSocket, roomId: string, seatId: number): Promise<void> {
+  const { x, y } = seatCenter(roomId, seatId);
+  await sleep(250);
+  socket.emit("move", { x, y, dir: "down" });
+}
+
+function boardSeatCenter(tableId: string, seat: number): { x: number; y: number } {
+  const manifest = getGeometryManifest();
+  const chair = manifest.boardSeats.find((s) => s.tableId === tableId && s.seat === seat);
+  if (!chair) throw new Error(`no board seat geometry for table ${tableId} seat ${seat}`);
+  const half = Math.floor(manifest.tile.size / 2);
+  return { x: chair.x + half, y: chair.y + half };
+}
+
+/**
+ * Walk `socket` onto a plaza board chair — call immediately before emitting
+ * `board-sit` (PRD 25.24 gates the sit on anchor proximity to the chair tile).
+ * This is the player's FIRST move, which re-anchors from spawn regardless of
+ * distance and is always accepted; the server sets `moveAnchor` synchronously
+ * before the following `board-sit` handler runs, so no wait is needed.
+ */
+export function walkToBoardSeat(socket: ClientSocket, tableId: string, seat: number): void {
+  const { x, y } = boardSeatCenter(tableId, seat);
+  socket.emit("move", { x, y, dir: "down" });
 }
