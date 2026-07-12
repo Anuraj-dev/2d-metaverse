@@ -25,7 +25,7 @@ import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
-import { isRateLimitExceeded, redis } from "./redis.js";
+import { checkRateLimit, isRateLimitExceeded, redis } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
 import type { RoomMeetingSnapshot } from "./meeting.js";
@@ -38,6 +38,8 @@ import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketDat
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 // Payload schemas + abuse-protection windows live in @metaverse/shared.
+const CHAT_LIMIT = RATE_LIMITS.chatLimit;
+const CHAT_WINDOW_SECONDS = RATE_LIMITS.chatWindowSeconds;
 const WHISPER_LIMIT = RATE_LIMITS.whisperLimit;
 const WHISPER_WINDOW_SECONDS = RATE_LIMITS.whisperWindowSeconds;
 const MEETING_CHAT_LIMIT = RATE_LIMITS.meetingChatLimit;
@@ -325,10 +327,18 @@ export function createGameServer(httpServer: HttpServer) {
       socket.to(spaceChannel(spaceId)).emit("player-moved", { id: playerId, ...parsed.data });
     }));
 
-    socket.on("chat", safeHandler("chat", (payload) => {
+    socket.on("chat", safeHandler("chat", async (payload) => {
       const parsed = chatSchema.safeParse(payload);
       const { playerId, username, spaceId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
+      // Anti-spam (PRD 25.11): world and room lines share one per-player window.
+      // Excess is refused with a typed cooldown carrying retry timing — never a
+      // silent drop — so the sender's ChatBox can explain the wait.
+      const limited = await checkRateLimit(`chat:${playerId}`, CHAT_LIMIT, CHAT_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "world", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       // Default to your current room; "world" breaks out, "room" is a no-op outside one.
       // World chat reaches the whole space (incl. private-room members, whose client
       // shows it only under the "All" filter). Room chat stays room-only — no leak out.
@@ -350,7 +360,11 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = meetingChatSchema.safeParse(payload);
       const { playerId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !currentRoomId) return;
-      if (await isRateLimitExceeded(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS)) return;
+      const limited = await checkRateLimit(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "meeting", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       meetings.chat(currentRoomId, playerId, parsed.data.text);
     }));
 
@@ -358,7 +372,11 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = whisperSchema.safeParse(payload);
       const { playerId, username, spaceId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
-      if (await isRateLimitExceeded(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS)) return;
+      const limited = await checkRateLimit(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "whisper", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       const target = activeSockets.get(parsed.data.to);
       const targetName = target?.data.username;
       // Deliver only when the target is online and in the same space.

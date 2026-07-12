@@ -26,9 +26,11 @@ export interface MeetingChatPanelProps {
   unread: number;
   /** Toggle open/closed. */
   onToggle: () => void;
+  /** Transient anti-spam cooldown notice (PRD 25.11); null when none. */
+  notice?: string | null;
 }
 
-export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle }: MeetingChatPanelProps) {
+export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle, notice = null }: MeetingChatPanelProps) {
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +91,11 @@ export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle
           ))
         )}
       </div>
+      {notice && (
+        <p className="meeting-chat-notice" role="status" data-testid="meeting-chat-notice">
+          {notice}
+        </p>
+      )}
       <form className="meeting-chat-input" onSubmit={submit}>
         <input
           value={text}

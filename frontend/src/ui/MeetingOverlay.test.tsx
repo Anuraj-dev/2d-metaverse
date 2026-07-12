@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SERVER_EVENTS, type MeetingChatMessage } from "@metaverse/shared";
+import { SERVER_EVENTS, type ChatCooldownPayload, type MeetingChatMessage } from "@metaverse/shared";
 import { bus } from "../game/eventBus";
 
 vi.mock("./MeetingGrid", () => ({
@@ -49,6 +49,14 @@ function deliverChat(text: string, id = "p2", name = "bob"): void {
   const handler = call?.[1] as ((m: MeetingChatMessage) => void) | undefined;
   if (!handler) throw new Error("meeting-chat handler not registered");
   act(() => handler({ roomId: "1", id, name, text }));
+}
+
+/** Grab the overlay's chat-cooldown handler and feed it a payload. */
+function deliverCooldown(payload: ChatCooldownPayload): void {
+  const call = net.on.mock.calls.find((c) => c[0] === SERVER_EVENTS.chatCooldown);
+  const handler = call?.[1] as ((p: ChatCooldownPayload) => void) | undefined;
+  if (!handler) throw new Error("chat-cooldown handler not registered");
+  act(() => handler(payload));
 }
 
 describe("MeetingOverlay", () => {
@@ -122,6 +130,21 @@ describe("MeetingOverlay", () => {
     fireEvent.click(screen.getByTestId("meeting-chat-open"));
     expect(screen.getByTestId("meeting-chat")).toBeTruthy();
     expect(screen.queryByTestId("meeting-chat-open")).toBeNull();
+  });
+
+  it("surfaces a meeting-chat cooldown notice with retry timing (not a silent drop)", () => {
+    renderOverlay(true);
+    expect(screen.queryByTestId("meeting-chat-notice")).toBeNull();
+    deliverCooldown({ scope: "meeting", retryAfterMs: 4000 });
+    expect(screen.getByTestId("meeting-chat-notice").textContent).toBe(
+      "You're sending messages too fast — wait 4s.",
+    );
+  });
+
+  it("ignores a non-meeting cooldown scope (ChatBox owns world/whisper)", () => {
+    renderOverlay(true);
+    deliverCooldown({ scope: "world", retryAfterMs: 4000 });
+    expect(screen.queryByTestId("meeting-chat-notice")).toBeNull();
   });
 
   it("remembers the closed chat preference for the session", () => {
