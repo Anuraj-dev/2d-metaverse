@@ -692,6 +692,28 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = boardSitSchema.safeParse(payload);
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
+      // Authoritative sit gate (PRD 25.24): claiming a plaza board chair requires
+      // anchor proximity to THAT chair's tile — checked against the server's own
+      // last-accepted position (`moveAnchor`), never a client coordinate. Board
+      // seats are public (ungated by room entry), so proximity is the ONLY gate
+      // here (unlike private seats). A miss is a typed `board-error` (too-far),
+      // not a silent drop, and the match machine is never dispatched — so a
+      // spoofed remote sit cannot arm an offer. Honest clients only surface the
+      // sit at the chair, so this never denies a real walk-up.
+      const manifest = getGeometryManifest();
+      const chair = manifest.boardSeats.find(
+        (s) => s.tableId === parsed.data.tableId && s.seat === parsed.data.seat,
+      );
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y };
+      const tolerance = PROXIMITY_TOLERANCE_TILES * manifest.tile.size;
+      if (!chair || !nearSeat(anchor, chair, manifest.tile.size, tolerance)) {
+        log.child({ module: "proximity" }).warn(
+          { event: "board_sit_denied", reason: "too-far", tableId: parsed.data.tableId, seat: parsed.data.seat },
+          "board-sit rejected",
+        );
+        socket.emit("board-error", { tableId: parsed.data.tableId, reason: "too-far" });
+        return;
+      }
       boards.dispatch(spaceId, parsed.data.tableId, { type: "sit", seat: parsed.data.seat as 0 | 1, playerId });
     }));
 

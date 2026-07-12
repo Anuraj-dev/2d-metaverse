@@ -833,11 +833,14 @@ export default class WorldScene extends Phaser.Scene {
         this.onBoardUpdate(snap),
       ),
     );
-    // A rejected sit (seat lost to a simultaneous sitter, or already seated
-    // elsewhere) rolls back our optimistic local seat — the server picks the winner.
+    // A rejected sit rolls back our optimistic local seat — the server picks the
+    // winner. `seat-taken`: lost to a simultaneous sitter (or already seated
+    // elsewhere). `too-far` (PRD 25.24): the server's authoritative proximity gate
+    // refused a sit our anchor wasn't close enough for — defensive only, since an
+    // honest client offers the sit at the chair.
     this.listeners.own(
       this.net.on<BoardErrorPayload>(SERVER_EVENTS.boardError, (err) => {
-        if (err.reason === "seat-taken") this.releaseBoardSeat();
+        if (err.reason === "seat-taken" || err.reason === "too-far") this.releaseBoardSeat();
       }),
     );
     this.listeners.own(

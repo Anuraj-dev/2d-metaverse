@@ -69,13 +69,20 @@ export type BoardMatchPhase = (typeof BOARD_MATCH_PHASES)[number];
 export const BOARD_END_REASONS = ["win", "draw", "forfeit"] as const;
 export type BoardEndReason = (typeof BOARD_END_REASONS)[number];
 
-/** Reasons the server rejects a board action (typed error to the client). */
+/**
+ * Reasons the server rejects a board action (typed error to the client).
+ * `too-far` (PRD 25.24) gates the `board-sit` entry point: claiming a plaza
+ * board chair requires authoritative anchor proximity to that chair's tile, so a
+ * remote sit is refused rather than silently dropped (honest walk-ups, which
+ * only offer the sit at the chair, are unaffected).
+ */
 export const BOARD_MOVE_REJECTIONS = [
   "not-seated",
   "not-your-turn",
   "illegal-move",
   "no-match",
   "seat-taken",
+  "too-far",
 ] as const;
 export type BoardMoveRejection = (typeof BOARD_MOVE_REJECTIONS)[number];
 
