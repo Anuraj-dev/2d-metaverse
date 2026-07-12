@@ -30,3 +30,13 @@ function inRect(r: Rect, x: number, y: number): boolean {
 export function canPublishFromStage(x: number, y: number): boolean {
   return STAGE_PUBLISH_ZONES.some((r) => inRect(r, x, y));
 }
+
+/**
+ * True when (x, y) is anywhere in the stage gathering (audience floor or podium).
+ * Used by the social-arrival read model (PRD 25.26) to count students gathered at
+ * the stage — a broader test than `canPublishFromStage` (same rects today, but the
+ * intent is "present at the stage", not "authorized to broadcast").
+ */
+export function isInStageZone(x: number, y: number): boolean {
+  return STAGE_PUBLISH_ZONES.some((r) => inRect(r, x, y));
+}

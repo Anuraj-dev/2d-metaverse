@@ -4,6 +4,7 @@ import {
   BOARD_MATCH_TTL_SECONDS,
   BOARD_TABLES,
   RATE_LIMITS,
+  boardTableLabel,
   approveKnockSchema,
   boardAcceptSchema,
   boardMoveSchema,
@@ -33,6 +34,9 @@ import { createBoardManager } from "./board-manager.js";
 import { createRoomAdminManager, type RoomAdminManager, type RoomAdminSnapshot } from "./room-admin-manager.js";
 import type { SeatRef } from "./seat-key.js";
 import { removeMediaParticipant } from "./media.js";
+import { buildPresenceSnapshot, type PresenceBoardInput, type PresenceRoomInput } from "./presence-read-model.js";
+import { loadPilotSchedule, nextScheduledActivity } from "./pilot-schedule.js";
+import { isInStageZone } from "./stage.js";
 import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketData } from "./types.js";
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -144,7 +148,16 @@ export function createGameServer(httpServer: HttpServer) {
       return { occupants, seated: await seatedIn(roomId) };
     },
     resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
-    broadcast: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
+    broadcast: (roomId, event, ...payload) => {
+      io.to(roomChannel(roomId)).emit(event, ...payload);
+      // A meeting starting/ending flips its room between "room" and "meeting" in
+      // the social-arrival read model — re-broadcast the space's presence snapshot.
+      if (event === "meeting-started" || event === "meeting-ended") {
+        void getRoom(roomId).then((room) => {
+          if (room) refreshPresence(room.spaceId);
+        });
+      }
+    },
     // In-meeting chat is delivered per-participant (never the room channel), so
     // an unseated occupant sharing the room zone can't eavesdrop on the meeting.
     sendToPlayer: (playerId, event, ...payload) => activeSockets.get(playerId)?.emit(event, ...payload),
@@ -159,7 +172,11 @@ export function createGameServer(httpServer: HttpServer) {
     graceMs: LEAVE_GRACE_MS,
     ttlSeconds: BOARD_MATCH_TTL_SECONDS,
     resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
-    broadcast: (spaceId, payload) => io.to(spaceChannel(spaceId)).emit("board-update", payload),
+    broadcast: (spaceId, payload) => {
+      io.to(spaceChannel(spaceId)).emit("board-update", payload);
+      // Sitting/standing/finishing a match changes who is "at a board" — refresh.
+      refreshPresence(spaceId);
+    },
     sendError: (playerId, payload) => activeSockets.get(playerId)?.emit("board-error", payload),
     persist: (spaceId, tableId, snapshot) => {
       const done =
@@ -213,6 +230,8 @@ export function createGameServer(httpServer: HttpServer) {
       if (!(existingSeat?.startsWith(`seat:${roomId}:`) ?? false)) {
         meetings.dispatch(roomId, { type: "enter", playerId });
       }
+      // Entering a private room moves the student out of "world" — refresh arrival.
+      refreshPresence(spaceId);
     },
     toRoom: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
     toSpace: (spaceId, event, ...payload) => io.to(spaceChannel(spaceId)).emit(event, ...payload),
@@ -226,6 +245,65 @@ export function createGameServer(httpServer: HttpServer) {
     },
     log: childLogger({ module: "room-admin" }),
   });
+
+  const presenceLog = childLogger({ module: "presence" });
+
+  // Assemble the server-owned social-arrival read model (PRD 25.26) for a space
+  // from authoritative live state: Redis presence positions, room-channel
+  // membership, live meetings, board matches, stage-zone occupancy, and the
+  // validated pilot schedule. The rules (who is in which activity) live in the
+  // pure buildPresenceSnapshot; this only gathers inputs.
+  async function gatherSpacePresence(spaceId: string) {
+    const online = (await redis.hVals(`presence:${spaceId}`)).flatMap((value) => {
+      try {
+        const p = JSON.parse(value) as PlayerState;
+        return [{ id: p.id, name: p.name, x: p.x, y: p.y }];
+      } catch {
+        return [];
+      }
+    });
+
+    const space = await getSpace(spaceId);
+    const activeMeetings = new Set(meetings.activeMeetingRooms());
+    const rooms: PresenceRoomInput[] = (space?.rooms ?? []).map((room) => {
+      const socketIds = io.sockets.adapter.rooms.get(roomChannel(room.id)) ?? new Set<string>();
+      const occupants: string[] = [];
+      for (const socketId of socketIds) {
+        const memberId = io.sockets.sockets.get(socketId)?.data.playerId;
+        if (memberId) occupants.push(memberId);
+      }
+      return { id: room.id, label: room.name, occupants, meetingActive: activeMeetings.has(room.id) };
+    });
+
+    const boardInputs: PresenceBoardInput[] = [];
+    for (const { id } of BOARD_TABLES) {
+      const snap = await boards.currentSnapshot(spaceId, id);
+      if (!snap) continue;
+      const seated = snap.seats.flatMap((seat) => (seat ? [seat.id] : []));
+      boardInputs.push({ id, label: boardTableLabel(id), seated });
+    }
+
+    const stageOccupantIds = online.filter((p) => isInStageZone(p.x, p.y)).map((p) => p.id);
+    const nextScheduled = nextScheduledActivity(loadPilotSchedule());
+
+    return buildPresenceSnapshot({
+      spaceId,
+      online,
+      rooms,
+      boards: boardInputs,
+      stageOccupantIds,
+      nextScheduled,
+    });
+  }
+
+  // Recompute + broadcast the space's presence snapshot on a membership/activity
+  // change (join, leave, room enter/leave, meeting start/end, board change).
+  // Fire-and-forget: telemetry-grade — a failure must never break the game.
+  function refreshPresence(spaceId: string): void {
+    void gatherSpacePresence(spaceId)
+      .then((snapshot) => io.to(spaceChannel(spaceId)).emit("presence-snapshot", snapshot))
+      .catch((error: unknown) => presenceLog.error({ err: error, spaceId }, "presence refresh failed"));
+  }
 
   io.use((socket, next) => {
     const parsed = socketAuthSchema.safeParse(socket.handshake.auth);
@@ -331,6 +409,10 @@ export function createGameServer(httpServer: HttpServer) {
         const snap = await boards.currentSnapshot(parsed.data.spaceId, id);
         if (snap) socket.emit("board-update", snap);
       }
+
+      // Social arrival (PRD 25.26): re-broadcast the space's presence snapshot so
+      // the arriving student (and everyone already here) sees a populated campus.
+      refreshPresence(parsed.data.spaceId);
     }));
 
     socket.on("move", safeHandler("move", async (payload) => {
@@ -461,7 +543,10 @@ export function createGameServer(httpServer: HttpServer) {
     }));
 
     socket.on("room-leave", safeHandler("room-leave", async () => {
+      const { spaceId } = socket.data;
       await leaveCurrentRoom(socket, meetings, roomAdmins);
+      // Leaving a room returns the student to the open world — refresh arrival.
+      if (spaceId) refreshPresence(spaceId);
     }));
 
     socket.on("seat-sit", safeHandler("seat-sit", async (payload) => {
@@ -551,6 +636,8 @@ export function createGameServer(httpServer: HttpServer) {
         if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);
         await removeMediaParticipant(`world:${spaceId}`, playerId);
         io.to(spaceChannel(spaceId)).emit("player-left", { id: playerId });
+        // The departed student drops out of the social-arrival read model.
+        refreshPresence(spaceId);
         // Meeting semantics: leaving past grace is a stand (participant-left /
         // meeting-ended); an unseated occupant evaporating can also complete
         // the all-seated picture for those remaining.

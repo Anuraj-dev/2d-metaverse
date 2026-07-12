@@ -49,6 +49,18 @@ export function gameForTable(tableId: string): BoardGame | undefined {
   return BOARD_TABLES.find((t) => t.id === tableId)?.game;
 }
 
+/** Human-readable name per board game (labels for HUD + the presence read model). */
+export const BOARD_GAME_LABELS: Record<BoardGame, string> = {
+  tictactoe: "Tic-Tac-Toe",
+  connect4: "Connect Four",
+};
+
+/** Display label for a board table (its game's name), or the id for an unknown table. */
+export function boardTableLabel(tableId: string): string {
+  const game = gameForTable(tableId);
+  return game ? BOARD_GAME_LABELS[game] : tableId;
+}
+
 /** Phases of a board-table match, as seen on the wire. */
 export const BOARD_MATCH_PHASES = ["waiting", "offer", "active", "over"] as const;
 export type BoardMatchPhase = (typeof BOARD_MATCH_PHASES)[number];
@@ -216,6 +228,7 @@ export const SERVER_EVENTS = {
   meetingChat: "meeting-chat",
   boardUpdate: "board-update",
   boardError: "board-error",
+  presenceSnapshot: "presence-snapshot",
 } as const;
 
 /**
@@ -247,7 +260,24 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.meetingChat,
   SERVER_EVENTS.boardUpdate,
   SERVER_EVENTS.boardError,
+  SERVER_EVENTS.presenceSnapshot,
 ] as const;
+
+/**
+ * Server-observable activities a student can be in, for the social-arrival read
+ * model (PRD 25.26). Every kind here is derived from authoritative server state:
+ * `world` (free-roaming the campus), `room` (inside a private room), `meeting`
+ * (a live meeting in that room), `board` (seated at a server-authoritative board
+ * table), and `stage` (within the stage gathering zone). Arcade play is a
+ * client-side overlay the server never observes, so it is deliberately absent —
+ * the read model never reports an activity it cannot verify.
+ */
+export const PRESENCE_ACTIVITY_KINDS = ["world", "room", "meeting", "board", "stage"] as const;
+export type PresenceActivityKind = (typeof PRESENCE_ACTIVITY_KINDS)[number];
+
+/** Activity kinds that describe a joinable/active *space* (everything but the open world). */
+export const ACTIVE_SPACE_KINDS = ["room", "meeting", "board", "stage"] as const;
+export type ActiveSpaceKind = (typeof ACTIVE_SPACE_KINDS)[number];
 
 /**
  * Size / bound limits enforced by the backend zod schemas and mirrored by the
@@ -287,6 +317,14 @@ export const LIMITS = {
   boardSeatMax: 1,
   /** Sanity ceiling on a board move index (Connect-4 has 7 cols, TTT 9 cells). */
   boardMoveIndexMax: 41,
+  /** Social-arrival read model (PRD 25.26): bounds on a presence snapshot. */
+  presenceMaxPeople: 500,
+  presenceMaxSpaces: 200,
+  presencePlaceLabelMax: 80,
+  /** Pilot schedule config entries (versioned, backend-deployed). */
+  scheduleTitleMax: 80,
+  scheduleDescriptionMax: 200,
+  scheduleMaxEntries: 100,
 } as const;
 
 /** Allowed username characters (lowercase alphanumerics, dash, underscore). */

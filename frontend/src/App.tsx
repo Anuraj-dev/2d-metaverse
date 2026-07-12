@@ -53,6 +53,9 @@ const RoomAccessLayer = lazy(() => import("./ui/RoomAccessLayer"));
 // The stage broadcast HUD (on-air prompt/indicator + video grid, PRD 17) is not
 // first-paint critical — lazy-load it so it stays out of the entry chunk.
 const StageScreen = lazy(() => import("./ui/StageScreen"));
+// Social-arrival HUD (PRD 25.26): who's online + active spaces on arrival. Lazy
+// so its chrome/icons stay out of the entry bundle (bundle-budget gate).
+const ArrivalPanel = lazy(() => import("./ui/ArrivalPanel"));
 
 function isArcadeGame(value: string): value is ArcadeGame {
   return (ARCADE_GAMES as readonly string[]).includes(value);
@@ -449,6 +452,9 @@ export default function App() {
       <div className="hud">
         <InteractionHint />
         <Roster />
+        <Suspense fallback={null}>
+          <ArrivalPanel />
+        </Suspense>
         <Minimap />
         <HelpOverlay />
         <TouchControls />

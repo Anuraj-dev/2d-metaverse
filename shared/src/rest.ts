@@ -4,7 +4,14 @@
  */
 import { z } from "zod";
 import { dirSchema } from "./socket.js";
-import { ARCADE_GAMES, LIMITS, RATE_LIMITS, USERNAME_PATTERN } from "./constants.js";
+import {
+  ACTIVE_SPACE_KINDS,
+  ARCADE_GAMES,
+  LIMITS,
+  PRESENCE_ACTIVITY_KINDS,
+  RATE_LIMITS,
+  USERNAME_PATTERN,
+} from "./constants.js";
 
 /* ------------------------------- requests --------------------------------- */
 
@@ -83,6 +90,25 @@ export const analyticsClientEventSchema = z.discriminatedUnion("name", [
     name: z.literal("ingestion-probe"),
     properties: z.strictObject({ nonce: z.uuid() }),
   }),
+  // Social arrival (PRD 25.26): the arrival surface was shown with live presence.
+  // Bounded counts only — no student identities, names, positions, or space ids,
+  // so the pilot can measure "did arrival feel populated?" without tracking who.
+  z.strictObject({
+    name: z.literal("social-arrival-viewed"),
+    properties: z.strictObject({
+      onlineCount: z.number().int().min(0).max(LIMITS.presenceMaxPeople),
+      activeSpaces: z.number().int().min(0).max(LIMITS.presenceMaxSpaces),
+      hasSchedule: z.boolean(),
+    }),
+  }),
+  // The student used a truthful locate/view action (not a join). Only the kind of
+  // target is recorded — never the target's identity or the specific space.
+  z.strictObject({
+    name: z.literal("presence-locate"),
+    properties: z.strictObject({
+      targetKind: z.enum(PRESENCE_ACTIVITY_KINDS),
+    }),
+  }),
 ]);
 export type AnalyticsClientEvent = z.infer<typeof analyticsClientEventSchema>;
 
@@ -127,6 +153,75 @@ export const arcadeLeaderboardSchema = z.object({
   best: z.number().int().nullable(),
 });
 export type ArcadeLeaderboard = z.infer<typeof arcadeLeaderboardSchema>;
+
+/**
+ * One entry in the pilot community schedule (PRD 25.26). The schedule is a
+ * versioned, schema-validated configuration deployed with the backend (not a live
+ * events platform): operators edit it through a reviewed PR. Each entry carries a
+ * destination `activityId` so the arrival surface can point students at it.
+ * `startsAt`/`endsAt` are UTC ISO timestamps; invalid or expired configuration
+ * fails safely to an empty schedule server-side.
+ */
+export const pilotScheduleEntrySchema = z
+  .strictObject({
+    id: z.string().min(1).max(LIMITS.spaceIdMax),
+    title: z.string().min(1).max(LIMITS.scheduleTitleMax),
+    startsAt: z.iso.datetime(),
+    endsAt: z.iso.datetime(),
+    activityId: z.string().min(1).max(LIMITS.roomNameMax),
+    description: z.string().min(1).max(LIMITS.scheduleDescriptionMax).optional(),
+  })
+  .refine((e) => Date.parse(e.endsAt) > Date.parse(e.startsAt), {
+    message: "endsAt must be after startsAt",
+  });
+export type PilotScheduleEntry = z.infer<typeof pilotScheduleEntrySchema>;
+
+/** The full pilot schedule configuration. */
+export const pilotScheduleSchema = z.array(pilotScheduleEntrySchema).max(LIMITS.scheduleMaxEntries);
+export type PilotSchedule = z.infer<typeof pilotScheduleSchema>;
+
+/* --------------------------- social-arrival read model -------------------- */
+
+/**
+ * One online student in the social-arrival read model (PRD 25.26). `place` is the
+ * human label of the space they occupy (room/meeting/board/stage), or null when
+ * free-roaming the open campus. Identity (`id`/`name`) is already visible in-world
+ * for spatial safety, so it is carried here too — but nothing beyond the
+ * authoritative activity is exposed.
+ */
+export const presencePersonSchema = z.strictObject({
+  id: z.string().max(LIMITS.playerIdMax),
+  name: z.string().max(LIMITS.usernameMax),
+  activity: z.enum(PRESENCE_ACTIVITY_KINDS),
+  place: z.string().max(LIMITS.presencePlaceLabelMax).nullable(),
+});
+export type PresencePerson = z.infer<typeof presencePersonSchema>;
+
+/**
+ * One active/joinable space (never the open world): a private room, a live
+ * meeting, a board table with a match, or the stage gathering — with how many
+ * students are there right now.
+ */
+export const activeSpaceSchema = z.strictObject({
+  kind: z.enum(ACTIVE_SPACE_KINDS),
+  id: z.string().max(LIMITS.roomNameMax),
+  label: z.string().max(LIMITS.presencePlaceLabelMax),
+  count: z.number().int().min(0).max(LIMITS.presenceMaxPeople),
+});
+export type ActiveSpace = z.infer<typeof activeSpaceSchema>;
+
+/**
+ * Server-owned snapshot of who is online and what they are doing in a space,
+ * broadcast to that space's channel so arriving students see a populated campus.
+ * Read-only: it powers truthful locate/view actions, never a join mutation.
+ */
+export const presenceSnapshotSchema = z.strictObject({
+  spaceId: z.string().max(LIMITS.spaceIdMax),
+  people: z.array(presencePersonSchema).max(LIMITS.presenceMaxPeople),
+  activeSpaces: z.array(activeSpaceSchema).max(LIMITS.presenceMaxSpaces),
+  nextScheduled: pilotScheduleEntrySchema.nullable(),
+});
+export type PresenceSnapshot = z.infer<typeof presenceSnapshotSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({
