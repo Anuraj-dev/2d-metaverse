@@ -87,10 +87,21 @@ export class RealNet implements Net {
       }) as never);
     }
 
-    // JWT validated in the handshake; (re)send join on every (re)connect.
+    // JWT validated in the handshake; (re)send join on every (re)connect. The
+    // lifecycle events below are surfaced raw on the bus so the connection-state
+    // machine (game/connectionState.ts) can render a truthful status — a
+    // recovered reconnect is distinguished via socket.recovered.
     this.socket.on("connect", () => {
       if (this.spaceId) this.socket.emit(CLIENT_EVENTS.join, { spaceId: this.spaceId });
+      this.bus.emit("socket-connect", { recovered: this.socket.recovered });
     });
+    this.socket.on("disconnect", (reason: string) =>
+      this.bus.emit("socket-disconnect", { reason })
+    );
+    // Manager-level retry signal (fires before each reconnection attempt).
+    this.socket.io.on("reconnect_attempt", (attempt: number) =>
+      this.bus.emit("socket-reconnecting", { attempt })
+    );
     // Handshake rejection / network failure → surface so the UI can sign out.
     this.socket.on("connect_error", (err: Error) =>
       this.bus.emit("connect_error", { message: err.message })
