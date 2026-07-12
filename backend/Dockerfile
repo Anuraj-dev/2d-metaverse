@@ -35,6 +35,8 @@ RUN npm ci --omit=dev --workspace metaverse-backend --workspace @metaverse/share
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/backend/dist ./backend/dist
 COPY backend/migrations ./backend/migrations
+# Generated server geometry manifest (loaded/validated at startup + readiness).
+COPY backend/assets ./backend/assets
 USER node
 EXPOSE 3001
 # Run from the backend workspace so `dist/...` paths (and the compose migrate/seed

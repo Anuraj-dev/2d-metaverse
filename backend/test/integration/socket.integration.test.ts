@@ -156,7 +156,7 @@ describe("join", () => {
   });
 });
 
-describe("movement and chat", () => {
+describe("movement", () => {
   it("broadcasts moves to peers but not back to the mover", async () => {
     const a = await joinAs((await createPlayer("ma")).token);
     const b = await joinAs((await createPlayer("mb")).token);
@@ -173,13 +173,98 @@ describe("movement and chat", () => {
     a.socket.emit("move", { x: -5, y: 0, dir: "sideways" });
     await expectSilence(b.socket, "player-moved");
   });
+});
 
+describe("movement envelope (PRD 25.21)", () => {
+  // Spawn is (960, 704) per the geometry manifest; the first move after join
+  // re-anchors the envelope, so a second honest step is the real envelope check.
+  it("accepts an honest walk sequence", async () => {
+    const a = await joinAs((await createPlayer("mea")).token);
+    const b = await joinAs((await createPlayer("meb")).token);
+
+    const anchored = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 970, y: 704, dir: "right" }); // re-anchors from spawn
+    await anchored;
+    await sleep(60); // clear the moveThrottleMs window
+
+    const stepped = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 984, y: 704, dir: "right" }); // small honest step
+    expect(await stepped).toEqual({ id: a.init.selfId, x: 984, y: 704, dir: "right" });
+  });
+
+  it("corrects an impossible teleport, keeps the last accepted position, and does not broadcast it", async () => {
+    const a = await joinAs((await createPlayer("met")).token);
+    const b = await joinAs((await createPlayer("meu")).token);
+
+    const anchored = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 970, y: 710, dir: "down" }); // re-anchors
+    await anchored;
+    await sleep(60);
+
+    const corrected = once<{ x: number; y: number; dir: string; reason: string }>(
+      a.socket,
+      "move-correction",
+    );
+    a.socket.emit("move", { x: 1900, y: 1800, dir: "down" }); // cross-map jump
+    expect(await corrected).toEqual({ x: 970, y: 710, dir: "down", reason: "too-fast" });
+
+    // Peer never saw the rejected position, and presence keeps the last accepted.
+    await expectSilence(b.socket, "player-moved");
+    const raw = await redis.hGet("presence:1", a.init.selfId);
+    expect(JSON.parse(raw ?? "{}")).toMatchObject({ x: 970, y: 710 });
+  });
+
+  it("corrects an out-of-bounds move back to the last accepted position", async () => {
+    const a = await joinAs((await createPlayer("meo")).token);
+    const corrected = once<{ reason: string }>(a.socket, "move-correction");
+    // Passes the zod coordinate ceiling but lies outside the campus world rect.
+    a.socket.emit("move", { x: 99999, y: 10, dir: "right" });
+    expect(await corrected).toMatchObject({ reason: "out-of-bounds" });
+  });
+
+  it("accepts a manifest-declared portal jump as a legal discontinuity", async () => {
+    const a = await joinAs((await createPlayer("mep")).token);
+    const b = await joinAs((await createPlayer("meq")).token);
+
+    // Stand inside the portal's interact rect (432,688,32,32) — re-anchors there.
+    const anchored = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 448, y: 704, dir: "up" });
+    await anchored;
+    await sleep(60);
+
+    // Teleport to the portal's declared target (1280,688): a huge delta, but legal.
+    const jumped = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 1280, y: 688, dir: "up" });
+    expect(await jumped).toEqual({ id: a.init.selfId, x: 1280, y: 688, dir: "up" });
+  });
+});
+
+describe("chat", () => {
   it("delivers world chat to the whole space", async () => {
     const a = await joinAs((await createPlayer("ca")).token);
     const b = await joinAs((await createPlayer("cb")).token);
     const seen = once(b.socket, "chat");
     a.socket.emit("chat", { text: "hello world" });
     expect(await seen).toMatchObject({ id: a.init.selfId, text: "hello world", scope: "world" });
+  });
+
+  it("refuses the 11th world chat line in the window with a typed cooldown (not a silent drop)", async () => {
+    const a = await joinAs((await createPlayer("cra")).token);
+    const b = await joinAs((await createPlayer("crb")).token);
+
+    // The shared world/room chat window is 10 per player; the 11th is refused.
+    for (let index = 0; index < 10; index += 1) {
+      const seen = once(b.socket, "chat");
+      a.socket.emit("chat", { text: `line ${index}` });
+      await seen;
+    }
+    const cooled = once<{ scope: string; retryAfterMs: number }>(a.socket, "chat-cooldown");
+    a.socket.emit("chat", { text: "one too many" });
+    const payload = await cooled;
+    expect(payload.scope).toBe("world");
+    expect(payload.retryAfterMs).toBeGreaterThan(0);
+    // The refused line never reaches other players.
+    await expectSilence(b.socket, "chat", 50);
   });
 });
 
@@ -199,7 +284,7 @@ describe("whisper", () => {
     expect(await failed).toEqual({ name: "nobody-here" });
   });
 
-  it("drops the 21st whisper inside the rate-limit window", async () => {
+  it("refuses the 21st whisper in the window with a typed cooldown (not a silent drop)", async () => {
     const a = await joinAs((await createPlayer("wra")).token);
     const b = await joinAs((await createPlayer("wrb")).token);
 
@@ -208,7 +293,12 @@ describe("whisper", () => {
       a.socket.emit("whisper", { to: b.init.selfId, text: `msg ${index}` });
       await echoed;
     }
+    const cooled = once<{ scope: string; retryAfterMs: number }>(a.socket, "chat-cooldown");
     a.socket.emit("whisper", { to: b.init.selfId, text: "one too many" });
+    const payload = await cooled;
+    expect(payload.scope).toBe("whisper");
+    expect(payload.retryAfterMs).toBeGreaterThan(0);
+    // The refused whisper is neither delivered nor echoed.
     await expectSilence(a.socket, "whisper");
     await expectSilence(b.socket, "whisper", 50);
   });

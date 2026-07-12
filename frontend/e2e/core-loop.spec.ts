@@ -5,7 +5,29 @@
  * through the real UI.
  */
 import { test, expect } from "@playwright/test";
-import { enterRoom, selfPosition, sendChat, signUpAndJoin, sitAtSeat } from "./helpers";
+import {
+  enterRoom,
+  selfPosition,
+  sendChat,
+  signUpAndJoin,
+  sitAtSeat,
+  walkPath,
+} from "./helpers";
+
+// PRD 25.32: an open-plaza loop that borders the park trees repaired in this
+// slice (tree footprints cleared back to grass so no trunk grows from concrete;
+// the trunks stay solid wall tiles). Every waypoint is a collision-verified
+// non-solid tile against the regenerated walls layer, and the loop ends at the
+// hostel-descent handoff (560,704) — so this reuses the happy-path session for
+// zero extra auth-limiter cost. Coordinates are tile*16 px (spawn tile (60,44)
+// = px (960,704)).
+const PLAZA_WALKABILITY_LOOP: [number, number][] = [
+  [528, 704], // west along the E-W artery from spawn
+  [528, 800], // south into the open plaza beside the repaired park trees
+  [720, 800], // east across the plaza
+  [560, 800], // back west
+  [560, 704], // up to the hostel-descent handoff point
+];
 
 test("happy path: signup → join → move → door → enter → sit → chat", async ({ page }) => {
   const user = await signUpAndJoin(page, { map: "campus" });
@@ -23,6 +45,14 @@ test("happy path: signup → join → move → door → enter → sit → chat",
     return positions.players.find((p) => p.self)!.x > x0 + 16;
   }, start.x);
   await page.keyboard.up("ArrowRight");
+
+  // PRD 25.32 walkability evidence: traverse the open plaza beside the repaired
+  // park trees end-to-end, then confirm arrival at the descent handoff under the
+  // avatar's own power — proving the plaza is clear and the tree-ground repair
+  // did not perturb the collision grid.
+  await walkPath(page, PLAZA_WALKABILITY_LOOP);
+  const handoff = await selfPosition(page);
+  expect(Math.hypot(handoff.x - 560, handoff.y - 704)).toBeLessThan(24);
 
   // Approach the hostel Room 1 door: the first arrival walks in as admin (no key).
   await enterRoom(page, "campus", "1");

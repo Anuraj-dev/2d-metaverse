@@ -1,9 +1,12 @@
 import type { Server as HttpServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { Server, type Socket } from "socket.io";
 import {
   BOARD_MATCH_TTL_SECONDS,
   BOARD_TABLES,
   RATE_LIMITS,
+  boardTableLabel,
+  REPORT_MESSAGE_TTL_SECONDS,
   approveKnockSchema,
   boardAcceptSchema,
   boardMoveSchema,
@@ -23,9 +26,11 @@ import {
 } from "@metaverse/shared";
 import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
+import { getGeometryManifest } from "./geometry.js";
+import { validateMove } from "./movement.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
-import { isRateLimitExceeded, redis } from "./redis.js";
+import { checkRateLimit, isRateLimitExceeded, redis, storeReportableMessage } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
 import type { RoomMeetingSnapshot } from "./meeting.js";
@@ -33,11 +38,16 @@ import { createBoardManager } from "./board-manager.js";
 import { createRoomAdminManager, type RoomAdminManager, type RoomAdminSnapshot } from "./room-admin-manager.js";
 import type { SeatRef } from "./seat-key.js";
 import { removeMediaParticipant } from "./media.js";
+import { buildPresenceSnapshot, type PresenceBoardInput, type PresenceRoomInput } from "./presence-read-model.js";
+import { loadPilotSchedule, nextScheduledActivity } from "./pilot-schedule.js";
+import { isInStageZone } from "./stage.js";
 import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketData } from "./types.js";
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 // Payload schemas + abuse-protection windows live in @metaverse/shared.
+const CHAT_LIMIT = RATE_LIMITS.chatLimit;
+const CHAT_WINDOW_SECONDS = RATE_LIMITS.chatWindowSeconds;
 const WHISPER_LIMIT = RATE_LIMITS.whisperLimit;
 const WHISPER_WINDOW_SECONDS = RATE_LIMITS.whisperWindowSeconds;
 const MEETING_CHAT_LIMIT = RATE_LIMITS.meetingChatLimit;
@@ -142,7 +152,16 @@ export function createGameServer(httpServer: HttpServer) {
       return { occupants, seated: await seatedIn(roomId) };
     },
     resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
-    broadcast: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
+    broadcast: (roomId, event, ...payload) => {
+      io.to(roomChannel(roomId)).emit(event, ...payload);
+      // A meeting starting/ending flips its room between "room" and "meeting" in
+      // the social-arrival read model — re-broadcast the space's presence snapshot.
+      if (event === "meeting-started" || event === "meeting-ended") {
+        void getRoom(roomId).then((room) => {
+          if (room) refreshPresence(room.spaceId);
+        });
+      }
+    },
     // In-meeting chat is delivered per-participant (never the room channel), so
     // an unseated occupant sharing the room zone can't eavesdrop on the meeting.
     sendToPlayer: (playerId, event, ...payload) => activeSockets.get(playerId)?.emit(event, ...payload),
@@ -157,7 +176,11 @@ export function createGameServer(httpServer: HttpServer) {
     graceMs: LEAVE_GRACE_MS,
     ttlSeconds: BOARD_MATCH_TTL_SECONDS,
     resolveName: (playerId) => activeSockets.get(playerId)?.data.username ?? playerId,
-    broadcast: (spaceId, payload) => io.to(spaceChannel(spaceId)).emit("board-update", payload),
+    broadcast: (spaceId, payload) => {
+      io.to(spaceChannel(spaceId)).emit("board-update", payload);
+      // Sitting/standing/finishing a match changes who is "at a board" — refresh.
+      refreshPresence(spaceId);
+    },
     sendError: (playerId, payload) => activeSockets.get(playerId)?.emit("board-error", payload),
     persist: (spaceId, tableId, snapshot) => {
       const done =
@@ -211,6 +234,8 @@ export function createGameServer(httpServer: HttpServer) {
       if (!(existingSeat?.startsWith(`seat:${roomId}:`) ?? false)) {
         meetings.dispatch(roomId, { type: "enter", playerId });
       }
+      // Entering a private room moves the student out of "world" — refresh arrival.
+      refreshPresence(spaceId);
     },
     toRoom: (roomId, event, ...payload) => io.to(roomChannel(roomId)).emit(event, ...payload),
     toSpace: (spaceId, event, ...payload) => io.to(spaceChannel(spaceId)).emit(event, ...payload),
@@ -224,6 +249,65 @@ export function createGameServer(httpServer: HttpServer) {
     },
     log: childLogger({ module: "room-admin" }),
   });
+
+  const presenceLog = childLogger({ module: "presence" });
+
+  // Assemble the server-owned social-arrival read model (PRD 25.26) for a space
+  // from authoritative live state: Redis presence positions, room-channel
+  // membership, live meetings, board matches, stage-zone occupancy, and the
+  // validated pilot schedule. The rules (who is in which activity) live in the
+  // pure buildPresenceSnapshot; this only gathers inputs.
+  async function gatherSpacePresence(spaceId: string) {
+    const online = (await redis.hVals(`presence:${spaceId}`)).flatMap((value) => {
+      try {
+        const p = JSON.parse(value) as PlayerState;
+        return [{ id: p.id, name: p.name, x: p.x, y: p.y }];
+      } catch {
+        return [];
+      }
+    });
+
+    const space = await getSpace(spaceId);
+    const activeMeetings = new Set(meetings.activeMeetingRooms());
+    const rooms: PresenceRoomInput[] = (space?.rooms ?? []).map((room) => {
+      const socketIds = io.sockets.adapter.rooms.get(roomChannel(room.id)) ?? new Set<string>();
+      const occupants: string[] = [];
+      for (const socketId of socketIds) {
+        const memberId = io.sockets.sockets.get(socketId)?.data.playerId;
+        if (memberId) occupants.push(memberId);
+      }
+      return { id: room.id, label: room.name, occupants, meetingActive: activeMeetings.has(room.id) };
+    });
+
+    const boardInputs: PresenceBoardInput[] = [];
+    for (const { id } of BOARD_TABLES) {
+      const snap = await boards.currentSnapshot(spaceId, id);
+      if (!snap) continue;
+      const seated = snap.seats.flatMap((seat) => (seat ? [seat.id] : []));
+      boardInputs.push({ id, label: boardTableLabel(id), seated });
+    }
+
+    const stageOccupantIds = online.filter((p) => isInStageZone(p.x, p.y)).map((p) => p.id);
+    const nextScheduled = nextScheduledActivity(loadPilotSchedule());
+
+    return buildPresenceSnapshot({
+      spaceId,
+      online,
+      rooms,
+      boards: boardInputs,
+      stageOccupantIds,
+      nextScheduled,
+    });
+  }
+
+  // Recompute + broadcast the space's presence snapshot on a membership/activity
+  // change (join, leave, room enter/leave, meeting start/end, board change).
+  // Fire-and-forget: telemetry-grade — a failure must never break the game.
+  function refreshPresence(spaceId: string): void {
+    void gatherSpacePresence(spaceId)
+      .then((snapshot) => io.to(spaceChannel(spaceId)).emit("presence-snapshot", snapshot))
+      .catch((error: unknown) => presenceLog.error({ err: error, spaceId }, "presence refresh failed"));
+  }
 
   io.use((socket, next) => {
     const parsed = socketAuthSchema.safeParse(socket.handshake.auth);
@@ -270,6 +354,11 @@ export function createGameServer(httpServer: HttpServer) {
           : { x: SPAWN_X, y: SPAWN_Y, dir: "down" as const };
         if (!restored?.success) log.warn("invalid recovered presence; restoring spawn");
         const self: PlayerState = { id: playerId, name: username, ...position };
+        // Re-seed the movement envelope from the recovered position; the first
+        // move after recovery re-anchors, since the client may have kept walking
+        // while its buffered moves were held during the disconnect.
+        socket.data.moveAnchor = { x: position.x, y: position.y, dir: position.dir, at: Date.now() };
+        socket.data.moveJustEntered = true;
         // One Redis write transfers connection ownership and position together;
         // the expired socket's grace cleanup cannot delete the recovered state.
         await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify({ ...self, connectionId: socket.id }));
@@ -314,6 +403,9 @@ export function createGameServer(httpServer: HttpServer) {
 
       const players = (await presenceFor(parsed.data.spaceId)).filter((player) => player.id !== userId);
       const self: PlayerState = { id: userId, name: username, x: SPAWN_X, y: SPAWN_Y, dir: "down" };
+      // Seed the movement envelope at spawn; the first move re-anchors (see move handler).
+      socket.data.moveAnchor = { x: SPAWN_X, y: SPAWN_Y, dir: "down", at: Date.now() };
+      socket.data.moveJustEntered = true;
       await redis.hSet(`presence:${parsed.data.spaceId}`, userId, JSON.stringify({ ...self, connectionId: socket.id }));
       socket.emit("init", { selfId: userId, players: [self, ...players] });
       socket.to(spaceChannel(parsed.data.spaceId)).emit("player-joined", self);
@@ -329,6 +421,10 @@ export function createGameServer(httpServer: HttpServer) {
         const snap = await boards.currentSnapshot(parsed.data.spaceId, id);
         if (snap) socket.emit("board-update", snap);
       }
+
+      // Social arrival (PRD 25.26): re-broadcast the space's presence snapshot so
+      // the arriving student (and everyone already here) sees a populated campus.
+      refreshPresence(parsed.data.spaceId);
     }));
 
     socket.on("move", safeHandler("move", async (payload) => {
@@ -338,25 +434,68 @@ export function createGameServer(httpServer: HttpServer) {
       const now = Date.now();
       if (socket.data.lastMoveAt && now - socket.data.lastMoveAt < RATE_LIMITS.moveThrottleMs) return;
       socket.data.lastMoveAt = now;
+
+      // Authoritative movement envelope (PRD 25.21): reject impossible deltas and
+      // out-of-bounds moves. The last accepted position stays authoritative — a
+      // rejected move is neither stored nor broadcast; the offender gets a
+      // correction snapping it back to that position. Rules live in the pure
+      // `validateMove`; this shell only feeds it the anchor + geometry manifest.
+      const manifest = getGeometryManifest();
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y, dir: "down" as const, at: now };
+      const decision = validateMove(anchor, parsed.data, now, {
+        world: manifest.world,
+        portals: manifest.portals,
+        tileSize: manifest.tile.size,
+        justEntered: socket.data.moveJustEntered ?? false,
+      });
+      socket.data.moveJustEntered = false;
+      if (!decision.ok) {
+        // Privacy-safe security telemetry: playerId + reason only, never raw
+        // coordinate streams (the bound logger already carries playerId/spaceId).
+        log.child({ module: "movement" }).warn(
+          { event: "move_rejected", reason: decision.reason },
+          "movement rejected",
+        );
+        socket.emit("move-correction", { x: anchor.x, y: anchor.y, dir: anchor.dir, reason: decision.reason });
+        return;
+      }
+
+      socket.data.moveAnchor = { x: parsed.data.x, y: parsed.data.y, dir: parsed.data.dir, at: now };
       const state = { id: playerId, name: username, ...parsed.data, connectionId: socket.id };
       await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify(state));
       socket.to(spaceChannel(spaceId)).emit("player-moved", { id: playerId, ...parsed.data });
     }));
 
-    socket.on("chat", safeHandler("chat", (payload) => {
+    socket.on("chat", safeHandler("chat", async (payload) => {
       const parsed = chatSchema.safeParse(payload);
       const { playerId, username, spaceId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
+      // Anti-spam (PRD 25.11): world and room lines share one per-player window.
+      // Excess is refused with a typed cooldown carrying retry timing — never a
+      // silent drop — so the sender's ChatBox can explain the wait.
+      const limited = await checkRateLimit(`chat:${playerId}`, CHAT_LIMIT, CHAT_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "world", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       // Default to your current room; "world" breaks out, "room" is a no-op outside one.
       // World chat reaches the whole space (incl. private-room members, whose client
       // shows it only under the "All" filter). Room chat stays room-only — no leak out.
       const toWorld = parsed.data.scope === "world" || !currentRoomId;
-      const message = {
-        id: playerId,
-        name: username,
-        text: parsed.data.text,
-        scope: toWorld ? "world" : currentRoomId
-      };
+      const scope = toWorld ? "world" : currentRoomId;
+      // Server-stamped identity (PRD 25.12): a unique id + send time the client can
+      // never forge. The same id reaches every recipient, so a report references
+      // exactly one line and we can bind its author/text from our own snapshot.
+      const messageId = randomUUID();
+      const ts = Date.now();
+      const message = { id: playerId, name: username, text: parsed.data.text, scope, messageId, ts };
+      // Keep a bounded snapshot so a later report binds the authoritative
+      // author/text without trusting the reporter or storing a transcript.
+      await storeReportableMessage(
+        messageId,
+        { authorId: playerId, authorName: username, text: parsed.data.text, scope, spaceId, ts },
+        REPORT_MESSAGE_TTL_SECONDS,
+      );
       io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId)).emit("chat", message);
     }));
 
@@ -368,7 +507,11 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = meetingChatSchema.safeParse(payload);
       const { playerId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !currentRoomId) return;
-      if (await isRateLimitExceeded(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS)) return;
+      const limited = await checkRateLimit(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "meeting", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       meetings.chat(currentRoomId, playerId, parsed.data.text);
     }));
 
@@ -376,7 +519,11 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = whisperSchema.safeParse(payload);
       const { playerId, username, spaceId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
-      if (await isRateLimitExceeded(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS)) return;
+      const limited = await checkRateLimit(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "whisper", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       const target = activeSockets.get(parsed.data.to);
       const targetName = target?.data.username;
       // Deliver only when the target is online and in the same space.
@@ -443,7 +590,10 @@ export function createGameServer(httpServer: HttpServer) {
     }));
 
     socket.on("room-leave", safeHandler("room-leave", async () => {
+      const { spaceId } = socket.data;
       await leaveCurrentRoom(socket, meetings, roomAdmins);
+      // Leaving a room returns the student to the open world — refresh arrival.
+      if (spaceId) refreshPresence(spaceId);
     }));
 
     socket.on("seat-sit", safeHandler("seat-sit", async (payload) => {
@@ -533,6 +683,8 @@ export function createGameServer(httpServer: HttpServer) {
         if (previous) await removeMediaParticipant(`room:${previous.roomId}`, playerId);
         await removeMediaParticipant(`world:${spaceId}`, playerId);
         io.to(spaceChannel(spaceId)).emit("player-left", { id: playerId });
+        // The departed student drops out of the social-arrival read model.
+        refreshPresence(spaceId);
         // Meeting semantics: leaving past grace is a stand (participant-left /
         // meeting-ended); an unseated occupant evaporating can also complete
         // the all-seated picture for those remaining.

@@ -1,21 +1,46 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Lock, MessageSquare, ChevronDown } from "lucide-react";
-import { LIMITS, roomDisplayName, type ChatMessage, type PlayerState } from "@metaverse/shared";
+import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Lock, MessageSquare, ChevronDown, Flag } from "lucide-react";
+import {
+  LIMITS,
+  SERVER_EVENTS,
+  roomDisplayName,
+  type ChatCooldownPayload,
+  type ChatMessage,
+  type PlayerState,
+  type ReportCategory,
+} from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
+import { chatCooldownNotice } from "../game/chatCooldown";
+import { reportResultNotice } from "../game/report";
+import { submitReport } from "../net/reports";
+
+const ReportDialog = lazy(() => import("./ReportDialog"));
 import {
   chatPanelReducer,
   initialChatPanelState,
   type ChatTab,
 } from "../game/chatPanel";
+import {
+  whisperCompletion,
+  whisperNameToken,
+  type CompletionState,
+} from "../game/whisperComplete";
 
 /** A line in the transcript. Whispers and system notices are always shown
  *  regardless of the active channel; world/room chat is filtered by tab. */
 type Entry =
-  | { kind: "chat"; id: string; name: string; text: string; scope: string }
+  | { kind: "chat"; id: string; name: string; text: string; scope: string; messageId: string }
   | { kind: "wout"; toName: string; text: string }
   | { kind: "win"; fromName: string; text: string }
   | { kind: "sys"; text: string };
+
+/** The message a report dialog is currently open for (PRD 25.12). */
+interface ReportTarget {
+  messageId: string;
+  name: string;
+  text: string;
+}
 
 interface Player {
   id: string;
@@ -24,7 +49,6 @@ interface Player {
 
 const MAX_ENTRIES = 120;
 const WHISPER_RE = /^\/(?:w|whisper|msg|tell)\s+(\S+)\s+([\s\S]+)$/i;
-const WHISPER_NAME_RE = /^(\/(?:w|whisper|msg|tell)\s+)(\S*)$/i;
 const REPLY_RE = /^\/r(?:eply)?\s+([\s\S]+)$/i;
 const ALL_RE = /^\/all\s+([\s\S]+)$/i;
 const ROOM_RE = /^\/room\s+([\s\S]+)$/i;
@@ -67,6 +91,8 @@ export default function ChatBox() {
   const [selfId, setSelfId] = useState(sharedNet().selfId);
   // Registry display name of the room the player is in, shown on the Room tab.
   const [roomName, setRoomName] = useState<string | null>(null);
+  // The message a report dialog is open for, or null (PRD 25.12).
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -75,7 +101,7 @@ export default function ChatBox() {
   const tabRef = useRef(panel.tab);
   const selfIdRef = useRef(selfId);
   const lastWhisper = useRef<{ id: string; name: string } | null>(null);
-  const completeRef = useRef<{ base: string; idx: number } | null>(null);
+  const completeRef = useRef<CompletionState | null>(null);
 
   useEffect(() => {
     collapsedRef.current = panel.collapsed;
@@ -125,7 +151,7 @@ export default function ChatBox() {
     );
 
     const offChat = net.on("chat", (m: ChatMessage) => {
-      push({ kind: "chat", id: m.id, name: m.name, text: m.text, scope: m.scope });
+      push({ kind: "chat", id: m.id, name: m.name, text: m.text, scope: m.scope, messageId: m.messageId });
       if (m.id !== selfIdRef.current) dispatch({ type: "message" });
     });
     const offWhisper = net.on(
@@ -142,6 +168,15 @@ export default function ChatBox() {
     );
     const offFail = net.on("whisper-fail", () =>
       push({ kind: "sys", text: "Couldn't deliver your whisper — they may have left." })
+    );
+    // Anti-spam cooldown (PRD 25.11): the server refused an over-limit send. World
+    // and whisper both surface here; the meeting panel owns its own "meeting" line.
+    const offCooldown = net.on(
+      SERVER_EVENTS.chatCooldown,
+      (p: ChatCooldownPayload) => {
+        if (p.scope === "meeting") return;
+        push({ kind: "sys", text: chatCooldownNotice(p.retryAfterMs) });
+      }
     );
 
     const offEnter = bus.on("room-entered", (p: { roomId: string }) => {
@@ -161,6 +196,7 @@ export default function ChatBox() {
       offChat();
       offWhisper();
       offFail();
+      offCooldown();
       offEnter();
       offLeftRoom();
       offFocus();
@@ -250,21 +286,16 @@ export default function ChatBox() {
     completeRef.current = null;
   };
 
-  // Tab-completion for whisper targets (cycles through matches).
-  const cycleComplete = () => {
-    const m = text.match(WHISPER_NAME_RE);
-    if (!m) return;
-    const prefix = m[1] ?? "";
-    const prev = completeRef.current;
-    const base = prev?.base ?? m[2] ?? "";
-    const matches = players.filter(
-      (p) => p.id !== selfId && p.name.toLowerCase().startsWith(base.toLowerCase())
-    );
-    if (matches.length === 0) return;
-    const idx = ((prev?.idx ?? -1) + 1) % matches.length;
-    completeRef.current = { base, idx };
-    const chosen = matches[idx];
-    if (chosen) setText(prefix + chosen.name);
+  // Tab-completion for whisper targets (cycles through matches). Returns whether
+  // a completion actually happened, so the caller only swallows Tab when it did —
+  // otherwise Tab moves focus out of chat like anywhere else.
+  const cycleComplete = (): boolean => {
+    const names = players.filter((p) => p.id !== selfId).map((p) => p.name);
+    const res = whisperCompletion(text, names, completeRef.current);
+    if (!res) return false;
+    completeRef.current = res.state;
+    setText(res.text);
+    return true;
   };
 
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -272,18 +303,19 @@ export default function ChatBox() {
       e.preventDefault();
       inputRef.current?.blur(); // hand movement keys back to the game
     } else if (e.key === "Tab") {
-      e.preventDefault();
-      cycleComplete();
+      // Only intercept Tab for a real whisper-name completion; otherwise let it
+      // move focus naturally (blurring the input hands keys back to the game).
+      if (cycleComplete()) e.preventDefault();
     }
   };
 
   // live name suggestions while typing "/w <partial>"
   const suggestions = useMemo(() => {
-    const m = text.match(WHISPER_NAME_RE);
-    if (!m) return [];
-    const token = (m[2] ?? "").toLowerCase();
+    const token = whisperNameToken(text);
+    if (token === null) return [];
+    const lower = token.toLowerCase();
     return players
-      .filter((p) => p.id !== selfId && p.name.toLowerCase().startsWith(token))
+      .filter((p) => p.id !== selfId && p.name.toLowerCase().startsWith(lower))
       .slice(0, 6);
   }, [text, players, selfId]);
 
@@ -319,8 +351,27 @@ export default function ChatBox() {
       <div key={i} className="mc-line">
         <span className={`mc-name ${me ? "me" : ""}`}>&lt;{e.name}&gt;</span>{" "}
         <span className="mc-text">{e.text}</span>
+        {!me && (
+          <button
+            type="button"
+            className="mc-report-btn"
+            title={`Report ${e.name}'s message`}
+            aria-label={`Report ${e.name}'s message`}
+            onClick={() =>
+              setReportTarget({ messageId: e.messageId, name: e.name, text: e.text })
+            }
+          >
+            <Flag size={12} aria-hidden="true" />
+          </button>
+        )}
       </div>
     );
+  };
+
+  const sendReport = async (target: ReportTarget, category: ReportCategory, note: string) => {
+    const result = await submitReport(target.messageId, category, note || undefined);
+    setReportTarget(null);
+    push({ kind: "sys", text: reportResultNotice(result) });
   };
 
   const selectTab = (tab: ChatTab) => dispatch({ type: "select-tab", tab });
@@ -425,6 +476,17 @@ export default function ChatBox() {
           }
         />
       </form>
+
+      {reportTarget && (
+        <Suspense fallback={null}>
+          <ReportDialog
+            name={reportTarget.name}
+            text={reportTarget.text}
+            onSubmit={(category, note) => sendReport(reportTarget, category, note)}
+            onClose={() => setReportTarget(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

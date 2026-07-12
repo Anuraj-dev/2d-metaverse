@@ -7,6 +7,13 @@ import {
   subscribeSettings,
   type Settings as S,
 } from "./settings";
+import type { ReducedMotionSetting } from "../game/reducedMotion";
+
+// Narrow the <select> value to the union without an assertion; unknown values
+// (never emitted by the fixed <option> set) fall back to following the OS.
+function toReducedMotion(value: string): ReducedMotionSetting {
+  return value === "on" || value === "off" ? value : "system";
+}
 
 export default function Settings() {
   const [open, setOpen] = useState(false);
@@ -129,6 +136,19 @@ export default function Settings() {
               checked={s.tabFlash}
               onChange={(e) => setSettings({ tabFlash: e.target.checked })}
             />
+          </label>
+          <label className="set-row">
+            <span>Reduce motion</span>
+            <select
+              value={s.reducedMotion}
+              onChange={(e) =>
+                setSettings({ reducedMotion: toReducedMotion(e.target.value) })
+              }
+            >
+              <option value="system">System</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
           </label>
           <div className="set-actions">
             <button onClick={toggleFullscreen}>

@@ -501,15 +501,34 @@ html, body, #root {
   .console { justify-self: stretch; width: 100%; }
 }
 
-/* ---------- Reduced motion: freeze to the static campus composition ---------- */
+/* ---------- Reduced motion (PRD 25.19) ----------
+   ONE preference stamped as `data-reduced-motion` on <html> by
+   ui/reducedMotionBridge.ts (OS query resolved against the user setting; the
+   user setting wins). The OS @media rules below still calm the landing before
+   the bridge's JS runs, but a user who explicitly chose "off"
+   (data-reduced-motion="false") opts back into full motion — hence the
+   `:not([data-reduced-motion="false"])` guard. The attribute block then adds
+   the surfaces the landing @media never covered (infinite HUD pulses). */
 @media (prefers-reduced-motion: reduce) {
-  .campus-hero-bg { transform: none; }
-  .campus-hero-tint { animation: none; opacity: 0.4; }
-  .stroller,
-  .campus-mote { display: none; }
-  .lp-intro,
-  .console { animation: none; }
+  :root:not([data-reduced-motion="false"]) .campus-hero-bg { transform: none; }
+  :root:not([data-reduced-motion="false"]) .campus-hero-tint { animation: none; opacity: 0.4; }
+  :root:not([data-reduced-motion="false"]) .stroller,
+  :root:not([data-reduced-motion="false"]) .campus-mote { display: none; }
+  :root:not([data-reduced-motion="false"]) .lp-intro,
+  :root:not([data-reduced-motion="false"]) .console { animation: none; }
 }
+
+/* Explicit/resolved reduced motion: calm the landing composition AND stop the
+   HUD's infinite pulses. Indicators stay visible — only their looping motion is
+   dropped (state is conveyed by presence/opacity, never by movement alone). */
+:root[data-reduced-motion="true"] .campus-hero-bg { transform: none; }
+:root[data-reduced-motion="true"] .campus-hero-tint { animation: none; opacity: 0.4; }
+:root[data-reduced-motion="true"] .stroller,
+:root[data-reduced-motion="true"] .campus-mote { display: none; }
+:root[data-reduced-motion="true"] .lp-intro,
+:root[data-reduced-motion="true"] .console { animation: none; }
+:root[data-reduced-motion="true"] .knock-spinner { animation: none; }
+:root[data-reduced-motion="true"] .stage-on-air-dot { animation: none; opacity: 1; }
 
 /* ---------- Loading / connecting ---------- */
 .loading-space {
@@ -707,12 +726,80 @@ html, body, #root {
   color: var(--ink);
 }
 .fullmap-close { width: 32px; height: 32px; }
+.fullmap-body {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
 .fullmap-canvas {
   display: block;
   border-radius: 8px;
   image-rendering: pixelated;
   cursor: pointer;
 }
+.fullmap-people {
+  width: 200px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  max-height: 82vh;
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+.fullmap-people-empty {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted, #9aa4bf);
+}
+.fullmap-people-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fullmap-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.fullmap-person:hover,
+.fullmap-person:focus-visible {
+  border-color: var(--line);
+  background: rgba(110, 168, 254, 0.12);
+  outline: none;
+}
+.fullmap-person-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #e6e9f0;
+  border: 1px solid #06122b;
+}
+.fullmap-person-dot[data-self="true"] { background: #7ee787; }
+.fullmap-person-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fullmap-person-action {
+  font-size: 11px;
+  color: var(--muted, #9aa4bf);
+  opacity: 0;
+}
+.fullmap-person:hover .fullmap-person-action,
+.fullmap-person:focus-visible .fullmap-person-action { opacity: 1; }
 .fullmap-tip {
   position: fixed;
   transform: translate(-50%, -140%);
@@ -824,6 +911,91 @@ html, body, #root {
   line-height: 1.5;
 }
 .mc-line { word-break: break-word; }
+/* Report affordance (PRD 25.12): faint until the line is hovered/focused. */
+.mc-report-btn {
+  margin-left: 4px;
+  padding: 0 2px;
+  vertical-align: baseline;
+  background: none;
+  border: none;
+  color: #6b7490;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.mc-line:hover .mc-report-btn,
+.mc-report-btn:focus-visible { opacity: 1; }
+.mc-report-btn:hover { color: #ff7676; }
+
+.mc-report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 18, 0.55);
+}
+.mc-report {
+  width: min(360px, 92vw);
+  padding: 16px;
+  border-radius: 12px;
+  background: #131a2b;
+  border: 1px solid #263250;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #dfe6f5;
+}
+.mc-report-title { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+.mc-report-quote {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid #3a466a;
+  background: #0e1422;
+  border-radius: 6px;
+  color: #b9c2d8;
+  font-size: 13px;
+  max-height: 96px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+.mc-report-label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #8893b0;
+}
+.mc-report select,
+.mc-report textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #0e1422;
+  border: 1px solid #2a3550;
+  color: #dfe6f5;
+  font: inherit;
+  resize: vertical;
+}
+.mc-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.mc-report-actions button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #2a3550;
+  background: #1b2438;
+  color: #cdd6ea;
+  cursor: pointer;
+}
+.mc-report-actions button:disabled { opacity: 0.6; cursor: default; }
+.mc-report-actions .mc-report-send {
+  border-color: #b5443f;
+  background: #c14b45;
+  color: #fff;
+  font-weight: 600;
+}
 .mc-name { color: #8fb4ff; font-weight: 600; }
 .mc-name.me { color: #ffb454; }
 .mc-text { color: #dfe6f5; }
@@ -1723,6 +1895,15 @@ html, body, #root {
   margin: auto;
   color: var(--muted);
   font-size: 13px;
+  text-align: center;
+}
+.meeting-chat-notice {
+  margin: 0 8px 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn, #d9822b) 18%, transparent);
+  color: var(--warn, #d9822b);
+  font-size: 12px;
   text-align: center;
 }
 .meeting-chat-line {

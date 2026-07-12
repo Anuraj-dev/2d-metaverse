@@ -16,8 +16,14 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Users } from "lucide-react";
 import "@livekit/components-styles";
-import { SERVER_EVENTS, type MeetingChatMessage, type MeetingParticipant } from "@metaverse/shared";
+import {
+  SERVER_EVENTS,
+  type ChatCooldownPayload,
+  type MeetingChatMessage,
+  type MeetingParticipant,
+} from "@metaverse/shared";
 import { bus } from "../game/eventBus";
+import { chatCooldownNotice } from "../game/chatCooldown";
 import { emptyMeetingChat, appendMeetingChat, setMeetingChatOpen } from "../game/meetingChat";
 import { sharedNet } from "../net/shared";
 import MeetingGrid from "./MeetingGrid";
@@ -149,6 +155,23 @@ export default function MeetingOverlay({
       return next;
     });
 
+  // Anti-spam cooldown (PRD 25.11): a refused meeting-chat send surfaces a
+  // transient notice in the panel (never a silent drop). Auto-clears so it does
+  // not linger once the window has passed.
+  const [cooldownNotice, setCooldownNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const net = sharedNet();
+    return net.on(SERVER_EVENTS.chatCooldown, (p: ChatCooldownPayload) => {
+      if (p.scope !== "meeting") return;
+      setCooldownNotice(chatCooldownNotice(p.retryAfterMs));
+    });
+  }, []);
+  useEffect(() => {
+    if (cooldownNotice === null) return;
+    const id = window.setTimeout(() => setCooldownNotice(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [cooldownNotice]);
+
   // Elapsed timer: starts ticking when the grid reveals; mm:ss in the top bar.
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -242,6 +265,7 @@ export default function MeetingOverlay({
               open={chat.open}
               unread={chat.unread}
               onToggle={toggleChat}
+              notice={cooldownNotice}
             />
           </div>
         </motion.div>

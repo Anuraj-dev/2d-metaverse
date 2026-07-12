@@ -175,6 +175,13 @@ function MeetingStage({ tiles, selfChar }: { tiles: RenderTile[]; selfChar?: str
     const t = byKey.get(key);
     if (!t) return null;
     const sizeProps = variant === "grid" && cellSize ? { style: cellSize } : {};
+    const focused = variant === "focus";
+    // Semantic button behaviour without an actual <button> (motion.div keeps the
+    // layout animation): the tile is a toggle that pins/unpins the focus view.
+    const label = focused
+      ? `Unfocus ${t.name}`
+      : `Focus ${t.name}${t.self ? " (you)" : ""}`;
+    const activate = () => toggleFocus(key);
     return (
       <motion.div
         key={key}
@@ -186,11 +193,21 @@ function MeetingStage({ tiles, selfChar }: { tiles: RenderTile[]; selfChar?: str
         transition={{ duration: 0.2, ease: "easeOut" }}
         className={`meet-tile meet-tile-${variant}`}
         {...sizeProps}
-        onClick={() => toggleFocus(key)}
+        role="button"
+        tabIndex={0}
+        aria-pressed={focused}
+        aria-label={label}
+        onClick={activate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activate();
+          }
+        }}
         data-testid="meet-tile"
         data-player={t.participantId}
         data-source={t.source}
-        data-focused={variant === "focus"}
+        data-focused={focused}
       >
         <TileBody tile={t} selfChar={selfChar} screen={t.source === "screen"} />
       </motion.div>

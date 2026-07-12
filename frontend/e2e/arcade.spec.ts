@@ -5,7 +5,7 @@ import { signUpAndJoin, walkTo } from "./helpers";
 // campus (PRD 16). The room's north doorway aligns with the full-height x=79-80
 // stone artery running down from spawn, so the route is: east onto the artery,
 // straight south through coworking into the room, down to the open approach row
-// (99), then across to a cabinet. The 2048 cabinet sits at tile (84,96) east of
+// (99), then across to a cabinet. The Flappy cabinet sits at tile (76,96) west of
 // the doorway; its zone covers rows 96-99 and the collision-free approach is
 // rows 98-99 (foot point fy = player.y + 8 lands inside px 1536-1600).
 test("arcade: walk into the arcade room, open a cabinet, play, and close", async ({ page }) => {
@@ -16,22 +16,22 @@ test("arcade: walk into the arcade room, open a cabinet, play, and close", async
   await walkTo(page, 1272, 704, { tolerance: 12 });
   await walkTo(page, 1272, 1400, { tolerance: 12 });
   await walkTo(page, 1272, 1584, { tolerance: 12 });
-  // Across the approach row to the 2048 cabinet.
-  await walkTo(page, 1352, 1584, { tolerance: 12 });
+  // Across the approach row to the Flappy cabinet.
+  await walkTo(page, 1224, 1584, { tolerance: 12 });
 
-  // Near the 2048 cabinet specifically.
+  // Near the Flappy cabinet specifically.
   await page.waitForFunction(() => {
     const near = window.__testHook?.state.last["near-interactable"] as
       | { type?: string; payload?: { game?: string } }
       | undefined;
-    return near?.type === "arcade" && near.payload?.game === "2048";
+    return near?.type === "arcade" && near.payload?.game === "flappy";
   });
 
   // Press E → open-arcade → overlay mounts, world scene sleeps underneath.
   await page.keyboard.press("e");
   await page.waitForFunction(() => {
     const open = window.__testHook?.state.last["open-arcade"] as { game?: string } | undefined;
-    return open?.game === "2048";
+    return open?.game === "flappy";
   });
   await expect(page.locator(".arcade-overlay")).toBeVisible();
   await expect(page.locator(".arcade-leaderboard")).toBeVisible();
@@ -43,9 +43,9 @@ test("arcade: walk into the arcade room, open a cabinet, play, and close", async
   await expect(page.getByLabel("Mute arcade sound")).toBeVisible();
   await expect(page.getByLabel(/^(Enter|Exit) fullscreen$/)).toBeVisible();
 
-  // Play a couple of inputs (slide the board); the overlay stays up.
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowLeft");
+  // Play a couple of inputs (flap); the overlay stays up.
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Space");
   await expect(page.locator(".arcade-overlay")).toBeVisible();
 
   // Escape closes instantly → close-arcade fires and the overlay unmounts.

@@ -4,6 +4,7 @@ import { bus } from "../game/eventBus";
 import { areaLabels, nearestDot } from "../game/mapView";
 import { fitScale } from "./minimapScale";
 import type { TerrainInfo } from "./minimapTerrain";
+import Dialog from "./Dialog";
 
 export interface MapArea {
   id: string;
@@ -131,17 +132,8 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
     }
   }, [info, dots, terrainCanvas, scale, cw, ch]);
 
-  // Esc closes; the scene already has movement captured via map-open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Esc, focus containment, and background inertness are owned by the Dialog
+  // primitive; the scene already has movement captured via map-open.
 
   // Map a canvas-local point to world coords.
   const toWorld = (clientX: number, clientY: number) => {
@@ -158,44 +150,88 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
     setHover(dot?.name ? { x: e.clientX, y: e.clientY, name: dot.name } : null);
   };
 
+  // Pan the world camera to a player and close (the shared view-only `locate`
+  // seam — no teleport). Reused by the canvas hit-test and the keyboard list.
+  const locate = (id: string) => {
+    bus.emit("locate", { id });
+    onClose();
+  };
+
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const w = toWorld(e.clientX, e.clientY);
     if (!w) return;
     const id = nearestDot(dots, w.x, w.y, 24 / scale);
-    if (id) {
-      bus.emit("locate", { id });
-      onClose();
-    }
+    if (id) locate(id);
   };
 
+  // Named players get a keyboard/screen-reader-operable list alongside the
+  // canvas — the canvas dots are pointer-only, so this is the accessible
+  // alternative for the same locate action (PRD 25.16).
+  const namedDots = dots.filter((d) => d.name);
+
   return (
-    <div className="fullmap-backdrop" onClick={onClose} role="dialog" aria-label="Campus map">
-      <div className="fullmap-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="fullmap-head">
-          <span>Campus map</span>
-          <button
-            type="button"
-            className="icon-btn fullmap-close"
-            onClick={onClose}
-            aria-label="Close map"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
+    <Dialog
+      onClose={onClose}
+      label="Campus map"
+      backdropClassName="fullmap-backdrop"
+      className="fullmap-panel"
+    >
+      <div className="fullmap-head">
+        <span>Campus map</span>
+        <button
+          type="button"
+          className="icon-btn fullmap-close"
+          onClick={onClose}
+          aria-label="Close map"
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="fullmap-body">
         <canvas
           ref={canvasRef}
           className="fullmap-canvas"
           style={{ width: `${cw}px`, height: `${ch}px` }}
+          aria-hidden="true"
           onMouseMove={onMove}
           onMouseLeave={() => setHover(null)}
           onClick={onClick}
         />
-        {hover && (
-          <div className="fullmap-tip" style={{ left: hover.x, top: hover.y }}>
-            {hover.name}
-          </div>
-        )}
+        <nav className="fullmap-people" aria-label="People on the map">
+          {namedDots.length === 0 ? (
+            <p className="fullmap-people-empty">No one else is here right now.</p>
+          ) : (
+            <ul className="fullmap-people-list">
+              {namedDots.map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    className="fullmap-person"
+                    aria-label={`Locate ${d.name}${d.self ? " (you)" : ""}`}
+                    onClick={() => locate(d.id)}
+                  >
+                    <span
+                      className="fullmap-person-dot"
+                      data-self={d.self}
+                      aria-hidden="true"
+                    />
+                    <span className="fullmap-person-name">
+                      {d.name}
+                      {d.self ? " (you)" : ""}
+                    </span>
+                    <span className="fullmap-person-action">Locate</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </nav>
       </div>
-    </div>
+      {hover && (
+        <div className="fullmap-tip" style={{ left: hover.x, top: hover.y }}>
+          {hover.name}
+        </div>
+      )}
+    </Dialog>
   );
 }

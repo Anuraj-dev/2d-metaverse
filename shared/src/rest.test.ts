@@ -2,11 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   arcadeLeaderboardSchema,
   arcadeScoreSchema,
+  analyticsIngestRequestSchema,
+  analyticsIngestFailureSchema,
+  analyticsIngestResponseSchema,
   authFailureResponseSchema,
   clientErrorSchema,
   credentialsSchema,
   liveKitSchema,
   operationalReportSchema,
+  pilotScheduleEntrySchema,
+  pilotScheduleSchema,
+  presenceSnapshotSchema,
+  reportAckSchema,
+  reportCreateSchema,
+  reportFailureResponseSchema,
   spaceInfoSchema,
 } from "./rest.js";
 import { LIMITS } from "./constants.js";
@@ -40,6 +49,143 @@ describe("auth failure response", () => {
       authFailureResponseSchema.safeParse({
         error: "validation",
         details: { password: ["hunter2"] },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("analytics ingestion", () => {
+  it("accepts only an allowlisted, bounded post-auth event envelope", () => {
+    const event = {
+      eventId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
+      event: {
+        name: "ingestion-probe",
+        properties: { nonce: "018f47a8-5f63-7c44-9b46-86c2d6e132b2" },
+      },
+    };
+
+    expect(analyticsIngestRequestSchema.safeParse(event).success).toBe(true);
+    expect(
+      analyticsIngestRequestSchema.safeParse({ ...event, event: { name: "password-captured" } }).success,
+    ).toBe(false);
+    expect(
+      analyticsIngestRequestSchema.safeParse({ ...event, event: { name: "session-started" } }).success,
+    ).toBe(false);
+    expect(
+      analyticsIngestRequestSchema.safeParse({
+        ...event,
+        username: "alice",
+        password: "secret123",
+        actorUserId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
+        occurredAt: "2026-07-11T12:34:56.000Z",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates the server-stamped idempotent acknowledgement", () => {
+    expect(
+      analyticsIngestResponseSchema.safeParse({
+        acceptedAt: "2026-07-11T12:34:56.000Z",
+        duplicate: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      analyticsIngestResponseSchema.safeParse({ acceptedAt: Date.now(), duplicate: false }).success,
+    ).toBe(false);
+    expect(analyticsIngestFailureSchema.safeParse({ error: "invalid-event" }).success).toBe(true);
+    expect(analyticsIngestFailureSchema.safeParse({ error: "event-id-conflict" }).success).toBe(true);
+    expect(
+      analyticsIngestFailureSchema.safeParse({ error: "rate-limited", retryAfterSeconds: 60 }).success,
+    ).toBe(true);
+    expect(analyticsIngestFailureSchema.safeParse({ error: "unaudited-event" }).success).toBe(false);
+  });
+
+  it("accepts the social-arrival events with only bounded, identity-free properties", () => {
+    const envelope = (event: unknown) => ({
+      eventId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
+      event,
+    });
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "social-arrival-viewed", properties: { onlineCount: 7, activeSpaces: 2, hasSchedule: true } }),
+      ).success,
+    ).toBe(true);
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "presence-locate", properties: { targetKind: "meeting" } }),
+      ).success,
+    ).toBe(true);
+    // Counts are bounded and negatives rejected.
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "social-arrival-viewed", properties: { onlineCount: -1, activeSpaces: 0, hasSchedule: false } }),
+      ).success,
+    ).toBe(false);
+    // No identity leakage: extra keys (a username/target id) are rejected by strictObject.
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "presence-locate", properties: { targetKind: "room", targetId: "alice" } }),
+      ).success,
+    ).toBe(false);
+    // "world" and "arcade" are not locate targets in the read model's active spaces,
+    // but "world" is a valid presence kind; arcade is not observable so it is rejected.
+    expect(
+      analyticsIngestRequestSchema.safeParse(
+        envelope({ name: "presence-locate", properties: { targetKind: "arcade" } }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+describe("pilot schedule", () => {
+  const entry = {
+    id: "welcome-week",
+    title: "Welcome mixer",
+    startsAt: "2026-07-11T17:00:00.000Z",
+    endsAt: "2026-07-11T18:00:00.000Z",
+    activityId: "room:commons",
+    description: "Say hi at the commons.",
+  };
+
+  it("accepts a well-formed entry and rejects a backwards interval", () => {
+    expect(pilotScheduleEntrySchema.safeParse(entry).success).toBe(true);
+    expect(pilotScheduleEntrySchema.safeParse({ ...entry, description: undefined }).success).toBe(true);
+    expect(
+      pilotScheduleEntrySchema.safeParse({ ...entry, endsAt: "2026-07-11T16:00:00.000Z" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an over-long title and unknown keys, and validates an array", () => {
+    expect(pilotScheduleEntrySchema.safeParse({ ...entry, title: "x".repeat(LIMITS.scheduleTitleMax + 1) }).success).toBe(false);
+    expect(pilotScheduleEntrySchema.safeParse({ ...entry, secret: "x" }).success).toBe(false);
+    expect(pilotScheduleSchema.safeParse([entry]).success).toBe(true);
+    expect(pilotScheduleSchema.safeParse([]).success).toBe(true);
+  });
+});
+
+describe("presence snapshot", () => {
+  it("accepts a populated read model and rejects an unobservable arcade activity", () => {
+    const snapshot = {
+      spaceId: "1",
+      people: [
+        { id: "a", name: "alice", activity: "world", place: null },
+        { id: "b", name: "bob", activity: "meeting", place: "Commons" },
+      ],
+      activeSpaces: [{ kind: "meeting", id: "room:commons", label: "Commons", count: 2 }],
+      nextScheduled: null,
+    };
+    expect(presenceSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(
+      presenceSnapshotSchema.safeParse({
+        ...snapshot,
+        people: [{ id: "a", name: "alice", activity: "arcade", place: null }],
+      }).success,
+    ).toBe(false);
+    // activeSpaces never describes the open world.
+    expect(
+      presenceSnapshotSchema.safeParse({
+        ...snapshot,
+        activeSpaces: [{ kind: "world", id: "x", label: "Campus", count: 1 }],
       }).success,
     ).toBe(false);
   });
@@ -121,10 +267,16 @@ describe("operational report", () => {
 describe("arcade score submission", () => {
   it("accepts a valid score for a known game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake", score: 12 }).success).toBe(true);
-    expect(arcadeScoreSchema.safeParse({ game: "2048", score: 0 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "flappy", score: 0 }).success).toBe(true);
   });
   it("rejects an unknown game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "pong", score: 1 }).success).toBe(false);
+  });
+  it("rejects the retired 2048 game id (PRD 25.36)", () => {
+    // 2048 was retired: it is no longer in ARCADE_GAMES, so the enum rejects any
+    // new submission for it. Stored historical rows keyed on the free-text `game`
+    // column are untouched — this only closes the write path.
+    expect(arcadeScoreSchema.safeParse({ game: "2048", score: 0 }).success).toBe(false);
   });
   it("rejects a negative, non-integer, or over-cap score", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake", score: -1 }).success).toBe(false);
@@ -132,6 +284,42 @@ describe("arcade score submission", () => {
     expect(
       arcadeScoreSchema.safeParse({ game: "snake", score: LIMITS.arcadeScoreMax + 1 }).success,
     ).toBe(false);
+  });
+});
+
+describe("report create request", () => {
+  it("accepts a message id + category, with or without a note", () => {
+    expect(reportCreateSchema.safeParse({ messageId: "m-1", category: "harassment" }).success).toBe(true);
+    expect(
+      reportCreateSchema.safeParse({ messageId: "m-1", category: "spam", note: "flooding the room" }).success,
+    ).toBe(true);
+  });
+  it("rejects an unknown category, empty ids, over-long note, and unknown keys", () => {
+    expect(reportCreateSchema.safeParse({ messageId: "m-1", category: "banter" }).success).toBe(false);
+    expect(reportCreateSchema.safeParse({ messageId: "", category: "spam" }).success).toBe(false);
+    expect(
+      reportCreateSchema.safeParse({ messageId: "m", category: "spam", note: "x".repeat(LIMITS.reportNoteMax + 1) }).success,
+    ).toBe(false);
+    // An empty note after trim is not a valid "optional short note".
+    expect(reportCreateSchema.safeParse({ messageId: "m", category: "spam", note: "   " }).success).toBe(false);
+    // Strict: no forging author/text through extra keys.
+    expect(
+      reportCreateSchema.safeParse({ messageId: "m", category: "spam", targetId: "victim" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("report responses", () => {
+  it("validates created/duplicate acknowledgements and rejects other statuses", () => {
+    expect(reportAckSchema.safeParse({ status: "created" }).success).toBe(true);
+    expect(reportAckSchema.safeParse({ status: "duplicate" }).success).toBe(true);
+    expect(reportAckSchema.safeParse({ status: "pending" }).success).toBe(false);
+  });
+  it("validates coarse failure variants", () => {
+    expect(reportFailureResponseSchema.safeParse({ error: "message-not-found" }).success).toBe(true);
+    expect(reportFailureResponseSchema.safeParse({ error: "cannot-report-self" }).success).toBe(true);
+    expect(reportFailureResponseSchema.safeParse({ error: "rate-limited", retryAfterSeconds: 30 }).success).toBe(true);
+    expect(reportFailureResponseSchema.safeParse({ error: "rate-limited" }).success).toBe(false);
   });
 });
 

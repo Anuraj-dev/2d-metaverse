@@ -56,6 +56,11 @@ export interface MeetingManager {
   chat: (roomId: string, senderId: string, text: string) => void;
   /** Await all in-flight dispatches (test synchronization only). */
   settle: () => Promise<void>;
+  /**
+   * Room ids with a live (started) meeting right now — read by the social-arrival
+   * read model (PRD 25.26) to distinguish "meeting" from a merely-occupied "room".
+   */
+  activeMeetingRooms: () => string[];
 }
 
 interface RoomMeeting {
@@ -187,5 +192,8 @@ export function createMeetingManager(deps: MeetingManagerDeps): MeetingManager {
     await Promise.all([...rooms.values()].map((room) => room.queue));
   };
 
-  return { dispatch, chat, settle };
+  const activeMeetingRooms = (): string[] =>
+    [...rooms.entries()].filter(([, room]) => room.state.phase === "active").map(([roomId]) => roomId);
+
+  return { dispatch, chat, settle, activeMeetingRooms };
 }

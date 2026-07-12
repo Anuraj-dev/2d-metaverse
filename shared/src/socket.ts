@@ -9,17 +9,20 @@
  * (`auth: { token }`), never in `join`.
  */
 import { z } from "zod";
+import type { PresenceSnapshot } from "./rest.js";
 import {
   ADMIN_CHANGE_REASONS,
   BOARD_END_REASONS,
   BOARD_MATCH_PHASES,
   BOARD_MOVE_REJECTIONS,
   BOARD_TABLE_IDS,
+  CHAT_COOLDOWN_SCOPES,
   CHAT_SCOPES,
   DIRS,
   KNOCK_RESULTS,
   LIMITS,
   MEETING_CANCEL_REASONS,
+  MOVEMENT_REJECTIONS,
 } from "./constants.js";
 import { BOARD_GAMES } from "./games/board.js";
 
@@ -171,10 +174,19 @@ export type PlayerLeftPayload = z.infer<typeof playerLeftSchema>;
  * — deliberately looser than the inbound {@link chatScopeSchema}.
  */
 export const chatMessageSchema = z.object({
+  /** Author's player id (server-stamped, not client-supplied). */
   id: z.string(),
   name: z.string(),
   text: z.string(),
   scope: z.string(),
+  /**
+   * Server-generated unique id for this line (PRD 25.12). Stable across every
+   * recipient, so a report can reference exactly one message and the server can
+   * bind its authoritative author/text — the client can never forge it.
+   */
+  messageId: z.string(),
+  /** Server send timestamp (epoch ms). */
+  ts: z.number().int().nonnegative(),
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
@@ -189,6 +201,19 @@ export type WhisperMessage = z.infer<typeof whisperMessageSchema>;
 
 export const whisperFailSchema = z.object({ name: z.string() });
 export type WhisperFailPayload = z.infer<typeof whisperFailSchema>;
+
+/**
+ * A refused chat send: the sender exceeded their per-player rate window (PRD
+ * 25.11). Sent only to the offending client so the right surface (`scope`) can
+ * show retry timing instead of the message vanishing silently. `retryAfterMs` is
+ * the server's estimate of when the next send will be accepted (the remaining
+ * window). Applies uniformly to world/room chat, whispers, and meeting chat.
+ */
+export const chatCooldownSchema = z.strictObject({
+  scope: z.enum(CHAT_COOLDOWN_SCOPES),
+  retryAfterMs: z.number().int().nonnegative(),
+});
+export type ChatCooldownPayload = z.infer<typeof chatCooldownSchema>;
 
 /* --------------------- server → client: room access (PRD 14) --------------- */
 /* Strict contracts (unknown keys REJECT): new payloads with no legacy shapes. */
@@ -381,6 +406,21 @@ export const boardUpdateSchema = z.strictObject({
 });
 export type BoardUpdatePayload = z.infer<typeof boardUpdateSchema>;
 
+/**
+ * An authoritative movement correction, sent only to the offending client when
+ * the server rejects a `move` (impossible delta or out-of-bounds). The client
+ * snaps its local avatar to this last-accepted server position; the server's
+ * presence keeps the same position, so it is the single source of truth. Carries
+ * the last-accepted facing so the corrected avatar keeps a coherent direction.
+ */
+export const moveCorrectionSchema = z.strictObject({
+  x: z.number(),
+  y: z.number(),
+  dir: dirSchema,
+  reason: z.enum(MOVEMENT_REJECTIONS),
+});
+export type MoveCorrectionPayload = z.infer<typeof moveCorrectionSchema>;
+
 /** A rejected board action, sent only to the offending client. */
 export const boardErrorSchema = z.strictObject({
   tableId: boardTableIdSchema,
@@ -417,9 +457,11 @@ export interface ServerToClientEvents {
   "player-joined": (payload: PlayerJoinedPayload) => void;
   "player-moved": (payload: PlayerMovedPayload) => void;
   "player-left": (payload: PlayerLeftPayload) => void;
+  "move-correction": (payload: MoveCorrectionPayload) => void;
   chat: (payload: ChatMessage) => void;
   whisper: (payload: WhisperMessage) => void;
   "whisper-fail": (payload: WhisperFailPayload) => void;
+  "chat-cooldown": (payload: ChatCooldownPayload) => void;
   "knock-pending": (payload: KnockPendingPayload) => void;
   "knock-result": (payload: KnockResultPayload) => void;
   "admin-changed": (payload: AdminChangedPayload) => void;
@@ -435,4 +477,5 @@ export interface ServerToClientEvents {
   "meeting-chat": (payload: MeetingChatMessage) => void;
   "board-update": (payload: BoardUpdatePayload) => void;
   "board-error": (payload: BoardErrorPayload) => void;
+  "presence-snapshot": (payload: PresenceSnapshot) => void;
 }

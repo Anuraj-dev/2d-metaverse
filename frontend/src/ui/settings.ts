@@ -3,6 +3,8 @@
  * Synchronous get/set + subscribe so React panels and the sfx/notification code
  * read one source of truth. No backend.
  */
+import type { ReducedMotionSetting } from "../game/reducedMotion";
+
 export interface Settings {
   masterVolume: number; // 0..1, master gain over every channel
   musicVolume: number; // 0..1, background music bed channel
@@ -14,6 +16,9 @@ export interface Settings {
   muteArcade: boolean; // silence arcade mini-game sounds specifically
   notifySound: boolean; // play a chime on incoming chat
   tabFlash: boolean; // flash the tab title / Web Notification when unfocused
+  // PRD 25.19: reduced-motion preference. "system" follows the OS
+  // prefers-reduced-motion query; "on"/"off" explicitly override it.
+  reducedMotion: ReducedMotionSetting;
 }
 
 const KEY = "mv:settings";
@@ -32,6 +37,7 @@ const DEFAULTS: Settings = {
   muteArcade: false,
   notifySound: true,
   tabFlash: true,
+  reducedMotion: "system",
 };
 
 function load(): Settings {
