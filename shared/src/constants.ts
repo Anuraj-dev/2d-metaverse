@@ -14,7 +14,7 @@ export const DIRS = ["down", "left", "right", "up"] as const;
  * submitted `game` against this tuple, and the frontend keys its cabinets and
  * leaderboards off the same list — single source of truth for both sides.
  */
-export const ARCADE_GAMES = ["snake", "flappy", "2048"] as const;
+export const ARCADE_GAMES = ["snake", "flappy"] as const;
 export type ArcadeGame = (typeof ARCADE_GAMES)[number];
 
 /**
