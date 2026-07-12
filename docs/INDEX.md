@@ -4,6 +4,7 @@
 | Doc | What it's for |
 |-----|----------------|
 | STATE.md | Current state — read this first on any fresh session |
+| FEATURES.md | User-facing feature guide — what each feature is, how to reach it, status/caveats; includes the safety/moderation runbook |
 | decisions.md | Append-only log of load-bearing choices + why |
 | conventions.md | Stack, run/test commands, naming — quick-reference (CLAUDE.md is the full rulebook) |
 | product-direction.md | Owner-approved Hyprverse product direction, MVP boundaries, pilot, metrics, and agent handoff |
