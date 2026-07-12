@@ -811,6 +811,91 @@ os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "w") as f:
     json.dump(tilemap, f)
 
+# ── SERVER GEOMETRY MANIFEST (PRD 25.20) ──────────────────────────────────────
+# One versioned, server-consumable description of the campus's authoritative
+# spatial features, generated from the SAME authored data above (never hand-
+# written). The backend loads/validates it and downstream slices (movement
+# envelope, walkability/collision, door/seat/board-seat proximity, stage
+# authorization) consume it instead of re-deriving geometry or hand-mirroring it.
+# Schema + version live in @metaverse/shared (`geometryManifestSchema`); this
+# literal MUST equal shared `GEOMETRY_MANIFEST_VERSION` — bump both together.
+GEOMETRY_MANIFEST_VERSION = 1
+
+# Walkability grid straight off the walls tile layer: 1 = blocked (wall or tree
+# trunk), 0 = open. Solid furniture is carried separately (its pixel footprint
+# depends on sprite size, which this generator does not know).
+collision_blocked = [1 if t else 0 for t in walls_data]
+
+
+def _rect(obj):
+    return {"x": obj["x"], "y": obj["y"], "width": obj["width"], "height": obj["height"]}
+
+
+def _prop(obj, name):
+    for p in obj["properties"]:
+        if p["name"] == name:
+            return p["value"]
+    return None
+
+
+geometry_manifest = {
+    "version": GEOMETRY_MANIFEST_VERSION,
+    "tile": {"size": TS, "cols": W, "rows": H},
+    "world": {"width": W * TS, "height": H * TS},
+    "spawn": {"x": spawn_obj["x"], "y": spawn_obj["y"]},
+    "rooms": [
+        {**_rect(o), "roomId": _prop(o, "roomId")} for o in room_bounds
+    ],
+    "doors": [
+        {**_rect(o), "roomId": _prop(o, "roomId")} for o in door_zones
+    ],
+    "seats": [
+        {
+            "roomId": _prop(o, "roomId"),
+            "seatId": _prop(o, "seatId"),
+            "x": o["x"], "y": o["y"],
+            "facing": _prop(o, "facing"),
+        }
+        for o in seats_objs
+    ],
+    "boardSeats": [
+        {
+            "tableId": _prop(o, "tableId"),
+            "seat": _prop(o, "seat"),
+            "game": _prop(o, "game"),
+            "x": o["x"], "y": o["y"],
+            "facing": _prop(o, "facing"),
+        }
+        for o in board_seats
+    ],
+    "stageZones": [
+        {**_rect(o), "name": o["name"], "zoneType": _prop(o, "zoneType")}
+        for o in stage_objs
+        if _prop(o, "zoneType") in ("stage", "presenter")
+    ],
+    "portals": [
+        {
+            **_rect(o), "id": o["id"],
+            "targetX": _prop(o, "targetX"), "targetY": _prop(o, "targetY"),
+        }
+        for o in interactables_objs
+        if _prop(o, "interactType") == "portal"
+    ],
+    "solidObjects": [
+        {"key": _prop(o, "key"), "x": o["x"], "y": o["y"]}
+        for o in furniture
+        if _prop(o, "solid")
+    ],
+    "collision": {"cols": W, "rows": H, "blocked": collision_blocked},
+}
+
+manifest_out = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "backend", "assets", "campus.geometry.json")
+)
+os.makedirs(os.path.dirname(manifest_out), exist_ok=True)
+with open(manifest_out, "w") as f:
+    json.dump(geometry_manifest, f)
+
 wall_count   = sum(1 for t in walls_data  if t)
 ground_tiles = {t for t in ground if t}
 print(f"wrote {out}")
@@ -823,3 +908,10 @@ print(f"  interactables: {len(interactables_objs)} objects")
 print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen + arcade_zone)")
 print(f"  signs: {len(signs_objs)} objects (floor names + ground labels)")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")
+print(f"wrote {manifest_out}")
+print(f"  geometry manifest v{GEOMETRY_MANIFEST_VERSION}: "
+      f"{len(geometry_manifest['rooms'])} rooms, {len(geometry_manifest['doors'])} doors, "
+      f"{len(geometry_manifest['seats'])} seats, {len(geometry_manifest['boardSeats'])} board seats, "
+      f"{len(geometry_manifest['stageZones'])} stage zones, {len(geometry_manifest['portals'])} portals, "
+      f"{len(geometry_manifest['solidObjects'])} solid objects, "
+      f"{sum(collision_blocked)} blocked cells")
