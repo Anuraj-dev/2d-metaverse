@@ -501,15 +501,34 @@ html, body, #root {
   .console { justify-self: stretch; width: 100%; }
 }
 
-/* ---------- Reduced motion: freeze to the static campus composition ---------- */
+/* ---------- Reduced motion (PRD 25.19) ----------
+   ONE preference stamped as `data-reduced-motion` on <html> by
+   ui/reducedMotionBridge.ts (OS query resolved against the user setting; the
+   user setting wins). The OS @media rules below still calm the landing before
+   the bridge's JS runs, but a user who explicitly chose "off"
+   (data-reduced-motion="false") opts back into full motion — hence the
+   `:not([data-reduced-motion="false"])` guard. The attribute block then adds
+   the surfaces the landing @media never covered (infinite HUD pulses). */
 @media (prefers-reduced-motion: reduce) {
-  .campus-hero-bg { transform: none; }
-  .campus-hero-tint { animation: none; opacity: 0.4; }
-  .stroller,
-  .campus-mote { display: none; }
-  .lp-intro,
-  .console { animation: none; }
+  :root:not([data-reduced-motion="false"]) .campus-hero-bg { transform: none; }
+  :root:not([data-reduced-motion="false"]) .campus-hero-tint { animation: none; opacity: 0.4; }
+  :root:not([data-reduced-motion="false"]) .stroller,
+  :root:not([data-reduced-motion="false"]) .campus-mote { display: none; }
+  :root:not([data-reduced-motion="false"]) .lp-intro,
+  :root:not([data-reduced-motion="false"]) .console { animation: none; }
 }
+
+/* Explicit/resolved reduced motion: calm the landing composition AND stop the
+   HUD's infinite pulses. Indicators stay visible — only their looping motion is
+   dropped (state is conveyed by presence/opacity, never by movement alone). */
+:root[data-reduced-motion="true"] .campus-hero-bg { transform: none; }
+:root[data-reduced-motion="true"] .campus-hero-tint { animation: none; opacity: 0.4; }
+:root[data-reduced-motion="true"] .stroller,
+:root[data-reduced-motion="true"] .campus-mote { display: none; }
+:root[data-reduced-motion="true"] .lp-intro,
+:root[data-reduced-motion="true"] .console { animation: none; }
+:root[data-reduced-motion="true"] .knock-spinner { animation: none; }
+:root[data-reduced-motion="true"] .stage-on-air-dot { animation: none; opacity: 1; }
 
 /* ---------- Loading / connecting ---------- */
 .loading-space {

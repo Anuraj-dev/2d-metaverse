@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { MotionConfig } from "motion/react";
 import { TriangleAlert } from "lucide-react";
 import Roster from "./ui/Roster";
 import Minimap from "./ui/Minimap";
@@ -27,6 +28,7 @@ import {
   type MeetingUiState,
 } from "./game/meetingUi";
 import { HANDOFF_IDLE, handoffReduce, type HandoffState } from "./game/portalHandoff";
+import { useReducedMotionConfig } from "./ui/reducedMotionBridge";
 import {
   CONNECTION_INITIAL,
   RECOVERED_NOTICE_MS,
@@ -415,6 +417,10 @@ export default function App() {
     };
   }, [entered]);
 
+  // PRD 25.19: drives the Motion tree's reduced-motion mode. Read before any
+  // early return so hook order stays stable across the Landing/error branches.
+  const reducedMotionConfig = useReducedMotionConfig();
+
   // Production build with no backend URL: fail clearly, never simulate a world.
   if (MISCONFIGURED) {
     return (
@@ -445,6 +451,7 @@ export default function App() {
   }
 
   return (
+    <MotionConfig reducedMotion={reducedMotionConfig}>
     <div className="app">
       <Suspense fallback={<div className="loading-space">Loading space…</div>}>
         <GameCanvas />
@@ -527,5 +534,6 @@ export default function App() {
         <ControlBar />
       </div>
     </div>
+    </MotionConfig>
   );
 }
