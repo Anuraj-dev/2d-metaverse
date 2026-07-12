@@ -10,7 +10,6 @@ import {
   loadGeometryManifest,
   GeometryManifestError,
 } from "../src/geometry.js";
-import { STAGE_ZONE, PRESENTER_ZONE } from "../src/stage.js";
 import { rooms as seedRooms } from "../src/seed-geometry.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -193,23 +192,6 @@ describe("manifest agrees with the frontend campus map", () => {
 /* ------------ cross-check: hand-maintained server geometry ↔ manifest -------- */
 
 describe("manual server geometry mirrors the manifest", () => {
-  it("stage.ts publish zones equal the manifest stage/presenter zones", () => {
-    const stage = manifest.stageZones.find((z) => z.zoneType === "stage")!;
-    const presenter = manifest.stageZones.find((z) => z.zoneType === "presenter")!;
-    expect(STAGE_ZONE).toEqual({
-      x: stage.x,
-      y: stage.y,
-      width: stage.width,
-      height: stage.height,
-    });
-    expect(PRESENTER_ZONE).toEqual({
-      x: presenter.x,
-      y: presenter.y,
-      width: presenter.width,
-      height: presenter.height,
-    });
-  });
-
   it("seed door zones equal the manifest doors exactly", () => {
     for (const room of seedRooms) {
       const door = manifest.doors.find((d) => d.roomId === room.id)!;

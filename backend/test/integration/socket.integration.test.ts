@@ -1,7 +1,7 @@
 import { io, type Socket as ClientSocket } from "socket.io-client";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { redis } from "../../src/redis.js";
-import { createPlayer, expectSilence, once, onceMatching, sleep, startServer, teardown, type TestServer } from "./helpers.js";
+import { api, createPlayer, expectSilence, once, onceMatching, sleep, startServer, teardown, type TestServer } from "./helpers.js";
 
 // setup.ts shrinks these for the suite (defaults are 10s / 4s in production).
 const JOIN_TIMEOUT_MS = Number(process.env.JOIN_TIMEOUT_MS);
@@ -251,6 +251,62 @@ describe("movement envelope (PRD 25.21)", () => {
     const jumped = once(b.socket, "player-moved");
     a.socket.emit("move", { x: 1280, y: 688, dir: "up" });
     expect(await jumped).toEqual({ id: a.init.selfId, x: 1280, y: 688, dir: "up" });
+  });
+});
+
+// End-to-end proof that the stage-publish gate reads the AUTHORITATIVE movement
+// state (PRD 25.25): the gate's position source (Redis presence) is written only
+// on an ACCEPTED move, so a rejected teleport can never obtain publish rights,
+// while an honest walk onto the stage floor does. Drives the real socket move
+// handler + the real REST token endpoint against the generated stage geometry.
+describe("stage-publish authorization (PRD 25.25)", () => {
+  // Stage floor is the manifest `stage_zone` rect (1312,256 + 576×448); (1600,480)
+  // is its walkable interior. Spawn (960,704) and (970,704) are off-stage.
+  it("grants a publish token after an honest walk onto the stage floor", async () => {
+    const userA = await createPlayer("saw");
+    const a = await joinAs(userA.token);
+    const b = await joinAs((await createPlayer("sob")).token);
+
+    const anchored = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 1584, y: 480, dir: "right" }); // re-anchor near the stage
+    await anchored;
+    await sleep(60); // clear the moveThrottleMs window
+
+    const stepped = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 1600, y: 480, dir: "right" }); // small honest step onto stage
+    expect(await stepped).toEqual({ id: a.init.selfId, x: 1600, y: 480, dir: "right" });
+
+    const granted = await api(base, "/api/v1/livekit/token", {
+      token: userA.token,
+      body: { roomName: "stage:1", stagePublish: true },
+    });
+    expect(granted.status).toBe(200);
+    expect(typeof granted.json.livekitToken).toBe("string");
+  });
+
+  it("denies a publish token after a rejected teleport onto the stage", async () => {
+    const userA = await createPlayer("stp");
+    const a = await joinAs(userA.token);
+    const b = await joinAs((await createPlayer("sto")).token);
+
+    const anchored = once(b.socket, "player-moved");
+    a.socket.emit("move", { x: 970, y: 704, dir: "right" }); // re-anchor off-stage
+    await anchored;
+    await sleep(60);
+
+    // Teleport straight onto the stage floor: a cross-map jump the envelope
+    // rejects, so presence stays at the last accepted off-stage position.
+    const corrected = once<{ x: number; y: number; reason: string }>(a.socket, "move-correction");
+    a.socket.emit("move", { x: 1600, y: 480, dir: "down" });
+    expect(await corrected).toMatchObject({ x: 970, y: 704, reason: "too-fast" });
+
+    // The rejected move never advanced the authoritative position the gate reads.
+    const denied = await api(base, "/api/v1/livekit/token", {
+      token: userA.token,
+      body: { roomName: "stage:1", stagePublish: true },
+    });
+    expect(denied.status).toBe(403);
+    expect(denied.json.error).toBe("not-on-stage");
   });
 });
 

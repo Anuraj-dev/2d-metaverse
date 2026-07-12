@@ -31,8 +31,9 @@ import {
   submitArcadeScore,
 } from "./repository.js";
 import { getReportableMessage, redis } from "./redis.js";
+import { getGeometryManifest } from "./geometry.js";
 import { canPublishFromStage } from "./stage.js";
-import { childLogger } from "./logger.js";
+import { childLogger, logger } from "./logger.js";
 import { requestLog } from "./request-logger.js";
 
 const analyticsFallbackLog = childLogger({ module: "analytics" });
@@ -305,12 +306,29 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
       return;
     }
     if (parsed.data.stagePublish) {
-      // Server-authoritative broadcast gate (PRD 17): a publish-capable stage
-      // token is issued only when the requester's server-known position is
-      // inside the stage zone, so a malicious client can't hijack the stage as a
-      // server-wide megaphone from anywhere on the map. Audience tokens stay open.
+      // Server-authoritative broadcast gate (PRD 17, hardened PRD 25.25): a
+      // publish-capable stage token is issued only when the requester's
+      // AUTHORITATIVE last-accepted position is inside a manifest stage zone, so
+      // a malicious client can't hijack the stage as a server-wide megaphone from
+      // anywhere on the map. The position source is the space's Redis presence
+      // hash, which since PRD 25.21/25.22 (#111/#112) is written only on an
+      // ACCEPTED move — a rejected/teleport move updates neither the movement
+      // envelope anchor nor presence, so presence is now exactly the anchor's
+      // mirror and a rejected move can never advance what this gate reads. The
+      // stage rectangles come from the generated geometry manifest, not a
+      // hand-mirrored copy. Audience tokens stay open.
       const pos = await presencePosition(spaceId, user.id);
-      if (!pos || !canPublishFromStage(pos.x, pos.y)) {
+      if (!pos || !canPublishFromStage(getGeometryManifest().stageZones, pos.x, pos.y)) {
+        // Privacy-safe security telemetry: module/event/reason only, never raw
+        // coordinate streams. (#138 analytics follow-up.)
+        requestLog(response, logger).warn(
+          {
+            module: "stage",
+            event: "stage_publish_denied",
+            reason: pos ? "off-stage" : "no-position",
+          },
+          "stage publish denied",
+        );
         response.status(403).json({ error: "not-on-stage" });
         return;
       }
