@@ -7,12 +7,14 @@
  * gameplay decisions of its own beyond the freeze cases (seated / typing), which
  * short-circuit before this function is ever called.
  */
-import type { Dir } from "@metaverse/shared";
+import { MOVEMENT, type Dir } from "@metaverse/shared";
 
-/** Base walking speed in px/s (matches the scene's historical constant). */
-export const BASE_SPEED = 120;
+/** Base walking speed in px/s. Single-sourced from shared `MOVEMENT` so the
+ *  server's authoritative movement envelope derives its speed budget from the
+ *  exact same number this drives the avatar with. */
+export const BASE_SPEED = MOVEMENT.walkSpeedPxPerSec;
 /** Sprint multiplier applied while the run key (Shift) is held. */
-export const RUN_MULTIPLIER = 1.6;
+export const RUN_MULTIPLIER = MOVEMENT.runMultiplier;
 /** Below this speed magnitude the avatar is considered idle. */
 export const MOVING_EPSILON = 0.01;
 
