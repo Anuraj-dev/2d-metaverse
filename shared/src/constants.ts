@@ -415,6 +415,10 @@ export const LIMITS = {
 /** Allowed username characters (lowercase alphanumerics, dash, underscore). */
 export const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
 
+export const RELIABILITY_MAX_DURATION_MS = 10 * 60_000;
+export const RELIABILITY_RECONNECT_OUTCOMES = ["started", "recovered", "resumed", "failed"] as const;
+export const RELIABILITY_MEDIA_OUTCOMES = ["success", "denied", "unavailable", "failed"] as const;
+
 /**
  * Rate-limit windows and other timing constants enforced server-side. Kept here so
  * the magic numbers behind the contract's abuse protections live in one place.

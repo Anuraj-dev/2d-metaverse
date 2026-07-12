@@ -38,6 +38,8 @@ import {
   type ConnectionStatus,
 } from "./game/connectionState";
 import { getOperationalReporter } from "./operationalReport";
+import { getAnalyticsEmitter } from "./analytics";
+import { reconnectOutcome, reconnectEvent, worldLoadEvent, sessionStartEvent } from "./game/reliability";
 import "./App.css";
 
 // Phaser (and the whole game scene) is heavy — load it only after entering.
@@ -103,6 +105,12 @@ export default function App() {
   // latest value (React state is async; the socket fires bursts of lifecycle
   // events). The single source of truth is `connectionReduce`.
   const connStatusRef = useRef<ConnectionStatus>(CONNECTION_INITIAL);
+  // Pilot reliability analytics (PRD 25.10): the world-load stopwatch (set the
+  // instant the player enters) and a per-attempt guard so the world-load
+  // outcome is emitted exactly once between enter and the authoritative `init`
+  // or a fatal connect error.
+  const loadStartRef = useRef<number | null>(null);
+  const worldLoadDoneRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [selfId, setSelfId] = useState("");
   // Meeting lifecycle (PRD 10): reducer output for the HUD. (In-meeting chat is
@@ -132,11 +140,16 @@ export default function App() {
     const net = sharedNet();
     let settleTimer: number | undefined;
     const apply = (event: ConnectionEvent) => {
-      const next = connectionReduce(connStatusRef.current, event);
+      const prev = connStatusRef.current;
+      const next = connectionReduce(prev, event);
       connStatusRef.current = next;
       setConnStatus(next);
       // Report notable reconnect outcomes (reportReconnect filters healthy states).
       getOperationalReporter().reportReconnect(next);
+      // Product analytics: a reconnect start/outcome record on notable transitions
+      // (reconnectOutcome returns null for healthy/no-op moves).
+      const outcome = reconnectOutcome(prev, next);
+      if (outcome !== null) getAnalyticsEmitter().emit(reconnectEvent(outcome));
       // The "recovered" acknowledgement is transient: hold it briefly so the
       // convergence is visible, then settle to plain connected.
       if (next === "recovered") {
@@ -144,8 +157,18 @@ export default function App() {
         settleTimer = window.setTimeout(() => apply({ type: "settle" }), RECOVERED_NOTICE_MS);
       }
     };
+    // World-load outcome + duration, emitted exactly once per entry attempt.
+    const emitWorldLoad = (outcome: "success" | "failure") => {
+      if (worldLoadDoneRef.current) return;
+      worldLoadDoneRef.current = true;
+      const start = loadStartRef.current;
+      const durationMs = start === null ? 0 : performance.now() - start;
+      getAnalyticsEmitter().emit(worldLoadEvent(outcome, durationMs));
+    };
     const offInit = net.on("init", (p: { selfId: string }) => {
       setSelfId(p.selfId);
+      // The authoritative snapshot means the world is ready — a successful load.
+      emitWorldLoad("success");
       apply({ type: "init" });
     });
     const offConnect = net.on<{ recovered: boolean }>("socket-connect", (p) =>
@@ -156,6 +179,8 @@ export default function App() {
     );
     const offReconnecting = net.on("socket-reconnecting", () => apply({ type: "reconnecting" }));
     const offErr = net.on("connect_error", (p: { message: string }) => {
+      // A rejected handshake is a failed world load for this attempt.
+      emitWorldLoad("failure");
       localStorage.removeItem("token");
       connStatusRef.current = CONNECTION_INITIAL;
       setConnStatus(CONNECTION_INITIAL);
@@ -449,6 +474,11 @@ export default function App() {
         notice={notice}
         onEntered={() => {
           setNotice(null);
+          // Start the world-load stopwatch and arm a fresh per-attempt guard, then
+          // record the crash-free-session denominator (one per world session).
+          loadStartRef.current = performance.now();
+          worldLoadDoneRef.current = false;
+          getAnalyticsEmitter().emit(sessionStartEvent());
           setEntered(true);
         }}
       />

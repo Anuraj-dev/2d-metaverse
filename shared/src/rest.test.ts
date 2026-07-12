@@ -137,6 +137,29 @@ describe("analytics ingestion", () => {
   });
 });
 
+describe("pilot reliability analytics", () => {
+  it("accepts bounded pilot reliability events", () => {
+    const parse = (event: unknown) => analyticsIngestRequestSchema.safeParse({
+      eventId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
+      event,
+    }).success;
+    expect(parse({ name: "world-load", properties: { outcome: "success", durationMs: 1234 } })).toBe(true);
+    expect(parse({ name: "reconnect", properties: { outcome: "recovered" } })).toBe(true);
+    expect(parse({ name: "media-enable", properties: { kind: "mic", outcome: "success" } })).toBe(true);
+    expect(parse({ name: "session-start", properties: {} })).toBe(true);
+  });
+
+  it("rejects unbounded reliability payloads", () => {
+    const parse = (event: unknown) => analyticsIngestRequestSchema.safeParse({
+      eventId: "018f47a8-5f63-7c44-9b46-86c2d6e132b1",
+      event,
+    }).success;
+    expect(parse({ name: "world-load", properties: { outcome: "success", durationMs: 600_001 } })).toBe(false);
+    expect(parse({ name: "reconnect", properties: { outcome: "unknown" } })).toBe(false);
+    expect(parse({ name: "session-start", properties: { userId: "secret" } })).toBe(false);
+  });
+});
+
 describe("pilot schedule", () => {
   const entry = {
     id: "welcome-week",
