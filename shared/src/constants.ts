@@ -105,6 +105,14 @@ export const REPORT_ACK_STATUSES = ["created", "duplicate"] as const;
 export type ReportAckStatus = (typeof REPORT_ACK_STATUSES)[number];
 
 /**
+ * Block action outcomes (PRD 25.13): a server-owned, persistent block is
+ * idempotent in both directions. `blocked`/`unblocked` mutated state; the
+ * `already-*`/`not-*` variants report a no-op so the UI can stay truthful.
+ */
+export const BLOCK_ACK_STATUSES = ["blocked", "already-blocked", "unblocked", "not-blocked"] as const;
+export type BlockAckStatus = (typeof BLOCK_ACK_STATUSES)[number];
+
+/**
  * TTL (seconds) on the server's bounded snapshot of a broadcast chat line kept so
  * a later report can bind the authoritative author/text without trusting the
  * client or retaining a full transcript (PRD 25.12). One hour bounds how long a
@@ -421,6 +429,10 @@ export const RATE_LIMITS = {
    *  abuse without becoming its own spam vector. */
   reportWindowMs: 60_000,
   reportLimit: 20,
+  /** Block/unblock/list submit limiter (per IP; PRD 25.13). Comfortably above a
+   *  human curating their block list, well below an automated abuse vector. */
+  blockWindowMs: 60_000,
+  blockLimit: 30,
 } as const;
 
 /**
