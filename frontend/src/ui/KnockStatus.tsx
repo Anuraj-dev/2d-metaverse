@@ -56,7 +56,7 @@ export default function KnockStatus() {
 
   if (knock) {
     return (
-      <div className="knock-status" role="status">
+      <div className="knock-status" role="status" data-dialog-keep-live>
         <span className="knock-spinner" aria-hidden="true"><Hand size={20} /></span>
         <div className="knock-text">
           <strong>Knocking…</strong>
@@ -70,7 +70,7 @@ export default function KnockStatus() {
   }
   if (feedback) {
     return (
-      <div className="knock-status knock-status-feedback" role="status">
+      <div className="knock-status knock-status-feedback" role="status" data-dialog-keep-live>
         <span className="knock-status-icon" aria-hidden="true"><DoorClosed size={18} /></span>
         <div className="knock-text">{feedback}</div>
       </div>
