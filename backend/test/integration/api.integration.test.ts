@@ -1,9 +1,12 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { RATE_LIMITS } from "@metaverse/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sitPlayer, standPlayer } from "../../src/seat-store.js";
 import { redis } from "../../src/redis.js";
-import { api, createUser, startServer, teardown, uniqueName, TEST_PASSWORD, type TestServer } from "./helpers.js";
+import { pool } from "../../src/db.js";
+import { pruneExpiredAnalyticsEvents } from "../../src/analytics.js";
+import { api, createPlayer, createUser, startServer, teardown, uniqueName, TEST_PASSWORD, type TestServer } from "./helpers.js";
 
 let server: TestServer;
 let base: string;
@@ -59,13 +62,40 @@ describe("signin", () => {
     const payload = jwt.verify(token, process.env.JWT_SECRET!) as jwt.JwtPayload;
     expect(payload.username).toBe(username);
     expect(typeof payload.sub).toBe("string");
+    const recorded = await pool.query<{ actor_user_id: string | null; properties: Record<string, unknown> }>(
+      `SELECT actor_user_id, properties FROM analytics_events
+       WHERE event_name = 'signin-outcome' ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(recorded.rows[0]).toEqual({ actor_user_id: null, properties: { result: "success" } });
   });
 
   it("rejects a wrong password with 401", async () => {
     const { username } = await createUser(base, "si2");
+    const before = new Date();
     const result = await api(base, "/api/v1/signin", { body: { username, password: "wrong-password-123" } });
     expect(result.status).toBe(401);
     expect(result.json.error).toBe("invalid-credentials");
+
+    const recorded = await pool.query<{
+      event_id: string;
+      actor_user_id: string | null;
+      properties: Record<string, unknown>;
+      occurred_at: Date;
+      expires_at: Date;
+    }>(
+      `SELECT event_id, actor_user_id, properties, occurred_at, expires_at
+       FROM analytics_events
+       WHERE event_name = 'signin-outcome' AND occurred_at >= $1
+       ORDER BY occurred_at DESC LIMIT 1`,
+      [before],
+    );
+    const event = recorded.rows[0];
+    expect(event).toBeDefined();
+    expect(event?.actor_user_id).toBeNull();
+    expect(event?.properties).toEqual({ result: "invalid-credentials" });
+    expect(event?.event_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(event?.occurred_at.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(event?.expires_at.getTime()).toBeGreaterThan(event?.occurred_at.getTime() ?? 0);
   });
 
   it("rejects an unknown user with 401", async () => {
@@ -73,6 +103,171 @@ describe("signin", () => {
       body: { username: uniqueName("ghost"), password: TEST_PASSWORD }
     });
     expect(result.status).toBe(401);
+  });
+
+  it("records malformed JSON as validation without retaining its body", async () => {
+    const response = await fetch(`${base}/api/v1/signin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"username":"secret-user","password":',
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "validation" });
+    const recorded = await pool.query<{ actor_user_id: string | null; properties: Record<string, unknown> }>(
+      `SELECT actor_user_id, properties FROM analytics_events
+       WHERE event_name = 'signin-outcome' ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(recorded.rows[0]).toEqual({ actor_user_id: null, properties: { result: "validation" } });
+  });
+
+  it("records an unexpected auth failure as a coarse anonymous server error", async () => {
+    await pool.query("ALTER TABLE users RENAME TO users_signin_failure_test");
+    try {
+      const result = await api(base, "/api/v1/signin", {
+        body: { username: uniqueName("server-error"), password: TEST_PASSWORD },
+      });
+      expect(result).toEqual({ status: 500, json: { error: "server-error" } });
+    } finally {
+      await pool.query("ALTER TABLE users_signin_failure_test RENAME TO users");
+    }
+    const recorded = await pool.query<{ actor_user_id: string | null; properties: Record<string, unknown> }>(
+      `SELECT actor_user_id, properties FROM analytics_events
+       WHERE event_name = 'signin-outcome' ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(recorded.rows[0]).toEqual({ actor_user_id: null, properties: { result: "server-error" } });
+  });
+});
+
+describe("analytics ingestion", () => {
+  it("requires authentication and accepts only the shared allowlist", async () => {
+    const eventId = randomUUID();
+    expect(
+      (await api(base, "/api/v1/analytics/events", {
+        body: {
+          eventId,
+          event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+        },
+      })).status,
+    ).toBe(401);
+
+    const { token } = await createPlayer("analytics-contract");
+    expect(
+      (await api(base, "/api/v1/analytics/events", {
+        token,
+        body: { eventId, event: { name: "password-captured" } },
+      })).status,
+    ).toBe(400);
+  });
+
+  it("server-stamps an authenticated event and deduplicates its id", async () => {
+    const { token } = await createPlayer("analytics-idempotent");
+    const eventId = randomUUID();
+    const nonce = randomUUID();
+    const body = { eventId, event: { name: "ingestion-probe", properties: { nonce } } };
+
+    const first = await api(base, "/api/v1/analytics/events", { token, body });
+    expect(first.status).toBe(202);
+    expect(first.json).toMatchObject({ duplicate: false });
+    expect(new Date(first.json.acceptedAt as string).toISOString()).toBe(first.json.acceptedAt);
+
+    const duplicate = await api(base, "/api/v1/analytics/events", { token, body });
+    expect(duplicate).toEqual({
+      status: 200,
+      json: { acceptedAt: first.json.acceptedAt, duplicate: true },
+    });
+
+    const stored = await pool.query<{
+      count: number;
+      actor_user_id: string;
+      properties: Record<string, unknown>;
+      occurred_at: Date;
+      expires_at: Date;
+    }>(
+      `SELECT count(*)::int AS count, min(actor_user_id::text) AS actor_user_id,
+              min(properties::text)::jsonb AS properties, min(occurred_at) AS occurred_at,
+              min(expires_at) AS expires_at
+       FROM analytics_events WHERE event_id = $1`,
+      [eventId],
+    );
+    expect(stored.rows[0]?.count).toBe(1);
+    expect(stored.rows[0]?.actor_user_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(stored.rows[0]?.properties).toEqual({ nonce });
+    expect(stored.rows[0]?.expires_at.getTime()).toBeGreaterThan(stored.rows[0]?.occurred_at.getTime() ?? 0);
+  });
+
+  it("rejects an idempotency replay whose bounded payload changed", async () => {
+    const { token } = await createPlayer("analytics-payload-conflict");
+    const eventId = randomUUID();
+    expect(
+      (await api(base, "/api/v1/analytics/events", {
+        token,
+        body: {
+          eventId,
+          event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+        },
+      })).status,
+    ).toBe(202);
+    expect(
+      await api(base, "/api/v1/analytics/events", {
+        token,
+        body: {
+          eventId,
+          event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+        },
+      }),
+    ).toEqual({ status: 409, json: { error: "event-id-conflict" } });
+  });
+
+  it("does not let one authenticated student reuse another student's event id", async () => {
+    const first = await createPlayer("analytics-owner-a");
+    const second = await createPlayer("analytics-owner-b");
+    const eventId = randomUUID();
+    const body = {
+      eventId,
+      event: { name: "ingestion-probe", properties: { nonce: randomUUID() } },
+    };
+
+    expect((await api(base, "/api/v1/analytics/events", { token: first.token, body })).status).toBe(202);
+    expect(await api(base, "/api/v1/analytics/events", { token: second.token, body })).toEqual({
+      status: 409,
+      json: { error: "event-id-conflict" },
+    });
+  });
+
+  it("physically prunes expired records through the scheduled job's public operation", async () => {
+    const expiredId = randomUUID();
+    await pool.query(
+      `INSERT INTO analytics_events
+         (event_id, event_name, properties, occurred_at, expires_at)
+       VALUES ($1, 'signin-outcome', '{"result":"validation"}'::jsonb,
+               now() - interval '8 days', now() - interval '1 day')`,
+      [expiredId],
+    );
+    await pruneExpiredAnalyticsEvents();
+    const remaining = await pool.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM analytics_events WHERE event_id = $1",
+      [expiredId],
+    );
+    expect(remaining.rows[0]?.count).toBe(0);
+  });
+
+  it("keeps expired rows outside the operator active-query boundary before cleanup", async () => {
+    const expiredId = randomUUID();
+    const activeId = randomUUID();
+    await pool.query(
+      `INSERT INTO analytics_events
+         (event_id, event_name, properties, occurred_at, expires_at)
+       VALUES ($1, 'signin-outcome', '{"result":"validation"}'::jsonb,
+               now() - interval '8 days', now() - interval '1 day'),
+              ($2, 'signin-outcome', '{"result":"success"}'::jsonb,
+               now(), now() + interval '1 day')`,
+      [expiredId, activeId],
+    );
+    const visible = await pool.query<{ event_id: string }>(
+      "SELECT event_id FROM active_analytics_events WHERE event_id = ANY($1::uuid[]) ORDER BY event_id",
+      [[expiredId, activeId]],
+    );
+    expect(visible.rows).toEqual([{ event_id: activeId }]);
   });
 });
 
@@ -314,5 +509,10 @@ describe("auth rate limiting", () => {
     });
     expect(limited?.json.retryAfterSeconds).toBeGreaterThan(0);
     expect(limited?.json.retryAfterSeconds).toBeLessThanOrEqual(RATE_LIMITS.authWindowMs / 1000);
+    const recorded = await pool.query<{ actor_user_id: string | null; properties: Record<string, unknown> }>(
+      `SELECT actor_user_id, properties FROM analytics_events
+       WHERE event_name = 'signin-outcome' ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(recorded.rows[0]).toEqual({ actor_user_id: null, properties: { result: "rate-limited" } });
   });
 });

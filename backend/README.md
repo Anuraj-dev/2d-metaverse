@@ -93,9 +93,37 @@ In CI, the `test` job (no services) runs lint + typecheck + unit tests + build; 
 - **`.skip`-justification convention:** a skipped test must carry a comment on the line above saying *why* and *when it comes back* (e.g. `// SKIP: needs LiveKit stub — re-enable after #123`), so disabled tests stay visible debts.
 - Root convenience: from the repo root, `npm run lint` / `npm run typecheck` / `npm test` run every workspace (shared, backend, frontend); the typecheck/test scripts build `@metaverse/shared` first (root `package.json`).
 
+## Product analytics operator seam
+
+Product analytics is stored in `analytics_events`. Pre-auth sign-in outcomes are
+server-generated, anonymous records with only a coarse result. Authenticated
+client events enter through `POST /api/v1/analytics/events`; the server derives
+the actor from the JWT, stamps time, deduplicates the client event UUID, and
+accepts only event schemas exported by `@metaverse/shared`. The foundation ships
+only an `ingestion-probe` verification event; feature events remain owned by
+their later slices. Records expire after 90 days (sign-in outcomes after 7 days).
+The backend prunes expired rows on startup and every six hours through the
+indexed `expires_at` path, independently of traffic; shutdown stops that job.
+Both operator queries also exclude rows whose expiry has passed.
+
+There is intentionally no public analytics read endpoint. Operators query with
+database credentials from the EC2/SSM operator path:
+
+```sh
+psql "$DATABASE_URL" -f backend/analytics/summary.sql
+psql "$DATABASE_URL" -f backend/analytics/export.sql > analytics-export.csv
+```
+
+The export contains event UUID, allowlisted name/properties, server-derived actor
+UUID when authenticated, server timestamp, and expiry only. Do not join or add
+usernames, passwords, JWTs, IP addresses, chat/transcripts, precise coordinates,
+device identifiers, SDP, or raw error context. Extend the shared discriminated
+union and its privacy tests before emitting a new feature event. The summary
+excludes `ingestion-probe`, so deployment checks never become a pilot KPI.
+
 ## Contract details
 
-- REST routes exactly follow `/api/v1/signup`, `/signin`, `/space/:id`, and `/livekit/token`.
+- REST routes exactly follow `/api/v1/signup`, `/signin`, `/space/:id`, `/analytics/events`, and `/livekit/token`.
 - Socket event names, socket/REST payload schemas, and shared limits are defined once in the **`@metaverse/shared`** workspace package (`shared/src`). The backend imports those zod schemas and `safeParse`s them exactly as before; there is no hand-mirrored contract file. Add a new event/shape in `shared/`, never here — see the root `README.md`.
 - LiveKit world room: `world:<spaceId>` (for example `world:1`). Tokens can publish microphone only.
 - LiveKit private room: `room:<roomId>` (for example `room:1`). A private token is issued only while the caller owns a seat. Standing or disconnecting removes the participant from LiveKit.
