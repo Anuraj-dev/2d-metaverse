@@ -24,6 +24,35 @@ import {
 } from "./mediaLogic";
 import { speakingState } from "./speakingState";
 import { getMediaPrefs } from "./mediaPrefs";
+import {
+  INITIAL_PUBLICATION,
+  classifyMediaError,
+  outcomeNeedsAttention,
+  publicationReduce,
+  type MediaOutcome,
+  type MediaPublicationEvent,
+  type MediaPublicationStatus,
+} from "./publicationState";
+
+/**
+ * Await a LiveKit `setMicrophoneEnabled`/`setCameraEnabled` publish call and turn
+ * its resolution into a bounded, truthful `MediaOutcome` (PRD 25.7). The SDK
+ * resolves the enable call only once the track is actually captured + published,
+ * and rejects on a capture/permission failure — so a normal resolution IS the
+ * publication confirmation, and a throw classifies (denied / unavailable /
+ * failed). Callers never see the raw error; the outcome is the whole truth.
+ */
+async function publishOutcome(
+  enable: () => Promise<unknown>,
+  on: boolean,
+): Promise<MediaOutcome> {
+  try {
+    await enable();
+    return { status: on ? "live" : "off" };
+  } catch (e) {
+    return { status: classifyMediaError(e) };
+  }
+}
 
 /**
  * Identities whose live stage audio the local client is currently subscribed to
@@ -212,8 +241,16 @@ class WorldAudio {
     bus.emit("audio-volumes", { volumes: Object.fromEntries(vols) });
   }
 
-  setMicEnabled(on: boolean) {
-    void this.room?.localParticipant.setMicrophoneEnabled(on);
+  /**
+   * Toggle the proximity-voice mic and report the confirmed outcome (PRD 25.7).
+   * No world room ⇒ `inactive` (a no-op the caller can ignore); otherwise the
+   * enable call is awaited so a denied/absent mic surfaces truthfully instead of
+   * being swallowed.
+   */
+  async setMicEnabled(on: boolean): Promise<MediaOutcome> {
+    const room = this.room;
+    if (!room) return { status: "inactive" };
+    return publishOutcome(() => room.localParticipant.setMicrophoneEnabled(on), on);
   }
 
   /** The local mic MediaStreamTrack while connected (for the HUD level meter). */
@@ -341,11 +378,17 @@ class RoomVideo {
     }
   }
 
-  setMicEnabled(on: boolean) {
-    void this.room?.localParticipant.setMicrophoneEnabled(on);
+  /** Toggle the meeting mic; awaits the confirmed publish outcome (PRD 25.7). */
+  async setMicEnabled(on: boolean): Promise<MediaOutcome> {
+    const room = this.room;
+    if (!room) return { status: "inactive" };
+    return publishOutcome(() => room.localParticipant.setMicrophoneEnabled(on), on);
   }
-  setCamEnabled(on: boolean) {
-    void this.room?.localParticipant.setCameraEnabled(on);
+  /** Toggle the meeting camera; awaits the confirmed publish outcome. */
+  async setCamEnabled(on: boolean): Promise<MediaOutcome> {
+    const room = this.room;
+    if (!room) return { status: "inactive" };
+    return publishOutcome(() => room.localParticipant.setCameraEnabled(on), on);
   }
 
   /* -------------------------- Screen share (PRD 23) ------------------------- */
@@ -429,6 +472,26 @@ class StageVideo {
   private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
   private mode: "none" | "audience" | "performer" = "none";
+  // Confirmed publication state (PRD 25.7): the single truth the stage HUD reads
+  // to decide LIVE / ON AIR. Driven ONLY through the pure machine, so a failed
+  // publish can never leave it reading "live".
+  private pubStatus: MediaPublicationStatus = INITIAL_PUBLICATION;
+  private statusListeners = new Set<() => void>();
+
+  /** Current confirmed publication status. Arrow-bound so it can be handed to
+   * `useSyncExternalStore` as a bare snapshot getter without losing `this`. */
+  getPublicationStatus = (): MediaPublicationStatus => this.pubStatus;
+  /** Subscribe to publication-status changes. useSyncExternalStore-shaped. */
+  onPublicationStatus = (cb: () => void): (() => void) => {
+    this.statusListeners.add(cb);
+    return () => this.statusListeners.delete(cb);
+  };
+  private dispatch(event: MediaPublicationEvent) {
+    const next = publicationReduce(this.pubStatus, event);
+    if (next === this.pubStatus) return;
+    this.pubStatus = next;
+    this.statusListeners.forEach((cb) => cb());
+  }
 
   onTracks(cb: (tracks: RoomTrack[]) => void) {
     this.listeners.add(cb);
@@ -451,8 +514,27 @@ class StageVideo {
     stagePerformerIds = new Set(this.audioEls.keys());
   }
 
-  private async open(spaceId: string, selfId: string, opts: { publish: boolean; video: boolean }) {
+  /**
+   * Connect the stage room. For the publish path this drives the confirmed
+   * publication machine (connecting → publishing → live) and returns a bounded
+   * `MediaOutcome`: `live` once connected (even muted — the slot is claimed), or
+   * a classified failure that tears the half-open room down so nothing can read
+   * as LIVE. The audience path just subscribes and reports `off`.
+   */
+  private async open(
+    spaceId: string,
+    selfId: string,
+    opts: { publish: boolean; video: boolean },
+  ): Promise<MediaOutcome> {
     this.selfId = selfId;
+    if (opts.publish) {
+      // Arm the publish pipeline (off → pending → connecting): the deliberate
+      // `enable` intent is what lets the transport's `connecting`/`publishing`
+      // signals advance the machine, while a STRAY signal without a preceding
+      // enable still can't resurrect a turned-off publisher.
+      this.dispatch({ type: "enable" });
+      this.dispatch({ type: "connecting" });
+    }
     try {
       const { token, url } = await fetchToken(
         stageRoomName(spaceId),
@@ -503,19 +585,39 @@ class StageVideo {
           speakers.map((s) => s.identity),
         );
       });
-      await room.connect(url, token);
+      // A dropped performer publish reads as reconnecting (not silently live),
+      // then re-confirms on recovery (PRD 25.7). The mock's no-op `on` means this
+      // never fires in unit tests; production wires it.
       if (opts.publish) {
-        // Replay the sticky mic/cam prefs (global control bar, PRD 20) instead of
-        // coming up hot: going on air while muted yields an on-air-but-muted state
-        // that the bar can unmute — the bar stays the single control surface.
-        const wanted = getMediaPrefs();
-        if (wanted.micOn) {
-          await room.localParticipant.setMicrophoneEnabled(true);
-        }
-        if (opts.video && wanted.camOn) await this.applyCam(true);
+        room.on(RoomEvent.Reconnecting, () => this.dispatch({ type: "reconnecting" }));
+        room.on(RoomEvent.Reconnected, () => this.dispatch({ type: "published" }));
       }
+      await room.connect(url, token);
+      if (!opts.publish) return { status: "off" };
+      this.dispatch({ type: "publishing" });
+      // Replay the sticky mic/cam prefs (global control bar, PRD 20) instead of
+      // coming up hot: going on air while muted yields an on-air-but-muted state
+      // that the bar can unmute — the bar stays the single control surface. A
+      // muted slot is still a confirmed live broadcast; only an ATTEMPTED capture
+      // that throws demotes the state to a bounded failure.
+      const wanted = getMediaPrefs();
+      if (wanted.micOn) {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      }
+      if (opts.video && wanted.camOn) await this.applyCam(true);
+      this.dispatch({ type: "published" });
+      return { status: "live" };
     } catch (e) {
+      if (opts.publish) {
+        const reason = classifyMediaError(e);
+        this.dispatch({ type: "failed", reason });
+        // Never leave a half-open publisher the HUD could read as LIVE — but keep
+        // the failure status (teardownRoom does not reset it, unlike leave()).
+        await this.teardownRoom();
+        return { status: reason };
+      }
       console.warn("Stage unavailable:", e);
+      return { status: "inactive" };
     }
   }
 
@@ -551,52 +653,76 @@ class StageVideo {
     this.mode = "audience";
   }
 
-  /** Voice broadcast: reconnect with a publish token and go live on mic. */
-  async goOnAir(spaceId: string, selfId: string) {
-    if (this.mode === "performer") return;
+  /**
+   * Voice broadcast: reconnect with a publish token and go live on mic. Returns
+   * the confirmed outcome (PRD 25.7) — the caller only shows ON AIR on `live`.
+   */
+  async goOnAir(spaceId: string, selfId: string): Promise<MediaOutcome> {
+    if (this.mode === "performer") return { status: "live" };
     await this.leave();
-    await this.open(spaceId, selfId, { publish: true, video: false });
-    this.mode = "performer";
+    const outcome = await this.open(spaceId, selfId, { publish: true, video: false });
+    if (outcome.status === "live") this.mode = "performer";
+    return outcome;
   }
 
   /**
    * Explicit keyless "Go Live" video: publish cam + mic (adds cam if already on
    * air). The sticky cam pref wins (PRD 20 one-surface contract): going live with
-   * the bar's camera off comes up video-muted until the bar turns it on.
+   * the bar's camera off comes up video-muted until the bar turns it on. Returns
+   * the confirmed outcome so the stage HUD only flips to LIVE on `live`.
    */
-  async goLive(spaceId: string, selfId: string) {
+  async goLive(spaceId: string, selfId: string): Promise<MediaOutcome> {
     if (this.mode === "performer" && this.room) {
-      await this.applyCam(getMediaPrefs().camOn);
-      return;
+      // Already broadcasting (voice on air): "Go Live" just applies the cam per
+      // the sticky pref. A pref-off cam is a muted-but-live slot (`off`), NOT a
+      // failure — so keep reporting `live`; only a real capture denial surfaces.
+      const cam = await this.applyCamOutcome(getMediaPrefs().camOn);
+      return outcomeNeedsAttention(cam.status) ? cam : { status: "live" };
     }
     await this.leave();
-    await this.open(spaceId, selfId, { publish: true, video: true });
-    this.mode = "performer";
+    const outcome = await this.open(spaceId, selfId, { publish: true, video: true });
+    if (outcome.status === "live") this.mode = "performer";
+    return outcome;
   }
 
   /**
    * Global control-bar fan-out (PRD 20). Only a performer publishes — audience
-   * tokens can't publish, so applying a toggle there must stay a no-op rather
-   * than trigger a doomed publish attempt.
+   * tokens can't publish, so applying a toggle there stays a no-op (`inactive`)
+   * rather than trigger a doomed publish attempt. Awaits the confirmed outcome
+   * (PRD 25.7) so a denied unmute surfaces instead of being swallowed.
    */
-  setMicEnabled(on: boolean) {
-    if (this.mode !== "performer") return;
-    void this.room?.localParticipant.setMicrophoneEnabled(on);
+  async setMicEnabled(on: boolean): Promise<MediaOutcome> {
+    if (this.mode !== "performer") return { status: "inactive" };
+    const room = this.room;
+    if (!room) return { status: "inactive" };
+    return publishOutcome(() => room.localParticipant.setMicrophoneEnabled(on), on);
   }
-  setCamEnabled(on: boolean) {
-    if (this.mode !== "performer") return;
-    this.applyCam(on).catch((e) => console.warn("Stage camera toggle failed:", e));
+  async setCamEnabled(on: boolean): Promise<MediaOutcome> {
+    if (this.mode !== "performer") return { status: "inactive" };
+    return this.applyCamOutcome(on);
   }
 
-  /** Stop broadcasting but stay subscribed to the stage as audience. */
-  async goOffAir(spaceId: string, selfId: string) {
-    if (this.mode !== "performer") return;
+  /** `applyCam`, wrapped as a bounded outcome (no active room ⇒ `inactive`). */
+  private async applyCamOutcome(on: boolean): Promise<MediaOutcome> {
+    if (!this.room) return { status: "inactive" };
+    return publishOutcome(() => this.applyCam(on), on);
+  }
+
+  /**
+   * Stop broadcasting but stay subscribed to the stage as audience. Returns the
+   * audience outcome for symmetry; the publication status settles to `off`.
+   */
+  async goOffAir(spaceId: string, selfId: string): Promise<MediaOutcome> {
+    if (this.mode !== "performer") return { status: "inactive" };
     await this.leave();
-    await this.open(spaceId, selfId, { publish: false, video: false });
+    const outcome = await this.open(spaceId, selfId, { publish: false, video: false });
     this.mode = "audience";
+    return outcome;
   }
 
-  async leave() {
+  /** Disconnect + clear track/audio state WITHOUT touching the publication
+   * status — so the failure path can tear the room down yet keep reading failed. */
+  private async teardownRoom() {
     this.tracks.clear();
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
@@ -606,6 +732,13 @@ class StageVideo {
     await this.room?.disconnect();
     this.room = null;
     this.mode = "none";
+  }
+
+  async leave() {
+    await this.teardownRoom();
+    // A clean teardown rests the publication status to off (unlike the failure
+    // path, which keeps its classified failure for the HUD to surface).
+    this.dispatch({ type: "ended" });
   }
 }
 

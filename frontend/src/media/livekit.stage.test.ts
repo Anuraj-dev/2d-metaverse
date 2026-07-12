@@ -119,7 +119,7 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
   it("setMicEnabled drives the on-air mic", async () => {
     await stageVideo.goOnAir("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
-    stageVideo.setMicEnabled(false);
+    await stageVideo.setMicEnabled(false);
     expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(false);
   });
 
@@ -129,7 +129,7 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
     let tracks: RoomTrack[] = [];
     const off = stageVideo.onTracks((t) => (tracks = t));
     setMediaPrefs({ camOn: true });
-    stageVideo.setCamEnabled(true);
+    await stageVideo.setCamEnabled(true);
     await vi.waitFor(() => {
       expect(lk.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
       expect(tracks.some((t) => t.self)).toBe(true);
@@ -144,14 +144,14 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
     expect(tracks.filter((t) => t.self)).toHaveLength(1);
 
     // Bar cam-off: the stale "You (live)" preview must drop from the snapshot.
-    stageVideo.setCamEnabled(false);
+    await stageVideo.setCamEnabled(false);
     await vi.waitFor(() => {
       expect(lk.localParticipant.setCameraEnabled).toHaveBeenLastCalledWith(false);
       expect(tracks.some((t) => t.self)).toBe(false);
     });
 
     // Bar cam-on: the self tile comes back — exactly once, no double-add.
-    stageVideo.setCamEnabled(true);
+    await stageVideo.setCamEnabled(true);
     await vi.waitFor(() => {
       expect(tracks.filter((t) => t.self)).toHaveLength(1);
     });
@@ -163,9 +163,76 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
     await stageVideo.joinAsAudience("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
     lk.localParticipant.setCameraEnabled.mockClear();
-    stageVideo.setMicEnabled(true);
-    stageVideo.setCamEnabled(true);
+    await stageVideo.setMicEnabled(true);
+    await stageVideo.setCamEnabled(true);
     expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
     expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Confirmed publication state (PRD 25.7): the stage must never read LIVE off an
+ * optimistic guess. A confirmed publish reads `live`; a capture/permission
+ * failure or a token/connect failure leaves a bounded failure status — NOT live —
+ * even though a connection was attempted.
+ */
+describe("stage publication state is confirmed, never optimistic", () => {
+  it("a confirmed voice publish settles to live", async () => {
+    const outcome = await stageVideo.goOnAir("1", "self");
+    expect(outcome).toEqual({ status: "live" });
+    expect(stageVideo.getPublicationStatus()).toBe("live");
+  });
+
+  it("going on air while muted is still a confirmed live (muted) broadcast", async () => {
+    setMediaPrefs({ micOn: false, camOn: false });
+    const outcome = await stageVideo.goOnAir("1", "self");
+    expect(outcome).toEqual({ status: "live" });
+    expect(stageVideo.getPublicationStatus()).toBe("live");
+    // ...but nothing was captured.
+    expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+  });
+
+  it("a denied mic capture never reads as live (goOnAir)", async () => {
+    setMediaPrefs({ micOn: true });
+    const denied = Object.assign(new Error("denied"), { name: "NotAllowedError" });
+    lk.localParticipant.setMicrophoneEnabled.mockRejectedValueOnce(denied);
+
+    const outcome = await stageVideo.goOnAir("1", "self");
+
+    expect(outcome).toEqual({ status: "denied" });
+    expect(stageVideo.getPublicationStatus()).toBe("denied");
+    expect(stageVideo.getPublicationStatus()).not.toBe("live");
+  });
+
+  it("a token/connect failure leaves a failed status, not live (goLive)", async () => {
+    (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async () => ({ ok: false, status: 403 }),
+    );
+    const outcome = await stageVideo.goLive("1", "self");
+    expect(outcome).toEqual({ status: "failed" });
+    expect(stageVideo.getPublicationStatus()).toBe("failed");
+  });
+
+  it("notifies publication-status subscribers on change", async () => {
+    const seen: string[] = [];
+    const off = stageVideo.onPublicationStatus(() => seen.push(stageVideo.getPublicationStatus()));
+    await stageVideo.goOnAir("1", "self");
+    expect(seen).toContain("live");
+    off();
+  });
+
+  it("goLive while already on air with cam-off pref stays live, not a false failure", async () => {
+    setMediaPrefs({ micOn: true, camOn: false });
+    await stageVideo.goOnAir("1", "self"); // voice on air, no video
+    const outcome = await stageVideo.goLive("1", "self");
+    expect(outcome).toEqual({ status: "live" });
+    expect(stageVideo.getPublicationStatus()).toBe("live");
+  });
+
+  it("going off air rests the publication status back to off", async () => {
+    await stageVideo.goOnAir("1", "self");
+    expect(stageVideo.getPublicationStatus()).toBe("live");
+    await stageVideo.goOffAir("1", "self");
+    expect(stageVideo.getPublicationStatus()).toBe("off");
   });
 });

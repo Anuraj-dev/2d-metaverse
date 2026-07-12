@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CircleStop, Mic, Video } from "lucide-react";
 import { bus } from "../game/eventBus";
 import { stageVideo } from "../media/livekit";
 import type { RoomTrack } from "../media/livekit";
+import { isPublishFailure, isPublished } from "../media/publicationState";
 import { sharedNet } from "../net/shared";
 
 const SPACE_ID = "1";
@@ -26,21 +27,24 @@ function VideoTrackEl({ track }: { track: MediaStreamTrack }) {
 export default function StageScreen() {
   const [tracks, setTracks] = useState<RoomTrack[]>([]);
   const [nearPresenter, setNearPresenter] = useState(false);
-  const [isLive, setIsLive] = useState(false); // "Go Live" video broadcast
-  const [voiceOnAir, setVoiceOnAir] = useState(false); // stage voice broadcast
+  const [wantsVideo, setWantsVideo] = useState(false); // this client hit "Go Live" (video)
   const [promptOpen, setPromptOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The single truth for LIVE / ON AIR: the transport's CONFIRMED publication
+  // status (PRD 25.7). The stage can never render LIVE off an optimistic guess —
+  // a failed/denied publish leaves this non-`live`, so the indicator stays down.
+  const pubStatus = useSyncExternalStore(
+    stageVideo.onPublicationStatus,
+    stageVideo.getPublicationStatus,
+    () => "off" as const,
+  );
 
   useEffect(() => {
     const offNear = bus.on("near-presenter-slot", () => setNearPresenter(true));
     const offLeave = bus.on("leave-presenter-slot", () => setNearPresenter(false));
     const offPromptShow = bus.on("stage-prompt-show", () => setPromptOpen(true));
     const offPromptHide = bus.on("stage-prompt-hide", () => setPromptOpen(false));
-    const offOnAir = bus.on("stage-on-air", () => {
-      setVoiceOnAir(true);
-      setPromptOpen(false);
-    });
-    const offOffAir = bus.on("stage-off-air", () => setVoiceOnAir(false));
+    const offOnAir = bus.on("stage-on-air", () => setPromptOpen(false));
     const offTracks = stageVideo.onTracks(setTracks);
     return () => {
       offNear();
@@ -48,29 +52,32 @@ export default function StageScreen() {
       offPromptShow();
       offPromptHide();
       offOnAir();
-      offOffAir();
       offTracks();
     };
   }, []);
 
   async function handleGoLive() {
     setError(null);
-    try {
-      await stageVideo.goLive(SPACE_ID, sharedNet().selfId);
-      setIsLive(true);
-    } catch {
-      setError("Broadcast failed — are you standing on the stage?");
-    }
+    const outcome = await stageVideo.goLive(SPACE_ID, sharedNet().selfId);
+    if (outcome.status === "live") setWantsVideo(true);
+    else if (outcome.status === "denied")
+      setError("Camera or microphone blocked — allow access in your browser.");
+    else setError("Broadcast failed — are you standing on the stage?");
   }
 
   async function handleStopLive() {
+    setWantsVideo(false);
     await stageVideo.goOffAir(SPACE_ID, sharedNet().selfId);
-    setIsLive(false);
   }
 
   const remoteTracks = tracks.filter((t) => !t.self);
   const selfTrack = tracks.find((t) => t.self);
-  const broadcasting = voiceOnAir || isLive;
+  // Confirmed on-air (voice or video). LIVE video is confirmed on-air AND this
+  // client chose video AND a self track is actually surfaced.
+  const broadcasting = isPublished(pubStatus);
+  const isLive = broadcasting && wantsVideo;
+  // A failed/denied publish that this client initiated — surface it near the podium.
+  const publishFailed = isPublishFailure(pubStatus);
 
   return (
     <>
@@ -122,7 +129,11 @@ export default function StageScreen() {
           <button className="stage-btn-go" onClick={() => void handleGoLive()}>
             <Video size={16} aria-hidden="true" /> Go Live (video)
           </button>
-          {error && <span className="stage-error">{error}</span>}
+          {(error ?? (publishFailed ? "Broadcast failed — try again." : null)) && (
+            <span className="stage-error" role="alert">
+              {error ?? "Broadcast failed — try again."}
+            </span>
+          )}
         </div>
       )}
 

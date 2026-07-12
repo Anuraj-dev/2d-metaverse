@@ -231,6 +231,42 @@ media may join.
 mini-game rules, …) is written as a pure module with its tests, and the scene only
 gains a call site. "Logic in the scene" is a review smell — put it in a pure module.
 
+### Confirmed media publication state (PRD 25.7)
+
+The player's *desired* preference (`media/mediaPrefs.ts`), device *permission*,
+device *availability*, transport *connection*, and *confirmed publication* are five
+separate concerns — never one boolean. The pure machine `media/publicationState.ts`
+models the confirmed publication lifecycle as an explicit, truthful status:
+`off → pending → connecting → publishing → live`, plus `reconnecting`, and the
+bounded failures `denied` / `unavailable` / `failed`. It is the media analogue of
+`game/connectionState.ts`: plain values in/out, no LiveKit/DOM, table-tested incl.
+illegal transitions. The load-bearing invariant — **`live` is reachable only
+through the publish pipeline** — is what stops the stage rendering LIVE after a
+failed publication: a stray `published` signal cannot resurrect a resting
+`failed`/`denied`/`off`.
+
+- **Toggles await bounded outcomes.** `media/mediaControls.ts` `setMic`/`setCam`
+  now return a `Promise<MediaOutcome>`; the transport (`media/livekit.ts`) awaits
+  the LiveKit enable call (which resolves only once a track is actually published,
+  and rejects on capture/permission failure) and reports `live`/`off`/`denied`/
+  `unavailable`/`failed`/`inactive` instead of swallowing the result to
+  `console.warn`. `worstOutcome` aggregates across publishers. The control bar
+  flips optimistically, then **reverts the preference and announces the bounded
+  reason** (pure copy in `game/controlBar.ts` `mediaFailureText`) if the confirmed
+  outcome was a failure.
+- **The stage shows LIVE only when confirmed.** `StageVideo` drives the machine
+  through its publish flow and exposes a `getPublicationStatus`/`onPublicationStatus`
+  store; `ui/StageScreen.tsx` derives LIVE / ON AIR from `isPublished(status)` via
+  `useSyncExternalStore` — never from an optimistic bus event. A failed/denied
+  `goLive`/`goOnAir` returns its bounded outcome, tears the half-open room down, and
+  keeps a failure status the HUD surfaces near the podium. Going on air while muted
+  is still a confirmed (muted) broadcast; only an *attempted* capture that throws
+  demotes to a failure.
+
+Extend `publicationState.ts` (not the transport or a component) when adding a media
+state, and keep the "confirmed, never optimistic" rule for any new LIVE/on-air
+surface.
+
 ### Audio model (proximity + zone isolation)
 
 World voice is **proximity audio gated by zone** — you hear a nearby player only if
