@@ -279,6 +279,7 @@ export const presenceSnapshotSchema = z.strictObject({
 });
 export type PresenceSnapshot = z.infer<typeof presenceSnapshotSchema>;
 
+/**
  * `POST /api/v1/reports` success response (PRD 25.12): a visible acknowledgement.
  * `created` recorded a fresh moderation record; `duplicate` means the reporter had
  * already flagged this same message (idempotent — no second record is written).
