@@ -65,6 +65,16 @@ vi.mock("./net/shared", () => ({ sharedNet: () => netMock.net }));
 vi.mock("./net/auth", () => ({ USE_MOCK: false }));
 vi.mock("./net/config", () => ({ MISCONFIGURED: false }));
 
+// Spy on the operational reporter to assert reconnect outcomes are reported.
+const reportReconnect = vi.hoisted(() => vi.fn());
+vi.mock("./operationalReport", () => ({
+  getOperationalReporter: () => ({
+    reportReconnect,
+    reportMediaPublishFailure: vi.fn(),
+    reportAuthTransport: vi.fn(),
+  }),
+}));
+
 // --- Heavy children stubbed so the test isolates App's orchestration ------
 vi.mock("./game/GameCanvas", () => ({ default: () => <div data-testid="game-canvas" /> }));
 vi.mock("./ui/Landing", () => ({
@@ -137,6 +147,7 @@ function deferred() {
 
 beforeEach(() => {
   netMock.net.selfId = "";
+  reportReconnect.mockClear();
   for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
   for (const group of Object.values(media)) {
     for (const fn of Object.values(group)) if (vi.isMockFunction(fn)) fn.mockClear();
@@ -174,6 +185,8 @@ describe("App shell", () => {
 
     await emit(() => netMock.net.emit("socket-disconnect", { reason: "transport close" }));
     await waitFor(() => expect(screen.getByText(/^reconnecting…$/)).toBeTruthy());
+    // The transition is reported as a bounded reconnect outcome (PRD 25.8).
+    expect(reportReconnect).toHaveBeenCalledWith("reconnecting");
   });
 
   it("acknowledges a recovered reconnect, then settles back to connected", async () => {
@@ -210,6 +223,7 @@ describe("App shell", () => {
     await enterAndInit();
     await emit(() => netMock.net.emit("socket-disconnect", { reason: "io server disconnect" }));
     await waitFor(() => expect(screen.getByText(/^disconnected$/)).toBeTruthy());
+    expect(reportReconnect).toHaveBeenCalledWith("gone");
   });
 
   it("arrives receive-only without issuing a device publish command", async () => {

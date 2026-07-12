@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Lock, MessageSquare, ChevronDown, Flag } from "lucide-react";
+import { Lock, MessageSquare, ChevronDown, Flag, VolumeX, Volume2, Ban, ShieldOff } from "lucide-react";
 import {
   LIMITS,
   SERVER_EVENTS,
@@ -14,6 +14,8 @@ import { bus } from "../game/eventBus";
 import { chatCooldownNotice } from "../game/chatCooldown";
 import { reportResultNotice } from "../game/report";
 import { submitReport } from "../net/reports";
+import { localModeration } from "../media/localModeration";
+import { blockUser, fetchBlockedIds, unblockUser } from "../net/blocks";
 
 const ReportDialog = lazy(() => import("./ReportDialog"));
 import {
@@ -93,6 +95,10 @@ export default function ChatBox() {
   const [roomName, setRoomName] = useState<string | null>(null);
   // The message a report dialog is open for, or null (PRD 25.12).
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  // Whether the mute/block management list is open (PRD 25.13).
+  const [showMod, setShowMod] = useState(false);
+  // Re-render whenever the local mute/block sets change (session store).
+  const [modTick, bumpModeration] = useReducer((n: number) => n + 1, 0);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -201,6 +207,15 @@ export default function ChatBox() {
       offLeftRoom();
       offFocus();
     };
+  }, []);
+
+  // Local mute + persistent block (PRD 25.13): re-render on any change to the
+  // session moderation sets, and load this player's server block list on mount so
+  // blocked users' media/speaking is muted locally from the start.
+  useEffect(() => {
+    const off = localModeration.subscribe(bumpModeration);
+    void fetchBlockedIds().then((ids) => localModeration.setBlocked(ids));
+    return off;
   }, []);
 
   // Tell the toast/sound layer whether chat is visible (expanded == "read").
@@ -321,10 +336,15 @@ export default function ChatBox() {
 
   const visible = useMemo(
     () =>
-      entries.filter((e) =>
-        e.kind === "chat" ? (panel.tab === "room" ? e.scope !== "world" : true) : true
-      ),
-    [entries, panel.tab]
+      entries.filter((e) => {
+        if (e.kind !== "chat") return true;
+        // Hide locally-muted / blocked authors' lines (PRD 25.13). Block delivery is
+        // also filtered server-side; this covers session-only local mute too.
+        if (localModeration.isCommsSuppressed(e.id)) return false;
+        return panel.tab === "room" ? e.scope !== "world" : true;
+      }),
+    // modTick re-runs the filter when a mute/block toggles.
+    [entries, panel.tab, modTick]
   );
 
   const renderLine = (e: Entry, i: number) => {
@@ -352,21 +372,83 @@ export default function ChatBox() {
         <span className={`mc-name ${me ? "me" : ""}`}>&lt;{e.name}&gt;</span>{" "}
         <span className="mc-text">{e.text}</span>
         {!me && (
-          <button
-            type="button"
-            className="mc-report-btn"
-            title={`Report ${e.name}'s message`}
-            aria-label={`Report ${e.name}'s message`}
-            onClick={() =>
-              setReportTarget({ messageId: e.messageId, name: e.name, text: e.text })
-            }
-          >
-            <Flag size={12} aria-hidden="true" />
-          </button>
+          <span className="mc-line-actions">
+            <button
+              type="button"
+              className="mc-report-btn"
+              title={localModeration.isMuted(e.id) ? `Unmute ${e.name}` : `Mute ${e.name} (this session)`}
+              aria-label={localModeration.isMuted(e.id) ? `Unmute ${e.name}` : `Mute ${e.name}`}
+              onClick={() => toggleMute(e.id, e.name)}
+            >
+              {localModeration.isMuted(e.id) ? (
+                <Volume2 size={12} aria-hidden="true" />
+              ) : (
+                <VolumeX size={12} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              className="mc-report-btn"
+              title={`Block ${e.name}`}
+              aria-label={`Block ${e.name}`}
+              onClick={() => void doBlock(e.id, e.name)}
+            >
+              <Ban size={12} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="mc-report-btn"
+              title={`Report ${e.name}'s message`}
+              aria-label={`Report ${e.name}'s message`}
+              onClick={() =>
+                setReportTarget({ messageId: e.messageId, name: e.name, text: e.text })
+              }
+            >
+              <Flag size={12} aria-hidden="true" />
+            </button>
+          </span>
         )}
       </div>
     );
   };
+
+  // ---- local mute + persistent block (PRD 25.13) ----
+  const nameFor = (id: string): string => players.find((p) => p.id === id)?.name ?? id;
+
+  const toggleMute = (id: string, name: string) => {
+    const nowMuted = localModeration.toggleMute(id);
+    push({
+      kind: "sys",
+      text: nowMuted
+        ? `Muted ${name} for this session — you won't see their chat or hear them.`
+        : `Unmuted ${name}.`,
+    });
+  };
+
+  const doBlock = async (id: string, name: string) => {
+    // Optimistically mute their media/speaking locally; roll back if the server rejects.
+    localModeration.addBlocked(id);
+    const result = await blockUser(id);
+    if (result.ok) {
+      push({ kind: "sys", text: `Blocked ${name}. Neither of you will see the other's messages.` });
+    } else {
+      localModeration.removeBlocked(id);
+      push({ kind: "sys", text: `Couldn't block ${name} — please try again.` });
+    }
+  };
+
+  const doUnblock = async (id: string, name: string) => {
+    const result = await unblockUser(id);
+    if (result.ok) {
+      localModeration.removeBlocked(id);
+      push({ kind: "sys", text: `Unblocked ${name} — future messages will come through again.` });
+    } else {
+      push({ kind: "sys", text: `Couldn't unblock ${name} — please try again.` });
+    }
+  };
+
+  const mutedList = useMemo(() => localModeration.mutedIds(), [modTick]);
+  const blockedList = useMemo(() => localModeration.blockedIds(), [modTick]);
 
   const sendReport = async (target: ReportTarget, category: ReportCategory, note: string) => {
     const result = await submitReport(target.messageId, category, note || undefined);
@@ -416,6 +498,19 @@ export default function ChatBox() {
         )}
         <button
           type="button"
+          className={`mc-mod-toggle ${showMod ? "active" : ""}`}
+          onClick={() => setShowMod((v) => !v)}
+          aria-pressed={showMod}
+          title="Muted & blocked players"
+          aria-label="Muted and blocked players"
+        >
+          <ShieldOff size={14} aria-hidden="true" />
+          {(mutedList.length > 0 || blockedList.length > 0) && (
+            <span className="mc-mod-count">{mutedList.length + blockedList.length}</span>
+          )}
+        </button>
+        <button
+          type="button"
           className="mc-collapse"
           onClick={() => dispatch({ type: "collapse" })}
           aria-label="Collapse chat"
@@ -423,6 +518,37 @@ export default function ChatBox() {
           <ChevronDown size={16} aria-hidden="true" />
         </button>
       </div>
+
+      {showMod && (
+        <div className="mc-mod-panel">
+          <div className="mc-mod-section-title">Muted (this session)</div>
+          {mutedList.length === 0 ? (
+            <div className="mc-mod-empty">No one muted.</div>
+          ) : (
+            mutedList.map((id) => (
+              <div key={`m-${id}`} className="mc-mod-row">
+                <span className="mc-mod-name">{nameFor(id)}</span>
+                <button type="button" className="mc-mod-undo" onClick={() => toggleMute(id, nameFor(id))}>
+                  Unmute
+                </button>
+              </div>
+            ))
+          )}
+          <div className="mc-mod-section-title">Blocked</div>
+          {blockedList.length === 0 ? (
+            <div className="mc-mod-empty">No one blocked.</div>
+          ) : (
+            blockedList.map((id) => (
+              <div key={`b-${id}`} className="mc-mod-row">
+                <span className="mc-mod-name">{nameFor(id)}</span>
+                <button type="button" className="mc-mod-undo" onClick={() => void doUnblock(id, nameFor(id))}>
+                  Unblock
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       <div className="mc-list" ref={listRef}>
         {visible.length === 0 ? (

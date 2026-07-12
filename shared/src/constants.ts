@@ -105,6 +105,14 @@ export const REPORT_ACK_STATUSES = ["created", "duplicate"] as const;
 export type ReportAckStatus = (typeof REPORT_ACK_STATUSES)[number];
 
 /**
+ * Block action outcomes (PRD 25.13): a server-owned, persistent block is
+ * idempotent in both directions. `blocked`/`unblocked` mutated state; the
+ * `already-*`/`not-*` variants report a no-op so the UI can stay truthful.
+ */
+export const BLOCK_ACK_STATUSES = ["blocked", "already-blocked", "unblocked", "not-blocked"] as const;
+export type BlockAckStatus = (typeof BLOCK_ACK_STATUSES)[number];
+
+/**
  * TTL (seconds) on the server's bounded snapshot of a broadcast chat line kept so
  * a later report can bind the authoritative author/text without trusting the
  * client or retaining a full transcript (PRD 25.12). One hour bounds how long a
@@ -363,6 +371,27 @@ export const LIMITS = {
 export const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
 
 /**
+ * Stable domain categories for the handled-operational-error reporting path
+ * (PRD 25.8). These replace ad hoc free-text messages: a caught operational
+ * failure is reported as a `{ category, reason }` pair drawn only from these
+ * allowlists, never as an arbitrary string that could leak sensitive content.
+ */
+export const OPERATIONAL_CATEGORIES = ["auth-transport", "reconnect", "media-publish"] as const;
+
+/** Bounded reasons for an `auth-transport` failure (token fetch / socket auth). */
+export const AUTH_TRANSPORT_REASONS = ["unauthorized", "network", "server-error"] as const;
+
+/** Bounded reasons for a `reconnect` outcome (mirrors the client connection state). */
+export const RECONNECT_REASONS = ["reconnecting", "recovered", "gone"] as const;
+
+/**
+ * Bounded reasons for a `media-publish` failure. Kept in lockstep with the
+ * frontend `MediaFailure` union (`media/publicationState.ts`): denied,
+ * unavailable, failed.
+ */
+export const MEDIA_PUBLISH_REASONS = ["denied", "unavailable", "failed"] as const;
+
+/**
  * Rate-limit windows and other timing constants enforced server-side. Kept here so
  * the magic numbers behind the contract's abuse protections live in one place.
  */
@@ -400,6 +429,10 @@ export const RATE_LIMITS = {
    *  abuse without becoming its own spam vector. */
   reportWindowMs: 60_000,
   reportLimit: 20,
+  /** Block/unblock/list submit limiter (per IP; PRD 25.13). Comfortably above a
+   *  human curating their block list, well below an automated abuse vector. */
+  blockWindowMs: 60_000,
+  blockLimit: 30,
 } as const;
 
 /**

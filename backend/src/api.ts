@@ -8,32 +8,37 @@ import {
   RATE_LIMITS,
   arcadeScoreSchema,
   analyticsIngestRequestSchema,
+  blockCreateSchema,
   credentialsSchema,
   liveKitSchema,
   reportCreateSchema,
   type ArcadeGame,
   type ArcadeLeaderboard,
+  type BlockAck,
+  type BlockList,
   type ReportAck,
 } from "@metaverse/shared";
 import { issueToken, requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { ingestAnalyticsEvent, safelyRecordSigninOutcome } from "./analytics.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
-import { childLogger } from "./logger.js";
+import { childLogger, logger } from "./logger.js";
 import { hashSecret, verifySecret } from "./password.js";
 import {
   getArcadeBest,
   getArcadeLeaderboard,
   getRoom,
   getSpace,
+  insertBlock,
   insertReport,
+  removeBlock,
   spaceExists,
   submitArcadeScore,
 } from "./repository.js";
+import { blocks } from "./block-cache.js";
 import { getReportableMessage, redis } from "./redis.js";
 import { getGeometryManifest } from "./geometry.js";
 import { canPublishFromStage } from "./stage.js";
-import { childLogger, logger } from "./logger.js";
 import { requestLog } from "./request-logger.js";
 
 const analyticsFallbackLog = childLogger({ module: "analytics" });
@@ -122,6 +127,22 @@ const reportLimiter = rateLimit({
     const retryAfterSeconds = Math.max(
       1,
       Math.min(Math.ceil(remainingMs / 1000), Math.ceil(RATE_LIMITS.reportWindowMs / 1000)),
+    );
+    response.status(429).json({ error: "rate-limited", retryAfterSeconds });
+  },
+});
+
+const blockLimiter = rateLimit({
+  windowMs: RATE_LIMITS.blockWindowMs,
+  limit: RATE_LIMITS.blockLimit,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  handler: (request, response) => {
+    const resetTime = (request as typeof request & { rateLimit?: RateLimitInfo }).rateLimit?.resetTime;
+    const remainingMs = resetTime ? resetTime.getTime() - Date.now() : RATE_LIMITS.blockWindowMs;
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.min(Math.ceil(remainingMs / 1000), Math.ceil(RATE_LIMITS.blockWindowMs / 1000)),
     );
     response.status(429).json({ error: "rate-limited", retryAfterSeconds });
   },
@@ -261,6 +282,54 @@ api.post("/reports", reportLimiter, requireAuth, async (request, response) => {
   moderationLog.info({ event: "report_created", status, category: parsed.data.category, scope: snapshot.scope }, "chat report ingested");
   const ack: ReportAck = { status };
   response.status(status === "created" ? 201 : 200).json(ack);
+});
+
+// Persistent block (PRD 25.13): a server-owned, symmetric-in-effect block. The
+// blocker is the authenticated user; the client can only name a target id. The
+// cache is updated in lock-step so live chat delivery filters immediately, in
+// both directions, without a per-message DB read.
+api.post("/blocks", blockLimiter, requireAuth, async (request, response) => {
+  const parsed = blockCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "validation" });
+    return;
+  }
+  const blocker = (request as AuthenticatedRequest).user;
+  if (parsed.data.targetId === blocker.id) {
+    response.status(400).json({ error: "cannot-block-self" });
+    return;
+  }
+  const status = await insertBlock(blocker.id, parsed.data.targetId);
+  blocks.addBlock(blocker.id, parsed.data.targetId);
+  moderationLog.info({ event: "block_created", status }, "player block set");
+  const ack: BlockAck = { status };
+  response.status(status === "blocked" ? 201 : 200).json(ack);
+});
+
+// Unblock (PRD 25.13): removes only future suppression — there is no backlog to
+// replay, so an unblock simply lets subsequent messages/media through again.
+api.delete("/blocks", blockLimiter, requireAuth, async (request, response) => {
+  const parsed = blockCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "validation" });
+    return;
+  }
+  const blocker = (request as AuthenticatedRequest).user;
+  const status = await removeBlock(blocker.id, parsed.data.targetId);
+  blocks.removeBlock(blocker.id, parsed.data.targetId);
+  moderationLog.info({ event: "block_removed", status }, "player block cleared");
+  const ack: BlockAck = { status };
+  response.json(ack);
+});
+
+// The requesting player's own block list (ids they blocked), loaded on connect
+// so the client can mute blocked users' media/speaking locally. Authoritative
+// delivery filtering is server-side regardless of what the client holds.
+api.get("/blocks", blockLimiter, requireAuth, async (request, response) => {
+  const user = (request as AuthenticatedRequest).user;
+  await blocks.ensureLoaded(user.id);
+  const payload: BlockList = { blocked: blocks.blockedBy(user.id) };
+  response.json(payload);
 });
 
 api.post("/livekit/token", requireAuth, async (request, response) => {

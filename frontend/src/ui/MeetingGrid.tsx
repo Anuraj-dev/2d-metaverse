@@ -26,6 +26,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { MeetingParticipant } from "@metaverse/shared";
 import { roomVideo } from "../media/livekit";
 import { speakingState } from "../media/speakingState";
+import { localModeration } from "../media/localModeration";
 import {
   TILE_ASPECT,
   arrangeMeeting,
@@ -46,11 +47,30 @@ interface RenderTile {
   trackRef?: TrackReferenceOrPlaceholder;
 }
 
-/** Whether a participant is an active speaker, off the shared media seam (PRD 20). */
+/**
+ * Whether a participant is an active speaker, off the shared media seam (PRD 20).
+ * A muted/blocked participant never reads as speaking for this viewer (PRD 25.13).
+ */
 function useSpeaking(playerId: string): boolean {
   return useSyncExternalStore(
-    (cb) => speakingState.subscribe(() => cb()),
-    () => speakingState.speaking.has(playerId),
+    (cb) => {
+      const offSpeaking = speakingState.subscribe(() => cb());
+      const offModeration = localModeration.subscribe(() => cb());
+      return () => {
+        offSpeaking();
+        offModeration();
+      };
+    },
+    () => speakingState.speaking.has(playerId) && !localModeration.isCommsSuppressed(playerId),
+    () => false,
+  );
+}
+
+/** Whether this viewer is hiding a participant's video (blocked; PRD 25.13). */
+function useVideoHidden(playerId: string): boolean {
+  return useSyncExternalStore(
+    (cb) => localModeration.subscribe(() => cb()),
+    () => localModeration.isVideoHidden(playerId),
     () => false,
   );
 }
@@ -258,8 +278,13 @@ function TileBody({
   screen: boolean;
 }) {
   const speaking = useSpeaking(tile.participantId);
+  // A blocked participant's video is hidden — they fall back to the pixel avatar so
+  // presence stays visible while their communication is suppressed (PRD 25.13).
+  const videoHidden = useVideoHidden(tile.participantId);
   const videoRef =
-    tile.hasVideo && tile.trackRef && isTrackReference(tile.trackRef) ? tile.trackRef : null;
+    !videoHidden && tile.hasVideo && tile.trackRef && isTrackReference(tile.trackRef)
+      ? tile.trackRef
+      : null;
   return (
     <div className={`meet-tile-inner ${speaking ? "speaking" : ""}`} data-speaking={speaking}>
       {videoRef ? (

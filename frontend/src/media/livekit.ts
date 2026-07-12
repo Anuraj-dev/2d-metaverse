@@ -53,6 +53,7 @@ async function publishOutcome(
     return { status: classifyMediaError(e) };
   }
 }
+import { localModeration } from "./localModeration";
 
 /**
  * Identities whose live stage audio the local client is currently subscribed to
@@ -62,6 +63,20 @@ async function publishOutcome(
  * attach/detach; read by `WorldAudio` on every positions tick.
  */
 let stagePerformerIds: ReadonlySet<string> = new Set();
+
+/**
+ * Ids the local viewer is muting/blocking (PRD 25.13), kept in sync with
+ * `localModeration`. World proximity audio unions these into its per-tick muted
+ * set (silenced by `computeZonedVolumes`); the meeting room re-applies them to its
+ * attached `<audio>` elements. Registered appliers re-run whenever the set
+ * changes so a block/unblock takes effect live without a room reconnect.
+ */
+let localMutedAudioIds: ReadonlySet<string> = localModeration.audioMutedIds();
+const moderationAppliers = new Set<() => void>();
+localModeration.subscribe(() => {
+  localMutedAudioIds = localModeration.audioMutedIds();
+  moderationAppliers.forEach((apply) => apply());
+});
 
 async function fetchToken(
   roomName: string,
@@ -211,14 +226,19 @@ class WorldAudio {
     const remoteIds = p.players
       .filter((pl) => !pl.self && pl.id !== this.selfId)
       .map((pl) => pl.id);
-    // Mute any remote who is a live stage performer: the listener already hears
-    // them server-wide off the stage room, so their proximity track is deduped.
+    // Mute any remote who is a live stage performer (already heard server-wide off
+    // the stage room, so their proximity track is deduped) OR whom the viewer is
+    // locally muting/blocking (PRD 25.13). Both force volume 0 via `mutedIds`.
+    const mutedIds =
+      localMutedAudioIds.size === 0
+        ? stagePerformerIds
+        : new Set<string>([...stagePerformerIds, ...localMutedAudioIds]);
     const zoned = computeZonedVolumes(
       p.players,
       this.selfId,
       remoteIds,
       AUDIO_CUTOFF,
-      stagePerformerIds
+      mutedIds
     );
     if (!zoned) return;
     // PRD 21: the AUDIBLE gain glides toward the target over VOICE_RAMP_MS for
@@ -285,6 +305,17 @@ class RoomVideo {
   private sharing = false;
 
   /**
+   * Re-apply local mute/block (PRD 25.13) to every attached meeting audio element:
+   * a suppressed peer's audio is forced to 0, others restored to full. Registered
+   * with the shared moderation seam while the room is live, so a block/unblock
+   * takes effect immediately without a reconnect. A blocked peer stays in the grid
+   * (presence visible) — only their audio is silenced (video is hidden in the grid).
+   */
+  private applyModeration = () => {
+    for (const [id, el] of this.audioEls) el.volume = localModeration.isCommsSuppressed(id) ? 0 : 1;
+  };
+
+  /**
    * The underlying LiveKit Room, surfaced for the meeting grid
    * (@livekit/components-react needs the Room object, not raw tracks — the grid
    * reads camera + screen-share tracks straight off it via `useTracks`). Null
@@ -328,12 +359,17 @@ class RoomVideo {
       wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
         surfaceVideo: () => {},
         dropVideo: () => {},
-        attachAudio: (id, el) => this.audioEls.set(id, el),
+        attachAudio: (id, el) => {
+          // Start a suppressed peer silent (PRD 25.13) rather than briefly audible.
+          if (localModeration.isCommsSuppressed(id)) el.volume = 0;
+          this.audioEls.set(id, el);
+        },
         detachAudio: (id) => {
           this.audioEls.get(id)?.remove();
           this.audioEls.delete(id);
         },
       });
+      moderationAppliers.add(this.applyModeration);
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
         this.audioEls.get(p.identity)?.remove();
         this.audioEls.delete(p.identity);
@@ -435,6 +471,7 @@ class RoomVideo {
 
   async leave() {
     this.setSharing(false);
+    moderationAppliers.delete(this.applyModeration);
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
     speakingState.clear("room");
