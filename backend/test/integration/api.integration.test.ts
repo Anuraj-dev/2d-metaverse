@@ -502,7 +502,7 @@ describe("arcade high scores", () => {
   });
 
   it("keeps only the best per user and returns it on submit", async () => {
-    const { username, token } = await createUser(base, "arc1");
+    const { username, token } = await createPlayer("arc1");
     const first = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 12 } });
     expect(first.status).toBe(200);
     expect(first.json.best).toBe(12);
@@ -519,7 +519,7 @@ describe("arcade high scores", () => {
   });
 
   it("returns the caller's best (null when unplayed) and a sorted top-N", async () => {
-    const { token } = await createUser(base, "arc2");
+    const { token } = await createPlayer("arc2");
     const unplayed = await api(base, "/api/v1/arcade/scores/flappy", { token });
     expect(unplayed.status).toBe(200);
     expect(unplayed.json.best).toBeNull();
@@ -532,7 +532,7 @@ describe("arcade high scores", () => {
   });
 
   it("rejects an unknown game and a malformed score", async () => {
-    const { token } = await createUser(base, "arc3");
+    const { token } = await createPlayer("arc3");
     expect((await api(base, "/api/v1/arcade/scores/pong", { token })).status).toBe(404);
     const bad = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: -1 } });
     expect(bad.status).toBe(400);
@@ -545,7 +545,7 @@ describe("arcade high scores", () => {
     // unknown game. Stored historical rows on the free-text `game` column are
     // intentionally left intact (no destructive migration); this only shuts the
     // product surface.
-    const { token } = await createUser(base, "arc4");
+    const { token } = await createPlayer("arc4");
     const write = await api(base, "/api/v1/arcade/scores", { token, body: { game: "2048", score: 256 } });
     expect(write.status).toBe(400);
     expect(write.json.error).toBe("invalid-score");

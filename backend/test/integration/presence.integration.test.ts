@@ -1,6 +1,6 @@
 import { io, type Socket as ClientSocket } from "socket.io-client";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createPlayer, once, onceMatching, startServer, teardown, type TestServer } from "./helpers.js";
+import { createPlayer, once, onceMatching, startServer, teardown, walkToDoor, type TestServer } from "./helpers.js";
 import type { PresenceSnapshot } from "@metaverse/shared";
 
 /**
@@ -81,6 +81,7 @@ describe("presence read model over the socket boundary", () => {
     const user = await createPlayer("pres-c");
     const { socket, selfId } = await joinAs(user.token);
     // First knocker into an empty room walks in as admin (PRD 14).
+    await walkToDoor(socket, "1");
     const approved = once<{ result: string }>(socket, "knock-result");
     socket.emit("knock", { roomId: "1" });
     expect((await approved).result).toBe("approved");
