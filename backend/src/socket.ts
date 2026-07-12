@@ -26,6 +26,7 @@ import {
   type GeometryManifest,
 } from "@metaverse/shared";
 import { verifyToken } from "./auth.js";
+import { blocks } from "./block-cache.js";
 import { config } from "./config.js";
 import { getGeometryManifest } from "./geometry.js";
 import { createWalkability, validateMove, type Walkability } from "./movement.js";
@@ -94,6 +95,22 @@ const boardKey = (spaceId: string, tableId: string) => `board:${spaceId}:${table
 const roomAdminKey = (roomId: string) => `room-admin:${roomId}`;
 const pendingLeaves = new Map<string, NodeJS.Timeout>();
 const activeSockets = new Map<string, GameSocket>();
+
+/**
+ * Socket-id "rooms" of every connected player in a block relation with `authorId`
+ * (PRD 25.13). A broadcast excludes these so a blocked recipient never receives
+ * the author's line — symmetric, so the same exclusion holds whichever party
+ * authored. Empty when the author has no blocks, keeping the common path a plain
+ * room broadcast.
+ */
+function blockedSocketRooms(authorId: string): string[] {
+  const rooms: string[] = [];
+  for (const otherId of blocks.relatedIds(authorId)) {
+    const other = activeSockets.get(otherId);
+    if (other) rooms.push(other.id);
+  }
+  return rooms;
+}
 
 async function presenceFor(spaceId: string): Promise<PlayerState[]> {
   const values = await redis.hVals(`presence:${spaceId}`);
@@ -181,6 +198,8 @@ export function createGameServer(httpServer: HttpServer) {
     // In-meeting chat is delivered per-participant (never the room channel), so
     // an unseated occupant sharing the room zone can't eavesdrop on the meeting.
     sendToPlayer: (playerId, event, ...payload) => activeSockets.get(playerId)?.emit(event, ...payload),
+    // Block filtering for in-meeting chat (PRD 25.13), both directions.
+    canDeliver: (senderId, recipientId) => !blocks.isBlockedPair(senderId, recipientId),
     log: childLogger({ module: "meeting" }),
   });
 
@@ -379,6 +398,8 @@ export function createGameServer(httpServer: HttpServer) {
         // the expired socket's grace cleanup cannot delete the recovered state.
         await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify({ ...self, connectionId: socket.id }));
         activeSockets.set(playerId, socket);
+        // Refresh block-pair filtering before this recovered session resumes chat.
+        await blocks.ensureLoaded(playerId);
         const players = (await presenceFor(spaceId)).filter((player) => player.id !== playerId);
         socket.emit("init", { selfId: playerId, players: [self, ...players] });
         log.info("socket connection recovered");
@@ -413,6 +434,10 @@ export function createGameServer(httpServer: HttpServer) {
 
       socket.data.playerId = userId;
       socket.data.spaceId = parsed.data.spaceId;
+      // Load this player's block relations before any chat can flow (PRD 25.13),
+      // so delivery filtering is correct from their first line — both the ids they
+      // blocked and the ids that blocked them.
+      await blocks.ensureLoaded(userId);
       log = log.child({ playerId: userId, spaceId: parsed.data.spaceId });
       log.info("player joined space");
       await socket.join(spaceChannel(parsed.data.spaceId));
@@ -513,7 +538,13 @@ export function createGameServer(httpServer: HttpServer) {
         { authorId: playerId, authorName: username, text: parsed.data.text, scope, spaceId, ts },
         REPORT_MESSAGE_TTL_SECONDS,
       );
-      io.to(toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId)).emit("chat", message);
+      // Block filtering (PRD 25.13): exclude every recipient in a block relation
+      // with the author, in both directions. The exclusion is by socket id, so the
+      // author still sees their own line and unrelated members are untouched.
+      const channel = toWorld ? spaceChannel(spaceId) : roomChannel(currentRoomId);
+      const excluded = blockedSocketRooms(playerId);
+      const target = excluded.length > 0 ? io.to(channel).except(excluded) : io.to(channel);
+      target.emit("chat", message);
     }));
 
     // In-meeting chat (PRD 10): scoped to the sender's live meeting. The meeting
@@ -543,8 +574,15 @@ export function createGameServer(httpServer: HttpServer) {
       }
       const target = activeSockets.get(parsed.data.to);
       const targetName = target?.data.username;
-      // Deliver only when the target is online and in the same space.
-      if (!target || !targetName || target.data.spaceId !== spaceId) {
+      // Deliver only when the target is online and in the same space. A block in
+      // either direction (PRD 25.13) is treated as undeliverable — the same coarse
+      // whisper-fail as an absent target, so block status is never leaked.
+      if (
+        !target ||
+        !targetName ||
+        target.data.spaceId !== spaceId ||
+        blocks.isBlockedPair(playerId, parsed.data.to)
+      ) {
         socket.emit("whisper-fail", { name: parsed.data.to });
         return;
       }

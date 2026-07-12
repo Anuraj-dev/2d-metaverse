@@ -40,6 +40,12 @@ export interface MeetingManagerDeps {
   broadcast: MeetingBroadcast;
   /** Per-participant delivery, so in-meeting chat never leaks to spectators. */
   sendToPlayer: MeetingSendToPlayer;
+  /**
+   * Whether an in-meeting chat line from `senderId` may reach `recipientId`
+   * (PRD 25.13). Returns false for a blocked pair in either direction so the
+   * line is silently withheld from that recipient. Defaults to always-deliver.
+   */
+  canDeliver?: (senderId: string, recipientId: string) => boolean;
   log: Logger;
 }
 
@@ -181,6 +187,9 @@ export function createMeetingManager(deps: MeetingManagerDeps): MeetingManager {
         if (state.phase !== "active" || !state.participants.includes(senderId)) return;
         const message = { roomId, id: senderId, name: deps.resolveName(senderId), text };
         for (const participantId of state.participants) {
+          // Withhold from a blocked pair (either direction) — the sender still
+          // gets their own echo (canDeliver(x, x) is always true).
+          if (deps.canDeliver && !deps.canDeliver(senderId, participantId)) continue;
           deps.sendToPlayer(participantId, "meeting-chat", message);
         }
       },
