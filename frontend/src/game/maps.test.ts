@@ -163,6 +163,49 @@ describe("tileset integrity (JSON ↔ image on disk)", () => {
   });
 });
 
+describe("campus ground plausibility (PRD 25.32)", () => {
+  // Stone/path family (exterior.png) — the cracked-stone plaza fill, its
+  // edge/corner trims, and the inverse grass-clearing patches. See
+  // gen_campus.py STONE / ST_* / CLR_* constants.
+  const STONE_FAMILY = new Set([
+    1946, 1912, 1913, 1914, 1945, 1947, 1978, 1979, 1980, 1948, 1949, 1981, 1982,
+  ]);
+  // Every tile a tree block paints across its three layers (canopy → decor_above,
+  // trunk → walls, shadow → ground_decor). See gen_campus.py TREE_SMALL/TREE_BIG.
+  const TREE_GIDS = new Set([
+    955, 956, 957, 988, 989, 990, 1021, 1022, 1023, 1054, 1055, 1056, 958, 959, 960,
+    961, 991, 992, 993, 994, 1024, 1025, 1026, 1027, 1057, 1058, 1059, 1060,
+  ]);
+
+  function layerData(json: TiledMap, name: string): number[] {
+    const layer = json.layers.find((l) => l.name === name);
+    if (!layer?.data) throw new Error(`campus ${name} layer missing`);
+    return layer.data;
+  }
+
+  // Trees must not grow from concrete: no canopy/trunk/shadow tile may sit over a
+  // stone/path ground tile. The generator clears each tree footprint back to grass
+  // before the ground detail passes (gen_campus.py "Tree ground clearing" step).
+  it("no tree tile grows from a concrete/path ground tile", () => {
+    const json = loadMap("campus");
+    const ground = layerData(json, "ground");
+    const treeLayers = ["decor_above", "walls", "ground_decor"].map((n) =>
+      layerData(json, n)
+    );
+    const offenders: string[] = [];
+    for (let i = 0; i < ground.length; i++) {
+      if (!STONE_FAMILY.has(ground[i] ?? 0)) continue;
+      for (const data of treeLayers) {
+        if (TREE_GIDS.has(data[i] ?? 0)) {
+          offenders.push(`tile ${i}: ground ${ground[i]} under tree ${data[i]}`);
+          break;
+        }
+      }
+    }
+    expect(offenders, `tree-on-concrete defects: ${offenders.join("; ")}`).toHaveLength(0);
+  });
+});
+
 describe("campus arcade cabinets (PRD 11)", () => {
   interface TiledObject {
     name: string;
