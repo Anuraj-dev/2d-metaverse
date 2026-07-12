@@ -360,18 +360,16 @@ describe("room access — knock/approve (PRD 14)", () => {
     expect(await approved).toEqual({ roomId: "1", result: "approved" });
   });
 
-  it("denies a knock from across the map, but admits one from the door (PRD 25.23)", async () => {
+  it("denies a knock from across the map with a typed too-far result (PRD 25.23)", async () => {
     const remote = await joinAs((await createPlayer("rkr")).token);
-    // Standing at spawn (plaza centre), far from room 3's door: authoritative
+    // Standing at spawn (plaza centre), far from any room door: authoritative
     // proximity refuses the knock with a typed too-far result — no admin toast,
     // no admission — instead of hanging the knocker's "Knocking…" UI forever.
+    // (The valid door flow — walk up, knock, admitted — is exercised by every
+    // enterAsAdmin/knockAndApprove call in this suite.)
     const farResult = once<{ roomId: string; result: string }>(remote.socket, "knock-result");
-    remote.socket.emit("knock", { roomId: "3" });
-    expect(await farResult).toEqual({ roomId: "3", result: "too-far" });
-
-    // The same player, now standing at the door, walks straight into the empty
-    // room as its admin — the valid door flow is unchanged.
-    await enterAsAdmin(remote, "3");
+    remote.socket.emit("knock", { roomId: "1" });
+    expect(await farResult).toEqual({ roomId: "1", result: "too-far" });
   });
 
   it("times out an unanswered knock as denied", async () => {
@@ -408,7 +406,14 @@ describe("seats", () => {
     await enterAsAdmin(a, "4");
     await knockAndApprove("4", a, b);
 
-    // A walks to seat 0 and sits — near the seat, in the room: accepted.
+    // PRD 25.23 proximity: A is in the room and admitted, but still standing at
+    // the door (its anchor) — sitting from there is too far from the seat and is
+    // a typed denial, not an admission. (door 4 → seat 0 is 84px ≫ tolerance.)
+    const tooFar = once(a.socket, "seat-denied");
+    a.socket.emit("seat-sit", { roomId: "4", seatId: 0 });
+    expect(await tooFar).toEqual({ roomId: "4", seatId: 0, reason: "too-far" });
+
+    // A then walks to seat 0 and sits — near the seat, in the room: accepted.
     const sitSeenByB = once(b.socket, "seat-update");
     await sitAt(a, "4", 0);
     expect(await sitSeenByB).toEqual({ roomId: "4", seatId: 0, playerId: a.init.selfId });
@@ -434,17 +439,6 @@ describe("seats", () => {
     a.socket.emit("seat-sit", { roomId: "5", seatId: 0 });
     expect(await denied).toEqual({ roomId: "5", seatId: 0, reason: "not-in-room" });
     await expectSilence(b.socket, "seat-update");
-  });
-
-  it("denies a seat-sit from across the room (too far from the seat)", async () => {
-    const a = await joinAs((await createPlayer("sfa")).token);
-    await enterAsAdmin(a, "4");
-    // A is admitted and standing at the door (its move-anchor), but has NOT
-    // walked to the seat: the sit is proximity-denied even though room + access
-    // are valid. (door 4 → seat 0 is 84px ≫ the one-tile tolerance.)
-    const denied = once(a.socket, "seat-denied");
-    a.socket.emit("seat-sit", { roomId: "4", seatId: 0 });
-    expect(await denied).toEqual({ roomId: "4", seatId: 0, reason: "too-far" });
   });
 });
 
