@@ -7,9 +7,13 @@ import { dirSchema } from "./socket.js";
 import {
   ACTIVE_SPACE_KINDS,
   ARCADE_GAMES,
+  BLOCK_ACK_STATUSES,
+  AUTH_TRANSPORT_REASONS,
   LIMITS,
+  MEDIA_PUBLISH_REASONS,
   PRESENCE_ACTIVITY_KINDS,
   RATE_LIMITS,
+  RECONNECT_REASONS,
   REPORT_ACK_STATUSES,
   REPORT_CATEGORIES,
   USERNAME_PATTERN,
@@ -53,6 +57,43 @@ export const clientErrorSchema = z.object({
 });
 export type ClientErrorReport = z.infer<typeof clientErrorSchema>;
 
+/**
+ * `POST /client-errors/operational` body (PRD 25.8): a bounded report of a
+ * CAUGHT/handled operational failure (auth-transport, reconnect, media-publish).
+ *
+ * Privacy discipline is enforced by the schema itself, not by trusting the
+ * client: each variant is a `strictObject` (extra keys are rejected, so a
+ * report can never smuggle chat/transcripts, credentials, precise coordinates,
+ * SDP, or raw device identifiers), and `reason` is a closed enum per category —
+ * there is no free-text message or stack field. `sha`/`url`/`userAgent`/
+ * `context` reuse the same coarse, capped fields (and caps) as the crash beacon;
+ * `url` carries a pathname only and `context` a short allowlisted scene note.
+ */
+const operationalReportBase = {
+  sha: z.string().min(1).max(LIMITS.clientErrorShaMax),
+  url: z.string().max(LIMITS.clientErrorUrlMax).optional(),
+  userAgent: z.string().max(LIMITS.clientErrorUserAgentMax).optional(),
+  context: z.string().max(LIMITS.clientErrorContextMax).optional(),
+} as const;
+export const operationalReportSchema = z.discriminatedUnion("category", [
+  z.strictObject({
+    category: z.literal("auth-transport"),
+    reason: z.enum(AUTH_TRANSPORT_REASONS),
+    ...operationalReportBase,
+  }),
+  z.strictObject({
+    category: z.literal("reconnect"),
+    reason: z.enum(RECONNECT_REASONS),
+    ...operationalReportBase,
+  }),
+  z.strictObject({
+    category: z.literal("media-publish"),
+    reason: z.enum(MEDIA_PUBLISH_REASONS),
+    ...operationalReportBase,
+  }),
+]);
+export type OperationalReport = z.infer<typeof operationalReportSchema>;
+
 /** `POST /api/v1/arcade/scores` body: a client-reported score for one cabinet. */
 export const arcadeScoreSchema = z.object({
   game: z.enum(ARCADE_GAMES),
@@ -73,6 +114,17 @@ export const reportCreateSchema = z.strictObject({
   note: z.string().trim().min(1).max(LIMITS.reportNoteMax).optional(),
 });
 export type ReportCreateRequest = z.infer<typeof reportCreateSchema>;
+
+/**
+ * `POST /api/v1/blocks` body (PRD 25.13): persistently block another player. The
+ * client supplies only the target's player id; the blocker is bound server-side
+ * from the authenticated session (a client can never block on someone's behalf).
+ * The same shape is reused for `DELETE /api/v1/blocks` (unblock).
+ */
+export const blockCreateSchema = z.strictObject({
+  targetId: z.string().min(1).max(LIMITS.playerIdMax),
+});
+export type BlockCreateRequest = z.infer<typeof blockCreateSchema>;
 
 /* ------------------------------- responses -------------------------------- */
 
@@ -239,6 +291,7 @@ export const presenceSnapshotSchema = z.strictObject({
 });
 export type PresenceSnapshot = z.infer<typeof presenceSnapshotSchema>;
 
+/**
  * `POST /api/v1/reports` success response (PRD 25.12): a visible acknowledgement.
  * `created` recorded a fresh moderation record; `duplicate` means the reporter had
  * already flagged this same message (idempotent — no second record is written).
@@ -264,6 +317,41 @@ export const reportFailureResponseSchema = z.discriminatedUnion("error", [
   }),
 ]);
 export type ReportFailureResponse = z.infer<typeof reportFailureResponseSchema>;
+
+/**
+ * `POST`/`DELETE /api/v1/blocks` success response (PRD 25.13): a visible,
+ * idempotent acknowledgement of the requested transition (see `BLOCK_ACK_STATUSES`).
+ */
+export const blockAckSchema = z.strictObject({
+  status: z.enum(BLOCK_ACK_STATUSES),
+});
+export type BlockAck = z.infer<typeof blockAckSchema>;
+
+/**
+ * `GET /api/v1/blocks` response (PRD 25.13): the requesting player's own block
+ * list — the ids they have blocked. The client loads this on connect to mute the
+ * blocked users' media/speaking locally; server-side delivery filtering does the
+ * symmetric, authoritative work regardless of what the client holds.
+ */
+export const blockListSchema = z.strictObject({
+  blocked: z.array(z.string().min(1).max(LIMITS.playerIdMax)),
+});
+export type BlockList = z.infer<typeof blockListSchema>;
+
+/**
+ * Bounded failure response for the block endpoints (PRD 25.13). Deliberately
+ * coarse — it never reflects the target's presence or server internals.
+ */
+export const blockFailureResponseSchema = z.discriminatedUnion("error", [
+  z.strictObject({ error: z.literal("validation") }),
+  z.strictObject({ error: z.literal("cannot-block-self") }),
+  z.strictObject({ error: z.literal("unauthorized") }),
+  z.strictObject({
+    error: z.literal("rate-limited"),
+    retryAfterSeconds: z.number().int().min(1).max(Math.ceil(RATE_LIMITS.blockWindowMs / 1000)),
+  }),
+]);
+export type BlockFailureResponse = z.infer<typeof blockFailureResponseSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({

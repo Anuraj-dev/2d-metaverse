@@ -927,6 +927,63 @@ html, body, #root {
 .mc-report-btn:focus-visible { opacity: 1; }
 .mc-report-btn:hover { color: #ff7676; }
 
+/* Mute/block/report actions (PRD 25.12/25.13) live in one inline cluster per line. */
+.mc-line-actions { white-space: nowrap; }
+
+/* Muted & blocked management (PRD 25.13). */
+.mc-mod-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: #6b7490;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.mc-mod-toggle:hover,
+.mc-mod-toggle.active { color: #9aa4c0; }
+.mc-mod-count {
+  font-size: 10px;
+  line-height: 1;
+  background: #38405c;
+  color: #cdd4ea;
+  border-radius: 8px;
+  padding: 1px 5px;
+}
+.mc-mod-panel {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+.mc-mod-section-title {
+  color: #8a93b0;
+  font-weight: 600;
+  margin: 4px 0 2px;
+}
+.mc-mod-empty { color: #6b7490; margin-bottom: 2px; }
+.mc-mod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+.mc-mod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-mod-undo {
+  flex: none;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #cdd4ea;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.mc-mod-undo:hover { border-color: rgba(255, 255, 255, 0.4); }
+
 .mc-report-overlay {
   position: fixed;
   inset: 0;
