@@ -153,6 +153,8 @@ describe("ChatBox persistent panel", () => {
     fireEvent.change(input, { target: { value: "/w zzz" } });
     expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
     expect((input as HTMLInputElement).value).toBe("/w zzz");
+  });
+
   it("surfaces a world-chat cooldown with retry timing instead of dropping silently", () => {
     render(<ChatBox />);
     act(() => netMock.net.emit("chat-cooldown", { scope: "world", retryAfterMs: 4000 }));
