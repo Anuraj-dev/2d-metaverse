@@ -26,7 +26,7 @@ import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
-import { isRateLimitExceeded, redis } from "./redis.js";
+import { checkRateLimit, isRateLimitExceeded, redis } from "./redis.js";
 import { sitPlayer, standPlayer } from "./seat-store.js";
 import { createMeetingManager, type MeetingManager } from "./meeting-manager.js";
 import type { RoomMeetingSnapshot } from "./meeting.js";
@@ -42,6 +42,8 @@ import type { ClientToServerEvents, PlayerState, ServerToClientEvents, SocketDat
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 // Payload schemas + abuse-protection windows live in @metaverse/shared.
+const CHAT_LIMIT = RATE_LIMITS.chatLimit;
+const CHAT_WINDOW_SECONDS = RATE_LIMITS.chatWindowSeconds;
 const WHISPER_LIMIT = RATE_LIMITS.whisperLimit;
 const WHISPER_WINDOW_SECONDS = RATE_LIMITS.whisperWindowSeconds;
 const MEETING_CHAT_LIMIT = RATE_LIMITS.meetingChatLimit;
@@ -319,28 +321,46 @@ export function createGameServer(httpServer: HttpServer) {
     // Correlation for every log line this connection produces. Re-bound with
     // playerId/spaceId once the player joins a space.
     let log = childLogger({ module: "socket", socketId: socket.id, userId: socket.data.userId, username: socket.data.username });
+    let recoveryReady = Promise.resolve();
     const safeHandler = <T extends unknown[]>(event: string, handler: (...args: T) => Promise<void> | void) =>
-      (...args: T) => void Promise.resolve(handler(...args)).catch((error) => log.error({ err: error, event }, "socket handler failed"));
+      (...args: T) => void recoveryReady.then(() => handler(...args)).catch((error) => log.error({ err: error, event }, "socket handler failed"));
 
     let joined = false;
     let joinTimeout: NodeJS.Timeout | undefined;
-    if (socket.recovered && socket.data.playerId && socket.data.spaceId) {
+    if (socket.recovered && socket.data.playerId && socket.data.spaceId && socket.data.username) {
       log = log.child({ playerId: socket.data.playerId, spaceId: socket.data.spaceId });
       const timeout = pendingLeaves.get(socket.data.playerId);
       if (timeout) clearTimeout(timeout);
       pendingLeaves.delete(socket.data.playerId);
       boards.cancelForfeit(socket.data.playerId);
-      activeSockets.set(socket.data.playerId, socket);
-      void redis.hSet(`presence:${socket.data.spaceId}`, socket.data.playerId, JSON.stringify({
-        id: socket.data.playerId,
-        name: socket.data.username,
-        x: SPAWN_X,
-        y: SPAWN_Y,
-        dir: "down",
-        connectionId: socket.id
-      }));
       joined = true;
-      log.info("socket connection recovered");
+      const playerId = socket.data.playerId;
+      const spaceId = socket.data.spaceId;
+      const username = socket.data.username;
+      recoveryReady = (async () => {
+        const raw = await redis.hGet(`presence:${spaceId}`, playerId);
+        let restored: ReturnType<typeof moveSchema.safeParse> | null = null;
+        try {
+          restored = moveSchema.safeParse(raw ? JSON.parse(raw) : null);
+        } catch {
+          // Invalid JSON follows the same safe fallback as an invalid shape.
+        }
+        const position = restored?.success
+          ? restored.data
+          : { x: SPAWN_X, y: SPAWN_Y, dir: "down" as const };
+        if (!restored?.success) log.warn("invalid recovered presence; restoring spawn");
+        const self: PlayerState = { id: playerId, name: username, ...position };
+        // One Redis write transfers connection ownership and position together;
+        // the expired socket's grace cleanup cannot delete the recovered state.
+        await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify({ ...self, connectionId: socket.id }));
+        activeSockets.set(playerId, socket);
+        const players = (await presenceFor(spaceId)).filter((player) => player.id !== playerId);
+        socket.emit("init", { selfId: playerId, players: [self, ...players] });
+        log.info("socket connection recovered");
+      })().catch((error: unknown) => {
+        log.error({ err: error }, "socket recovery failed");
+        socket.disconnect(true);
+      });
     } else {
       log.info("socket connected");
     }
@@ -407,10 +427,18 @@ export function createGameServer(httpServer: HttpServer) {
       socket.to(spaceChannel(spaceId)).emit("player-moved", { id: playerId, ...parsed.data });
     }));
 
-    socket.on("chat", safeHandler("chat", (payload) => {
+    socket.on("chat", safeHandler("chat", async (payload) => {
       const parsed = chatSchema.safeParse(payload);
       const { playerId, username, spaceId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
+      // Anti-spam (PRD 25.11): world and room lines share one per-player window.
+      // Excess is refused with a typed cooldown carrying retry timing — never a
+      // silent drop — so the sender's ChatBox can explain the wait.
+      const limited = await checkRateLimit(`chat:${playerId}`, CHAT_LIMIT, CHAT_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "world", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       // Default to your current room; "world" breaks out, "room" is a no-op outside one.
       // World chat reaches the whole space (incl. private-room members, whose client
       // shows it only under the "All" filter). Room chat stays room-only — no leak out.
@@ -432,7 +460,11 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = meetingChatSchema.safeParse(payload);
       const { playerId, currentRoomId } = socket.data;
       if (!parsed.success || !playerId || !currentRoomId) return;
-      if (await isRateLimitExceeded(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS)) return;
+      const limited = await checkRateLimit(`meeting-chat:${playerId}`, MEETING_CHAT_LIMIT, MEETING_CHAT_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "meeting", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       meetings.chat(currentRoomId, playerId, parsed.data.text);
     }));
 
@@ -440,7 +472,11 @@ export function createGameServer(httpServer: HttpServer) {
       const parsed = whisperSchema.safeParse(payload);
       const { playerId, username, spaceId } = socket.data;
       if (!parsed.success || !playerId || !username || !spaceId) return;
-      if (await isRateLimitExceeded(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS)) return;
+      const limited = await checkRateLimit(`whisper:${playerId}`, WHISPER_LIMIT, WHISPER_WINDOW_SECONDS);
+      if (limited.exceeded) {
+        socket.emit("chat-cooldown", { scope: "whisper", retryAfterMs: limited.retryAfterMs });
+        return;
+      }
       const target = activeSockets.get(parsed.data.to);
       const targetName = target?.data.username;
       // Deliver only when the target is online and in the same space.

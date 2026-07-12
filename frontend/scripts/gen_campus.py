@@ -427,7 +427,7 @@ interactables_objs = [
                  "  Cafe (SW)               — social lounge\n"
                  "  Coworking (SE)          — open desk pods\n"
                  "  Mandakini Hostel (south)— Rooms 1, 2, 3\n"
-                 "  Game Arcade (south)     — Snake, Flappy, 2048\n"
+                 "  Game Arcade (south)     — Snake, Flappy\n"
                  "                            + Tic-Tac-Toe & Connect 4\n\n"
                  "Tip: head south past coworking for\n"
                  "the Game Arcade — or portal across the park!"
@@ -458,7 +458,7 @@ interactables_objs = [
     # tiles below it: the 32px solid cabinet body clears by row 98, so rows 98-99
     # give a collision-free approach strip that is still inside the findNear rect.
     # `game` selects the module. Snake/Flappy sit west of the north doorway
-    # (x=79-80); 2048 sits east of it.
+    # (x=79-80). (2048 was retired — PRD 25.36.)
     {
         "id": 40010, "name": "arcade_snake",
         "x": 71 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
@@ -477,16 +477,6 @@ interactables_objs = [
             {"name": "interactType", "type": "string", "value": "arcade"},
             {"name": "label",        "type": "string", "value": "Flappy"},
             {"name": "game",         "type": "string", "value": "flappy"},
-        ],
-    },
-    {
-        "id": 40012, "name": "arcade_2048",
-        "x": 84 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
-        "rotation": 0, "type": "", "visible": True,
-        "properties": [
-            {"name": "interactType", "type": "string", "value": "arcade"},
-            {"name": "label",        "type": "string", "value": "2048"},
-            {"name": "game",         "type": "string", "value": "2048"},
         ],
     },
 ]
@@ -644,7 +634,6 @@ furn("f_sofa_small",  8, 97, True)
 # little themed dressing so the hall doesn't read empty.
 furn("f_arcade_snake",  71, 96, True)
 furn("f_arcade_flappy", 76, 96, True)
-furn("f_arcade_2048",   84, 96, True)
 furn("f_vending",       68, 96, True)   # snack machine by the entrance wall
 furn("f_plant_big",     68, 107, True)  # corner greenery
 furn("f_plant_big",     86, 107, True)
@@ -822,6 +811,91 @@ os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "w") as f:
     json.dump(tilemap, f)
 
+# ── SERVER GEOMETRY MANIFEST (PRD 25.20) ──────────────────────────────────────
+# One versioned, server-consumable description of the campus's authoritative
+# spatial features, generated from the SAME authored data above (never hand-
+# written). The backend loads/validates it and downstream slices (movement
+# envelope, walkability/collision, door/seat/board-seat proximity, stage
+# authorization) consume it instead of re-deriving geometry or hand-mirroring it.
+# Schema + version live in @metaverse/shared (`geometryManifestSchema`); this
+# literal MUST equal shared `GEOMETRY_MANIFEST_VERSION` — bump both together.
+GEOMETRY_MANIFEST_VERSION = 1
+
+# Walkability grid straight off the walls tile layer: 1 = blocked (wall or tree
+# trunk), 0 = open. Solid furniture is carried separately (its pixel footprint
+# depends on sprite size, which this generator does not know).
+collision_blocked = [1 if t else 0 for t in walls_data]
+
+
+def _rect(obj):
+    return {"x": obj["x"], "y": obj["y"], "width": obj["width"], "height": obj["height"]}
+
+
+def _prop(obj, name):
+    for p in obj["properties"]:
+        if p["name"] == name:
+            return p["value"]
+    return None
+
+
+geometry_manifest = {
+    "version": GEOMETRY_MANIFEST_VERSION,
+    "tile": {"size": TS, "cols": W, "rows": H},
+    "world": {"width": W * TS, "height": H * TS},
+    "spawn": {"x": spawn_obj["x"], "y": spawn_obj["y"]},
+    "rooms": [
+        {**_rect(o), "roomId": _prop(o, "roomId")} for o in room_bounds
+    ],
+    "doors": [
+        {**_rect(o), "roomId": _prop(o, "roomId")} for o in door_zones
+    ],
+    "seats": [
+        {
+            "roomId": _prop(o, "roomId"),
+            "seatId": _prop(o, "seatId"),
+            "x": o["x"], "y": o["y"],
+            "facing": _prop(o, "facing"),
+        }
+        for o in seats_objs
+    ],
+    "boardSeats": [
+        {
+            "tableId": _prop(o, "tableId"),
+            "seat": _prop(o, "seat"),
+            "game": _prop(o, "game"),
+            "x": o["x"], "y": o["y"],
+            "facing": _prop(o, "facing"),
+        }
+        for o in board_seats
+    ],
+    "stageZones": [
+        {**_rect(o), "name": o["name"], "zoneType": _prop(o, "zoneType")}
+        for o in stage_objs
+        if _prop(o, "zoneType") in ("stage", "presenter")
+    ],
+    "portals": [
+        {
+            **_rect(o), "id": o["id"],
+            "targetX": _prop(o, "targetX"), "targetY": _prop(o, "targetY"),
+        }
+        for o in interactables_objs
+        if _prop(o, "interactType") == "portal"
+    ],
+    "solidObjects": [
+        {"key": _prop(o, "key"), "x": o["x"], "y": o["y"]}
+        for o in furniture
+        if _prop(o, "solid")
+    ],
+    "collision": {"cols": W, "rows": H, "blocked": collision_blocked},
+}
+
+manifest_out = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "backend", "assets", "campus.geometry.json")
+)
+os.makedirs(os.path.dirname(manifest_out), exist_ok=True)
+with open(manifest_out, "w") as f:
+    json.dump(geometry_manifest, f)
+
 wall_count   = sum(1 for t in walls_data  if t)
 ground_tiles = {t for t in ground if t}
 print(f"wrote {out}")
@@ -834,3 +908,10 @@ print(f"  interactables: {len(interactables_objs)} objects")
 print(f"  stage: {len(stage_objs)} objects (stage_zone + presenter_zone + screen + arcade_zone)")
 print(f"  signs: {len(signs_objs)} objects (floor names + ground labels)")
 print(f"  spawn @ tile ({SPAWN_TX},{SPAWN_TY}) = px ({SPAWN_TX*TS},{SPAWN_TY*TS})")
+print(f"wrote {manifest_out}")
+print(f"  geometry manifest v{GEOMETRY_MANIFEST_VERSION}: "
+      f"{len(geometry_manifest['rooms'])} rooms, {len(geometry_manifest['doors'])} doors, "
+      f"{len(geometry_manifest['seats'])} seats, {len(geometry_manifest['boardSeats'])} board seats, "
+      f"{len(geometry_manifest['stageZones'])} stage zones, {len(geometry_manifest['portals'])} portals, "
+      f"{len(geometry_manifest['solidObjects'])} solid objects, "
+      f"{sum(collision_blocked)} blocked cells")

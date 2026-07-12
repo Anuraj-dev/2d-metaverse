@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CircleHelp } from "lucide-react";
+import Dialog from "./Dialog";
 
 const CONTROLS: [string, string][] = [
   ["Move", "WASD / Arrow keys"],
@@ -18,6 +19,8 @@ const CONTROLS: [string, string][] = [
 export default function HelpOverlay() {
   const [open, setOpen] = useState(false);
 
+  // `?` toggles the sheet. Escape-to-close, focus, and containment are owned by
+  // the Dialog primitive while it is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
@@ -28,7 +31,6 @@ export default function HelpOverlay() {
           el.isContentEditable);
       if (typing) return;
       if (e.key === "?") setOpen((o) => !o);
-      else if (e.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -49,25 +51,25 @@ export default function HelpOverlay() {
         </button>
       )}
       {open && (
-        <div
-          className="modal-backdrop help-backdrop"
-          onClick={() => setOpen(false)}
+        <Dialog
+          onClose={() => setOpen(false)}
+          labelledBy="help-title"
+          backdropClassName="modal-backdrop help-backdrop"
+          className="help-modal"
         >
-          <div className="help-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Controls</h3>
-            <ul className="help-list">
-              {CONTROLS.map(([k, v]) => (
-                <li key={k}>
-                  <b>{k}</b>
-                  <span>{v}</span>
-                </li>
-              ))}
-            </ul>
-            <button className="help-close" onClick={() => setOpen(false)}>
-              Got it
-            </button>
-          </div>
-        </div>
+          <h3 id="help-title">Controls</h3>
+          <ul className="help-list">
+            {CONTROLS.map(([k, v]) => (
+              <li key={k}>
+                <b>{k}</b>
+                <span>{v}</span>
+              </li>
+            ))}
+          </ul>
+          <button className="help-close" onClick={() => setOpen(false)}>
+            Got it
+          </button>
+        </Dialog>
       )}
     </>
   );

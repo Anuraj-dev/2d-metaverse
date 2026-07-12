@@ -16,6 +16,7 @@ import {
   BOARD_MATCH_PHASES,
   BOARD_MOVE_REJECTIONS,
   BOARD_TABLE_IDS,
+  CHAT_COOLDOWN_SCOPES,
   CHAT_SCOPES,
   DIRS,
   KNOCK_RESULTS,
@@ -190,6 +191,19 @@ export type WhisperMessage = z.infer<typeof whisperMessageSchema>;
 
 export const whisperFailSchema = z.object({ name: z.string() });
 export type WhisperFailPayload = z.infer<typeof whisperFailSchema>;
+
+/**
+ * A refused chat send: the sender exceeded their per-player rate window (PRD
+ * 25.11). Sent only to the offending client so the right surface (`scope`) can
+ * show retry timing instead of the message vanishing silently. `retryAfterMs` is
+ * the server's estimate of when the next send will be accepted (the remaining
+ * window). Applies uniformly to world/room chat, whispers, and meeting chat.
+ */
+export const chatCooldownSchema = z.strictObject({
+  scope: z.enum(CHAT_COOLDOWN_SCOPES),
+  retryAfterMs: z.number().int().nonnegative(),
+});
+export type ChatCooldownPayload = z.infer<typeof chatCooldownSchema>;
 
 /* --------------------- server → client: room access (PRD 14) --------------- */
 /* Strict contracts (unknown keys REJECT): new payloads with no legacy shapes. */
@@ -421,6 +435,7 @@ export interface ServerToClientEvents {
   chat: (payload: ChatMessage) => void;
   whisper: (payload: WhisperMessage) => void;
   "whisper-fail": (payload: WhisperFailPayload) => void;
+  "chat-cooldown": (payload: ChatCooldownPayload) => void;
   "knock-pending": (payload: KnockPendingPayload) => void;
   "knock-result": (payload: KnockResultPayload) => void;
   "admin-changed": (payload: AdminChangedPayload) => void;

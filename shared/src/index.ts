@@ -9,6 +9,7 @@
 export * from "./constants.js";
 export * from "./socket.js";
 export * from "./rest.js";
+export * from "./geometry.js";
 export * from "./games/board.js";
 export * from "./games/ticTacToe.js";
 export * from "./games/connect4.js";

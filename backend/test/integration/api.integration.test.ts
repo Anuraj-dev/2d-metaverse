@@ -464,12 +464,12 @@ describe("arcade high scores", () => {
 
   it("returns the caller's best (null when unplayed) and a sorted top-N", async () => {
     const { token } = await createUser(base, "arc2");
-    const unplayed = await api(base, "/api/v1/arcade/scores/2048", { token });
+    const unplayed = await api(base, "/api/v1/arcade/scores/flappy", { token });
     expect(unplayed.status).toBe(200);
     expect(unplayed.json.best).toBeNull();
     expect(Array.isArray(unplayed.json.top)).toBe(true);
-    await api(base, "/api/v1/arcade/scores", { token, body: { game: "2048", score: 256 } });
-    const played = await api(base, "/api/v1/arcade/scores/2048", { token });
+    await api(base, "/api/v1/arcade/scores", { token, body: { game: "flappy", score: 256 } });
+    const played = await api(base, "/api/v1/arcade/scores/flappy", { token });
     expect(played.json.best).toBe(256);
     const scores = played.json.top.map((row: { score: number }) => row.score);
     expect(scores).toEqual([...scores].sort((a: number, b: number) => b - a));
@@ -481,6 +481,19 @@ describe("arcade high scores", () => {
     const bad = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: -1 } });
     expect(bad.status).toBe(400);
     expect(bad.json.error).toBe("invalid-score");
+  });
+
+  it("retires 2048: no new writes, no leaderboard surface (PRD 25.36)", async () => {
+    // 2048 is retired — its id was removed from ARCADE_GAMES. The write path is
+    // closed (schema-rejected 400) and the leaderboard read 404s like any
+    // unknown game. Stored historical rows on the free-text `game` column are
+    // intentionally left intact (no destructive migration); this only shuts the
+    // product surface.
+    const { token } = await createUser(base, "arc4");
+    const write = await api(base, "/api/v1/arcade/scores", { token, body: { game: "2048", score: 256 } });
+    expect(write.status).toBe(400);
+    expect(write.json.error).toBe("invalid-score");
+    expect((await api(base, "/api/v1/arcade/scores/2048", { token })).status).toBe(404);
   });
 });
 

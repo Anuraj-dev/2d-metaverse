@@ -4,61 +4,13 @@ import { roomDisplayName } from "@metaverse/shared";
 import { config } from "./config.js";
 import { pool } from "./db.js";
 import { childLogger } from "./logger.js";
+// Rooms are no longer password-gated (PRD 14): the first player to enter becomes
+// the admin and later arrivals knock. Only geometry (door zone) + seats are
+// seeded, from the pure `seed-geometry` table cross-checked against the
+// generated geometry manifest.
+import { rooms } from "./seed-geometry.js";
 
 const log = childLogger({ module: "seed" });
-
-// Rooms are no longer password-gated (PRD 14): the first player to enter becomes
-// the admin and later arrivals knock. Only geometry (door zone) + seats are seeded.
-const rooms = [
-  // Hostel wing rooms (map: campus.json south, PRD 13). Capacities 5/8/12 — seat
-  // ids/coords mirror the seats objectgroup the generator authors for rooms 1-3.
-  {
-    id: "1",
-    doorZone: { x: 720, y: 1600, width: 32, height: 16 },
-    seats: [
-      { id: 0, x: 712, y: 1640, facing: "down" }, { id: 1, x: 744, y: 1640, facing: "down" }, { id: 2, x: 776, y: 1640, facing: "down" }, { id: 3, x: 728, y: 1704, facing: "up" }, { id: 4, x: 760, y: 1704, facing: "up" }
-    ]
-  },
-  {
-    id: "2",
-    doorZone: { x: 512, y: 1600, width: 32, height: 16 },
-    seats: [
-      { id: 0, x: 488, y: 1640, facing: "down" }, { id: 1, x: 520, y: 1640, facing: "down" }, { id: 2, x: 552, y: 1640, facing: "down" }, { id: 3, x: 584, y: 1640, facing: "down" }, { id: 4, x: 488, y: 1704, facing: "up" }, { id: 5, x: 520, y: 1704, facing: "up" }, { id: 6, x: 552, y: 1704, facing: "up" }, { id: 7, x: 584, y: 1704, facing: "up" }
-    ]
-  },
-  {
-    id: "3",
-    doorZone: { x: 272, y: 1600, width: 32, height: 16 },
-    seats: [
-      { id: 0, x: 216, y: 1656, facing: "down" }, { id: 1, x: 248, y: 1656, facing: "down" }, { id: 2, x: 280, y: 1656, facing: "down" }, { id: 3, x: 312, y: 1656, facing: "down" }, { id: 4, x: 344, y: 1656, facing: "down" }, { id: 5, x: 376, y: 1656, facing: "down" }, { id: 6, x: 216, y: 1720, facing: "up" }, { id: 7, x: 248, y: 1720, facing: "up" }, { id: 8, x: 280, y: 1720, facing: "up" }, { id: 9, x: 312, y: 1720, facing: "up" }, { id: 10, x: 344, y: 1720, facing: "up" }, { id: 11, x: 376, y: 1720, facing: "up" }
-    ]
-  },
-  // Campus HQ rooms (map: campus.json, 120×90 tiles, 16px/tile)
-  {
-    id: "4",
-    doorZone: { x: 576, y: 176, width: 32, height: 16 },
-    seats: [
-      { id: 0, x: 568, y: 104, facing: "right" }, { id: 1, x: 632, y: 104, facing: "left" },
-      { id: 2, x: 600, y:  72, facing: "down"  }, { id: 3, x: 600, y: 136, facing: "up"   }
-    ]
-  },
-  {
-    id: "5",
-    doorZone: { x: 784, y: 176, width: 32, height: 16 },
-    seats: [
-      { id: 0, x: 776, y: 104, facing: "right" }, { id: 1, x: 840, y: 104, facing: "left" },
-      { id: 2, x: 808, y:  72, facing: "down"  }, { id: 3, x: 808, y: 136, facing: "up"   }
-    ]
-  },
-  {
-    id: "6",
-    doorZone: { x: 1008, y: 176, width: 32, height: 16 },
-    seats: [
-      { id: 0, x: 1000, y: 104, facing: "right" }, { id: 1, x: 1064, y: 104, facing: "left" },
-      { id: 2, x: 1032, y:  72, facing: "down"  }, { id: 3, x: 1032, y: 136, facing: "up"   }
-    ]
-  }
-] as const;
 
 export async function seed(): Promise<void> {
   const client = await pool.connect();
