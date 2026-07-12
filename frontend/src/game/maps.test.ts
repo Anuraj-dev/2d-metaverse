@@ -607,3 +607,199 @@ describe("campus roomBounds ids line up with AREA_NAMES (PRD 20 map labels)", ()
     }
   });
 });
+
+// PRD 25.33 furniture plausibility: solid furniture must never block a door, a
+// seat, an interaction prompt, a main walkable artery, or another solid piece,
+// and the flagged desk/cafe clutter must stay thinned. Footprints are derived
+// from the authored generator data + the on-disk sprite sizes, mirroring the
+// collision body WorldScene.addSolid builds (80% width × 55% height, bottom-
+// anchored) — the same source of truth the E2E walkability suite exercises.
+describe("campus furniture plausibility (PRD 25.33)", () => {
+  const FURN_DIR = resolve(__dirname, "../../public/assets/furniture");
+
+  interface FurnObject {
+    name: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    properties?: { name: string; value: unknown }[];
+  }
+  const json = loadMap("campus") as unknown as {
+    tilewidth: number;
+    width: number;
+    layers: { name: string; type: string; data?: number[]; objects?: FurnObject[] }[];
+  };
+  const TS = json.tilewidth;
+  const objects = (name: string): FurnObject[] =>
+    json.layers.find((l) => l.name === name)?.objects ?? [];
+  const prop = (o: FurnObject, name: string): unknown =>
+    o.properties?.find((p) => p.name === name)?.value;
+
+  // Stone/path family — an artery hit only counts on actual paving (excludes
+  // e.g. the arcade hall's tan-plank aisle, which shares the x=79-80 column but
+  // is indoor floor, not a walkable outdoor artery).
+  const STONE_FAMILY = new Set([
+    1946, 1912, 1913, 1914, 1945, 1947, 1978, 1979, 1980, 1948, 1949, 1981, 1982,
+  ]);
+  const ground = (() => {
+    const l = json.layers.find((x) => x.name === "ground");
+    if (!l?.data) throw new Error("campus ground layer missing");
+    return l.data;
+  })();
+
+  const furnSize = (key: string): { width: number; height: number } => {
+    const base = key.startsWith("f_") ? key.slice(2) : key;
+    return pngSize(resolve(FURN_DIR, `${base}.png`));
+  };
+
+  // Tiles a solid furniture sprite's collision body covers (mirror of
+  // WorldScene.addSolid). Keep in lockstep with the scene or this guard measures
+  // the wrong footprint.
+  const bodyTiles = (o: FurnObject): [number, number][] => {
+    const { width: w, height: h } = furnSize(String(prop(o, "key")));
+    const cx = o.x ?? 0;
+    const cy = o.y ?? 0;
+    const bw = w * 0.8;
+    const bh = h * 0.55;
+    const x0 = cx - bw / 2;
+    const x1 = cx + bw / 2;
+    const y1 = cy + h / 2;
+    const y0 = y1 - bh;
+    const tiles: [number, number][] = [];
+    for (let tx = Math.floor(x0 / TS); tx <= Math.floor((x1 - 0.01) / TS); tx++) {
+      for (let ty = Math.floor(y0 / TS); ty <= Math.floor((y1 - 0.01) / TS); ty++) {
+        tiles.push([tx, ty]);
+      }
+    }
+    return tiles;
+  };
+
+  const rectTiles = (o: FurnObject): string[] => {
+    const out: string[] = [];
+    const x0 = Math.floor((o.x ?? 0) / TS);
+    const y0 = Math.floor((o.y ?? 0) / TS);
+    const x1 = Math.floor(((o.x ?? 0) + (o.width ?? 0)) / TS);
+    const y1 = Math.floor(((o.y ?? 0) + (o.height ?? 0)) / TS);
+    for (let tx = x0; tx < x1; tx++) for (let ty = y0; ty < y1; ty++) out.push(`${tx},${ty}`);
+    return out;
+  };
+  const pointTile = (o: FurnObject): string =>
+    `${Math.floor(((o.x ?? 0) + (o.width ?? 0) / 2) / TS)},` +
+    `${Math.floor(((o.y ?? 0) + (o.height ?? 0) / 2) / TS)}`;
+
+  const solids = objects("furniture").filter((o) => prop(o, "solid") === true);
+
+  it("has solid furniture to check (guards a silent empty run)", () => {
+    expect(solids.length).toBeGreaterThan(0);
+  });
+
+  it("no solid furniture body sits on a door threshold", () => {
+    const doors = new Set<string>();
+    for (const d of objects("doorZones")) for (const t of rectTiles(d)) doors.add(t);
+    const bad: string[] = [];
+    for (const o of solids)
+      for (const [tx, ty] of bodyTiles(o))
+        if (doors.has(`${tx},${ty}`)) bad.push(`${o.name}@(${tx},${ty})`);
+    expect(bad, `furniture on a door: ${bad.join(", ")}`).toHaveLength(0);
+  });
+
+  it("no solid furniture body sits on a seat or board-seat tile", () => {
+    const seats = new Set<string>();
+    for (const s of [...objects("seats"), ...objects("board_seats")]) seats.add(pointTile(s));
+    const bad: string[] = [];
+    for (const o of solids)
+      for (const [tx, ty] of bodyTiles(o))
+        if (seats.has(`${tx},${ty}`)) bad.push(`${o.name}@(${tx},${ty})`);
+    expect(bad, `furniture on a seat: ${bad.join(", ")}`).toHaveLength(0);
+  });
+
+  // Arcade cabinets deliberately cap the top rows of their own arcade zone (the
+  // zone extends south for a collision-free approach strip — see the arcade-hall
+  // suite); every other prompt (info board, agenda whiteboard, portal) must be
+  // walk-up clear. This is the regression that removed the plaza info-board
+  // shrub and nudged the HQ welcome desk off the whiteboard.
+  it("no solid furniture blocks an info/whiteboard/portal prompt", () => {
+    const zones = new Set<string>();
+    for (const o of objects("interactables")) {
+      const t = prop(o, "interactType");
+      if (t === "info" || t === "whiteboard" || t === "portal")
+        for (const c of rectTiles(o)) zones.add(c);
+    }
+    const bad: string[] = [];
+    for (const o of solids)
+      for (const [tx, ty] of bodyTiles(o))
+        if (zones.has(`${tx},${ty}`)) bad.push(`${o.name}@(${tx},${ty})`);
+    expect(bad, `furniture on an interactable prompt: ${bad.join(", ")}`).toHaveLength(0);
+  });
+
+  it("no two solid furniture bodies overlap", () => {
+    const claimed = new Map<string, string>();
+    const bad: string[] = [];
+    for (const o of solids) {
+      for (const [tx, ty] of bodyTiles(o)) {
+        const key = `${tx},${ty}`;
+        const prev = claimed.get(key);
+        if (prev !== undefined && prev !== o.name) bad.push(`${prev} × ${o.name} @(${key})`);
+        else claimed.set(key, o.name);
+      }
+    }
+    expect(bad, `overlapping furniture: ${bad.join(", ")}`).toHaveLength(0);
+  });
+
+  it("no solid furniture body sits on a main walkable path artery", () => {
+    // The authored stone arteries players route down (gen_campus.py "Main path
+    // arteries" + hostel spur). A hit counts only on actual paving.
+    const onArtery = (tx: number, ty: number): boolean =>
+      (ty >= 43 && ty <= 45) || // E-W plaza artery
+      (tx >= 56 && tx <= 63) || // N-S HQ↔cafe artery
+      tx === 29 ||
+      tx === 30 || // park path
+      tx === 79 ||
+      tx === 80 || // east auditorium↔coworking path
+      (tx >= 34 && tx <= 35 && ty >= 46 && ty <= 92); // hostel spur
+    const bad: string[] = [];
+    for (const o of solids)
+      for (const [tx, ty] of bodyTiles(o))
+        if (onArtery(tx, ty) && STONE_FAMILY.has(ground[ty * json.width + tx] ?? 0))
+          bad.push(`${o.name}@(${tx},${ty})`);
+    expect(bad, `furniture on a path artery: ${bad.join(", ")}`).toHaveLength(0);
+  });
+
+  // The x=79-80 column is the arcade approach corridor players descend from
+  // spawn into the Game Arcade hall (arcade.spec walks straight down it). Unlike
+  // the stone arteries it runs THROUGH the coworking wood deck (FLOOR_ACC, not
+  // stone), so the stone-gated guard above cannot see an intruding desk here —
+  // this ungated guard keeps the corridor walkable regardless of ground tile.
+  it("keeps the x=79-80 arcade approach corridor clear of solid furniture", () => {
+    const bad: string[] = [];
+    for (const o of solids)
+      for (const [tx, ty] of bodyTiles(o))
+        // From the plaza down to the arcade doorway (rows 25-93); inside the hall
+        // (rows 94+) this column is interior floor, not the approach corridor.
+        if ((tx === 79 || tx === 80) && ty >= 25 && ty <= 93)
+          bad.push(`${o.name}@(${tx},${ty})`);
+    expect(
+      bad,
+      `furniture in the arcade approach corridor: ${bad.join(", ")}`,
+    ).toHaveLength(0);
+  });
+
+  it("keeps the flagged desk/cafe clutter thinned", () => {
+    const furn = objects("furniture");
+    // Cafe round tables (SW terrace) thinned from 18 to 12.
+    const cafeTables = furn.filter(
+      (o) =>
+        o.name === "f_table_small" &&
+        (o.x ?? 0) <= 55 * TS &&
+        (o.y ?? 0) >= 62 * TS &&
+        (o.y ?? 0) <= 80 * TS,
+    );
+    expect(cafeTables.length).toBeLessThanOrEqual(12);
+    // Coworking desks (SE deck) thinned from 13 to 10.
+    const coworkDesks = furn.filter(
+      (o) => /^f_desk/.test(o.name) && (o.x ?? 0) >= 57 * TS && (o.y ?? 0) >= 62 * TS,
+    );
+    expect(coworkDesks.length).toBeLessThanOrEqual(10);
+  });
+});
