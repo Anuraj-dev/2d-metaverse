@@ -23,12 +23,13 @@ import {
   socketAuthSchema,
   toggleAllowAllSchema,
   whisperSchema,
+  type GeometryManifest,
 } from "@metaverse/shared";
 import { verifyToken } from "./auth.js";
 import { blocks } from "./block-cache.js";
 import { config } from "./config.js";
 import { getGeometryManifest } from "./geometry.js";
-import { validateMove } from "./movement.js";
+import { createWalkability, validateMove, type Walkability } from "./movement.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
 import { checkRateLimit, isRateLimitExceeded, redis, storeReportableMessage } from "./redis.js";
@@ -65,6 +66,20 @@ const KNOCK_WINDOW_SECONDS = RATE_LIMITS.knockWindowSeconds;
 // `spawn` object in campus.json and the WorldScene fallback.
 const SPAWN_X = 960;
 const SPAWN_Y = 704;
+
+// The manifest is immutable for the process lifetime, so the derived per-tile
+// walkability lookup is built once (keyed on the manifest instance to rebuild if
+// a fixed manifest is hot-reloaded) and reused across every `move`.
+let cachedWalkability: { manifest: GeometryManifest; walkable: Walkability } | undefined;
+function walkabilityFor(manifest: GeometryManifest): Walkability {
+  if (cachedWalkability?.manifest !== manifest) {
+    cachedWalkability = {
+      manifest,
+      walkable: createWalkability(manifest.collision, manifest.solidObjects, manifest.tile.size),
+    };
+  }
+  return cachedWalkability.walkable;
+}
 
 const spaceChannel = (spaceId: string) => `space:${spaceId}`;
 const roomChannel = (roomId: string) => `room:${roomId}`;
@@ -470,6 +485,7 @@ export function createGameServer(httpServer: HttpServer) {
       const decision = validateMove(anchor, parsed.data, now, {
         world: manifest.world,
         portals: manifest.portals,
+        walkable: walkabilityFor(manifest),
         tileSize: manifest.tile.size,
         justEntered: socket.data.moveJustEntered ?? false,
       });

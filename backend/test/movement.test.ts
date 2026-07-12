@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { MOVEMENT, type GeometryPortal } from "@metaverse/shared";
 import {
+  MOVEMENT,
+  type GeometryCollision,
+  type GeometryPortal,
+  type GeometrySolidObject,
+} from "@metaverse/shared";
+import {
+  createWalkability,
   validateMove,
   type MovementAnchor,
   type MovementContext,
+  type Walkability,
 } from "../src/movement.js";
+import { loadGeometryManifest } from "../src/geometry.js";
 
 /**
  * Exhaustive tests for the authoritative movement envelope (PRD 25.21) — the
@@ -29,10 +37,29 @@ const PORTAL: GeometryPortal = {
   targetY: 900,
 };
 
+// A walkability grid sized to the test world. `blockedCells` lists [col,row]
+// wall/tree tiles; `solids` are furniture centre anchors (pixels). Everything
+// else is open — so the envelope tests that don't care about walls stay clean.
+const GRID_COLS = Math.ceil(WORLD.width / TILE);
+const GRID_ROWS = Math.ceil(WORLD.height / TILE);
+
+function walkableWith(
+  blockedCells: ReadonlyArray<readonly [number, number]> = [],
+  solids: readonly GeometrySolidObject[] = [],
+): Walkability {
+  const blocked = new Array<0 | 1>(GRID_COLS * GRID_ROWS).fill(0);
+  for (const [col, row] of blockedCells) blocked[row * GRID_COLS + col] = 1;
+  const collision: GeometryCollision = { cols: GRID_COLS, rows: GRID_ROWS, blocked };
+  return createWalkability(collision, solids, TILE);
+}
+
+const OPEN_WALKABLE = walkableWith();
+
 function ctx(overrides: Partial<MovementContext> = {}): MovementContext {
   return {
     world: WORLD,
     portals: [PORTAL],
+    walkable: OPEN_WALKABLE,
     tileSize: TILE,
     justEntered: false,
     ...overrides,
@@ -205,5 +232,114 @@ describe("validateMove — entry re-anchor", () => {
     expect(
       validateMove(anchor, { x: -10, y: 900 }, anchor.at + 3000, ctx({ justEntered: true })),
     ).toEqual({ ok: false, reason: "out-of-bounds" });
+  });
+
+  it("re-anchors onto a blocked tile without a walkability check (trusts recovery)", () => {
+    // A recovered client may have kept walking; the re-anchor trusts its reported
+    // position, so the walkability gate is intentionally bypassed on entry.
+    const walkable = walkableWith([[10, 10]]);
+    const anchor = anchorAt(500, 500);
+    expect(
+      validateMove(anchor, { x: 10 * TILE + 8, y: 10 * TILE + 8 }, anchor.at + 100, ctx({
+        justEntered: true,
+        walkable,
+      })),
+    ).toEqual({ ok: true });
+  });
+});
+
+describe("validateMove — walkability (PRD 25.22)", () => {
+  const WALL: readonly [number, number] = [10, 10]; // a blocked wall/tree cell
+  const wallX = WALL[0] * TILE + 8;
+  const wallY = WALL[1] * TILE + 8;
+
+  it("rejects a standing-pace move onto a blocked tile as 'blocked'", () => {
+    // Small honest-sized delta that ends inside a wall — the speed envelope would
+    // pass it, so this proves walkability is a distinct, precedence-taking gate.
+    const anchor = anchorAt(wallX - TILE, wallY); // adjacent open tile
+    expect(
+      validateMove(anchor, { x: wallX, y: wallY }, anchor.at + 100, ctx({ walkable: walkableWith([WALL]) })),
+    ).toEqual({ ok: false, reason: "blocked" });
+  });
+
+  it("accepts a move onto the adjacent walkable tile", () => {
+    const anchor = anchorAt(wallX - TILE, wallY);
+    expect(
+      validateMove(anchor, { x: wallX - TILE + 4, y: wallY }, anchor.at + 100, ctx({
+        walkable: walkableWith([WALL]),
+      })),
+    ).toEqual({ ok: true });
+  });
+
+  it("rejects a move onto a solid furniture footprint as 'blocked'", () => {
+    const solid: GeometrySolidObject = { key: "f_desk", x: wallX, y: wallY };
+    const anchor = anchorAt(wallX - TILE, wallY);
+    expect(
+      validateMove(anchor, { x: wallX, y: wallY }, anchor.at + 100, ctx({
+        walkable: walkableWith([], [solid]),
+      })),
+    ).toEqual({ ok: false, reason: "blocked" });
+  });
+
+  it("takes precedence over the speed envelope for a blocked far jump", () => {
+    // A cross-map teleport that also lands in a wall reports 'blocked' (checked
+    // before speed), which is the more specific rejection.
+    const anchor = anchorAt(100, 100);
+    expect(
+      validateMove(anchor, { x: wallX, y: wallY }, anchor.at + 50, ctx({ walkable: walkableWith([WALL]) })),
+    ).toEqual({ ok: false, reason: "blocked" });
+  });
+
+  it("exempts a manifest-declared portal jump from the walkability check", () => {
+    // Even if the portal target sat on a blocked tile, the declared teleport is a
+    // legal discontinuity (targets are walkable by construction anyway).
+    const blockedTarget = walkableWith([
+      [Math.floor(PORTAL.targetX / TILE), Math.floor(PORTAL.targetY / TILE)],
+    ]);
+    const anchor = anchorAt(PORTAL.x, PORTAL.y);
+    expect(
+      validateMove(anchor, { x: PORTAL.targetX, y: PORTAL.targetY }, anchor.at + 80, ctx({
+        walkable: blockedTarget,
+      })),
+    ).toEqual({ ok: true });
+  });
+
+  it("clamps the exact far world edge onto the last tile (no out-of-grid read)", () => {
+    // x === world.width floors to `cols` (one past the grid); the lookup clamps
+    // it back onto the last column rather than reading undefined.
+    const anchor = anchorAt(WORLD.width - TILE, WORLD.height - TILE, 1_000_000);
+    expect(
+      validateMove(anchor, { x: WORLD.width, y: WORLD.height }, anchor.at + 100, ctx()),
+    ).toEqual({ ok: true });
+  });
+});
+
+describe("createWalkability — real campus manifest", () => {
+  // Exercises the real generated grid so a manifest regen that moves a wall,
+  // door, or furniture is caught here rather than only in E2E.
+  const manifest = loadGeometryManifest();
+  const walkable = createWalkability(
+    manifest.collision,
+    manifest.solidObjects,
+    manifest.tile.size,
+  );
+
+  it("marks a known wall tile blocked", () => {
+    expect(walkable.isBlockedAtPixel(1300, 706)).toBe(true);
+  });
+
+  it("keeps the spawn tile and a door threshold walkable", () => {
+    expect(walkable.isBlockedAtPixel(manifest.spawn.x, manifest.spawn.y)).toBe(false);
+    const door = manifest.doors[0];
+    if (!door) throw new Error("expected the campus manifest to declare a door");
+    const cx = door.x + Math.floor(door.width / 2);
+    const cy = door.y + Math.floor(door.height / 2);
+    expect(walkable.isBlockedAtPixel(cx, cy)).toBe(false);
+  });
+
+  it("blocks a solid furniture centre that the wall grid alone leaves open", () => {
+    const solid = manifest.solidObjects[0];
+    if (!solid) throw new Error("expected the campus manifest to declare solid furniture");
+    expect(walkable.isBlockedAtPixel(solid.x, solid.y)).toBe(true);
   });
 });

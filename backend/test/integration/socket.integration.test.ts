@@ -222,6 +222,21 @@ describe("movement envelope (PRD 25.21)", () => {
     expect(await corrected).toMatchObject({ reason: "out-of-bounds" });
   });
 
+  it("corrects a move onto a wall tile with reason 'blocked'", async () => {
+    const a = await joinAs((await createPlayer("mew")).token);
+
+    // Re-anchor (first move) onto an open tile that sits directly left of a known
+    // wall cell in the campus manifest (walkable 472,24 → blocked 488,24).
+    const anchored = once<{ reason: string }>(a.socket, "move-correction");
+    a.socket.emit("move", { x: 472, y: 24, dir: "right" }); // re-anchors, bypasses walkability
+    await sleep(60);
+
+    // Step one tile right, into the wall: a small honest-paced delta, so the
+    // speed envelope passes and the walkability gate is what rejects it.
+    a.socket.emit("move", { x: 488, y: 24, dir: "right" });
+    expect(await anchored).toMatchObject({ x: 472, y: 24, reason: "blocked" });
+  });
+
   it("accepts a manifest-declared portal jump as a legal discontinuity", async () => {
     const a = await joinAs((await createPlayer("mep")).token);
     const b = await joinAs((await createPlayer("meq")).token);
