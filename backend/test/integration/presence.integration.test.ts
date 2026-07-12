@@ -81,7 +81,7 @@ describe("presence read model over the socket boundary", () => {
     const user = await createPlayer("pres-c");
     const { socket, selfId } = await joinAs(user.token);
     // First knocker into an empty room walks in as admin (PRD 14).
-    await walkToDoor(socket, "1");
+    walkToDoor(socket, "1");
     const approved = once<{ result: string }>(socket, "knock-result");
     socket.emit("knock", { roomId: "1" });
     expect((await approved).result).toBe("approved");
