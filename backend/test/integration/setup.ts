@@ -27,6 +27,10 @@ process.env.MEETING_COUNTDOWN_MS ??= "300";
 // Long enough that a knock→approve round trip never races the timeout, short
 // enough that the knock→timeout path resolves within a test's patience.
 process.env.KNOCK_TIMEOUT_MS ??= "1000";
+// Moderator allowlist (PRD 25.14): a fixed operator uuid the moderation suite
+// creates a user with. Set here (before src/config.ts snapshots the env) so the
+// config singleton carries it. Non-moderator suites simply never use this id.
+process.env.MODERATOR_USER_IDS ??= "0abc0abc-0abc-4abc-8abc-0abc0abc0abc";
 
 const failure = (service: string, url: string, hint: string) =>
   `Integration tests require ${service} at ${url} but it is unreachable. ` +

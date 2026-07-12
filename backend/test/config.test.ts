@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, parseConfig } from "../src/parse-config.js";
+import { ConfigError, parseConfig, parseModeratorIds } from "../src/parse-config.js";
+
+const UUID_A = "11111111-1111-4111-8111-111111111111";
+const UUID_B = "22222222-2222-4222-8222-222222222222";
 
 /** A development env that parses successfully. */
 const devEnv: Record<string, string> = {
@@ -92,6 +95,36 @@ describe("production refusal of development defaults", () => {
 
   it("allows every one of those defaults outside production", () => {
     expect(() => parseConfig(devEnv)).not.toThrow();
+  });
+});
+
+describe("moderator allowlist (PRD 25.14)", () => {
+  it("defaults to NO moderators when absent (fail-safe)", () => {
+    expect(parseConfig(devEnv).moderatorIds).toEqual([]);
+  });
+
+  it("treats an empty / whitespace-only value as no moderators", () => {
+    expect(parseConfig({ ...devEnv, MODERATOR_USER_IDS: "" }).moderatorIds).toEqual([]);
+    expect(parseConfig({ ...devEnv, MODERATOR_USER_IDS: "  ,  , " }).moderatorIds).toEqual([]);
+  });
+
+  it("parses, lower-cases, trims, and de-duplicates a comma list of uuids", () => {
+    const config = parseConfig({
+      ...devEnv,
+      MODERATOR_USER_IDS: ` ${UUID_A.toUpperCase()} , ${UUID_B}, ${UUID_A} `,
+    });
+    expect(config.moderatorIds).toEqual([UUID_A, UUID_B]);
+  });
+
+  it("rejects a non-uuid entry rather than silently granting/denying", () => {
+    expect(() => parseConfig({ ...devEnv, MODERATOR_USER_IDS: "not-a-uuid" })).toThrowError(ConfigError);
+    expect(() => parseConfig({ ...devEnv, MODERATOR_USER_IDS: `${UUID_A},bogus` })).toThrowError(ConfigError);
+  });
+
+  it("parseModeratorIds is a pure fail-safe helper", () => {
+    expect(parseModeratorIds("")).toEqual([]);
+    expect(parseModeratorIds(`${UUID_A}`)).toEqual([UUID_A]);
+    expect(() => parseModeratorIds("xyz")).toThrowError(ConfigError);
   });
 });
 

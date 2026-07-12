@@ -29,12 +29,14 @@ import {
   getArcadeLeaderboard,
   getRoom,
   getSpace,
+  getSuspension,
   insertBlock,
   insertReport,
   removeBlock,
   spaceExists,
   submitArcadeScore,
 } from "./repository.js";
+import { isSuspended } from "./suspension.js";
 import { blocks } from "./block-cache.js";
 import { getReportableMessage, redis } from "./redis.js";
 import { canPublishFromStage } from "./stage.js";
@@ -185,6 +187,14 @@ api.post("/signin", authLimiter, async (request, response) => {
   if (!user || !(await verifySecret(parsed.data.password, user.password_hash))) {
     await safelyRecordSigninOutcome(response, "invalid-credentials", requestLog(response, analyticsFallbackLog));
     response.status(401).json({ error: "invalid-credentials" });
+    return;
+  }
+  // Suspension gate (PRD 25.14): a suspended user is denied a fresh token. Bounded
+  // failure — only the expiry leaves the server, never the moderator or reason.
+  const suspension = await getSuspension(user.id);
+  if (isSuspended(suspension, Date.now())) {
+    moderationLog.info({ event: "suspended_signin_denied" }, "suspended user signin denied");
+    response.status(403).json({ error: "suspended", until: suspension?.suspendedUntil });
     return;
   }
   await safelyRecordSigninOutcome(response, "success", requestLog(response, analyticsFallbackLog));
@@ -338,6 +348,13 @@ api.post("/livekit/token", requireAuth, async (request, response) => {
     return;
   }
   const user = (request as AuthenticatedRequest).user;
+  // Suspension gate (PRD 25.14): a suspended user cannot obtain a media token, so
+  // suspension silences voice/video too (its live sockets are already dropped).
+  const suspension = await getSuspension(user.id);
+  if (isSuspended(suspension, Date.now())) {
+    response.status(403).json({ error: "suspended", until: suspension?.suspendedUntil });
+    return;
+  }
   const roomName = parsed.data.roomName;
   let canPublish = true;
   let canPublishVideo = false;
