@@ -40,7 +40,7 @@ describe("ArcadeOverlay", () => {
 
   it("Escape closes the overlay instantly", () => {
     const onClose = vi.fn();
-    render(<ArcadeOverlay game="2048" label="2048" onClose={onClose} />);
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -90,7 +90,7 @@ describe("ArcadeOverlay", () => {
     Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit });
 
     const onClose = vi.fn();
-    render(<ArcadeOverlay game="2048" label="2048" onClose={onClose} />);
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
     expect(request).toHaveBeenCalledTimes(1);
 
     // Pretend the browser granted it, then close via Escape → exitFullscreen runs.

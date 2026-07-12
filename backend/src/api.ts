@@ -7,12 +7,14 @@ import {
   LIMITS,
   RATE_LIMITS,
   arcadeScoreSchema,
+  analyticsIngestRequestSchema,
   credentialsSchema,
   liveKitSchema,
   type ArcadeGame,
   type ArcadeLeaderboard,
 } from "@metaverse/shared";
 import { issueToken, requireAuth, type AuthenticatedRequest } from "./auth.js";
+import { ingestAnalyticsEvent, safelyRecordSigninOutcome } from "./analytics.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
 import { hashSecret, verifySecret } from "./password.js";
@@ -26,6 +28,10 @@ import {
 } from "./repository.js";
 import { redis } from "./redis.js";
 import { canPublishFromStage } from "./stage.js";
+import { childLogger } from "./logger.js";
+import { requestLog } from "./request-logger.js";
+
+const analyticsFallbackLog = childLogger({ module: "analytics" });
 
 // Request schemas live in @metaverse/shared (single source of truth for wire shapes).
 export const api = Router();
@@ -62,6 +68,12 @@ const authLimiter = rateLimit({
       1,
       Math.min(Math.ceil(remainingMs / 1000), Math.ceil(RATE_LIMITS.authWindowMs / 1000)),
     );
+    if (request.path === "/signin") {
+      void safelyRecordSigninOutcome(response, "rate-limited", requestLog(response, analyticsFallbackLog)).then(() => {
+        response.status(429).json({ error: "rate-limited", retryAfterSeconds });
+      });
+      return;
+    }
     response.status(429).json({ error: "rate-limited", retryAfterSeconds });
   },
 });
@@ -70,6 +82,19 @@ const arcadeScoreLimiter = rateLimit({
   limit: RATE_LIMITS.arcadeScoreLimit,
   standardHeaders: "draft-8",
   legacyHeaders: false
+});
+const analyticsLimiter = rateLimit({
+  windowMs: RATE_LIMITS.analyticsWindowMs,
+  limit: RATE_LIMITS.analyticsLimit,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (request) => (request as AuthenticatedRequest).user.id,
+  handler: (request, response) => {
+    const resetTime = (request as typeof request & { rateLimit?: RateLimitInfo }).rateLimit?.resetTime;
+    const remainingMs = resetTime ? resetTime.getTime() - Date.now() : RATE_LIMITS.analyticsWindowMs;
+    const retryAfterSeconds = Math.max(1, Math.min(Math.ceil(remainingMs / 1000), 60));
+    response.status(429).json({ error: "rate-limited", retryAfterSeconds });
+  },
 });
 const arcadeLeaderboardLimiter = rateLimit({
   windowMs: RATE_LIMITS.arcadeLeaderboardWindowMs,
@@ -104,6 +129,7 @@ api.post("/signup", authLimiter, async (request, response) => {
 api.post("/signin", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);
   if (!parsed.success) {
+    await safelyRecordSigninOutcome(response, "validation", requestLog(response, analyticsFallbackLog));
     response.status(400).json({ error: "validation" });
     return;
   }
@@ -113,10 +139,30 @@ api.post("/signin", authLimiter, async (request, response) => {
   );
   const user = result.rows[0];
   if (!user || !(await verifySecret(parsed.data.password, user.password_hash))) {
+    await safelyRecordSigninOutcome(response, "invalid-credentials", requestLog(response, analyticsFallbackLog));
     response.status(401).json({ error: "invalid-credentials" });
     return;
   }
+  await safelyRecordSigninOutcome(response, "success", requestLog(response, analyticsFallbackLog));
   response.json({ token: issueToken({ id: user.id, username: user.username }) });
+});
+
+api.post("/analytics/events", requireAuth, analyticsLimiter, async (request, response) => {
+  const parsed = analyticsIngestRequestSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "invalid-event" });
+    return;
+  }
+  const user = (request as AuthenticatedRequest).user;
+  const result = await ingestAnalyticsEvent(parsed.data.eventId, user.id, parsed.data.event);
+  if (result.conflict) {
+    response.status(409).json({ error: "event-id-conflict" });
+    return;
+  }
+  response.status(result.duplicate ? 200 : 202).json({
+    acceptedAt: result.acceptedAt.toISOString(),
+    duplicate: result.duplicate,
+  });
 });
 
 api.get("/space/:id", requireAuth, async (request, response) => {

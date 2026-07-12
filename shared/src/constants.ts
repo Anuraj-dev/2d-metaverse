@@ -14,7 +14,7 @@ export const DIRS = ["down", "left", "right", "up"] as const;
  * submitted `game` against this tuple, and the frontend keys its cabinets and
  * leaderboards off the same list — single source of truth for both sides.
  */
-export const ARCADE_GAMES = ["snake", "flappy", "2048"] as const;
+export const ARCADE_GAMES = ["snake", "flappy"] as const;
 export type ArcadeGame = (typeof ARCADE_GAMES)[number];
 
 /**
@@ -148,6 +148,17 @@ export const MEETING_CANCEL_REASONS = ["stand", "unseated-entry", "leave"] as co
  */
 export const MEETING_COUNTDOWN_MS = 3000;
 
+/**
+ * Chat surfaces a typed cooldown notice can apply to (PRD 25.11). Chat is
+ * rate-limited server-side; an excess send is refused with a `chat-cooldown`
+ * carrying the surface so the right UI (ChatBox for world/room + whisper, the
+ * meeting panel for meeting) shows the retry timing instead of dropping silently.
+ * `world` covers both world and room lines — they share the ChatBox surface and
+ * the same per-player limiter.
+ */
+export const CHAT_COOLDOWN_SCOPES = ["world", "whisper", "meeting"] as const;
+export type ChatCooldownScope = (typeof CHAT_COOLDOWN_SCOPES)[number];
+
 /** Client → server socket event names. */
 export const CLIENT_EVENTS = {
   join: "join",
@@ -178,6 +189,7 @@ export const SERVER_EVENTS = {
   chat: "chat",
   whisper: "whisper",
   whisperFail: "whisper-fail",
+  chatCooldown: "chat-cooldown",
   knockPending: "knock-pending",
   knockResult: "knock-result",
   adminChanged: "admin-changed",
@@ -208,6 +220,7 @@ export const SERVER_EVENT_NAMES = [
   SERVER_EVENTS.chat,
   SERVER_EVENTS.whisper,
   SERVER_EVENTS.whisperFail,
+  SERVER_EVENTS.chatCooldown,
   SERVER_EVENTS.knockPending,
   SERVER_EVENTS.knockResult,
   SERVER_EVENTS.adminChanged,
@@ -273,6 +286,9 @@ export const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
  * the magic numbers behind the contract's abuse protections live in one place.
  */
 export const RATE_LIMITS = {
+  /** World / room chat messages per player per window (anti-spam; PRD 25.11). */
+  chatLimit: 10,
+  chatWindowSeconds: 10,
   /** Whispers per player per window. */
   whisperLimit: 20,
   whisperWindowSeconds: 60,
@@ -288,6 +304,9 @@ export const RATE_LIMITS = {
   /** Client-error beacon sink limiter (per IP). */
   clientErrorWindowMs: 60_000,
   clientErrorLimit: 10,
+  /** Authenticated product-analytics ingestion limiter (per student). */
+  analyticsWindowMs: 60_000,
+  analyticsLimit: 120,
   /** Arcade high-score submit limiter (per IP). */
   arcadeScoreWindowMs: 60_000,
   arcadeScoreLimit: 30,

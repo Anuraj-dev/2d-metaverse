@@ -100,4 +100,22 @@ describe("ChatBox persistent panel", () => {
     submitChat("hey room");
     expect(netMock.net.chat).toHaveBeenCalledWith("hey room", "room");
   });
+
+  it("surfaces a world-chat cooldown with retry timing instead of dropping silently", () => {
+    render(<ChatBox />);
+    act(() => netMock.net.emit("chat-cooldown", { scope: "world", retryAfterMs: 4000 }));
+    expect(screen.getByText("You're sending messages too fast — wait 4s.")).toBeTruthy();
+  });
+
+  it("surfaces a whisper cooldown in the transcript", () => {
+    render(<ChatBox />);
+    act(() => netMock.net.emit("chat-cooldown", { scope: "whisper", retryAfterMs: 2500 }));
+    expect(screen.getByText("You're sending messages too fast — wait 3s.")).toBeTruthy();
+  });
+
+  it("ignores a meeting-scoped cooldown (the meeting panel owns that surface)", () => {
+    render(<ChatBox />);
+    act(() => netMock.net.emit("chat-cooldown", { scope: "meeting", retryAfterMs: 4000 }));
+    expect(screen.queryByText(/sending messages too fast/)).toBeNull();
+  });
 });

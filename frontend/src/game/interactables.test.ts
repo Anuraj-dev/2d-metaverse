@@ -141,7 +141,7 @@ describe("arcadeOpenPayload (fail-closed scene gate)", () => {
   }
 
   it("returns the open payload for every canonical game id", () => {
-    for (const game of ["snake", "flappy", "2048"] as const) {
+    for (const game of ["snake", "flappy"] as const) {
       expect(arcadeOpenPayload(cabinet({ game }))).toEqual({
         game,
         label: "Cabinet",

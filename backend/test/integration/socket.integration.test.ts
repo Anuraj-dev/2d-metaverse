@@ -181,6 +181,25 @@ describe("movement and chat", () => {
     a.socket.emit("chat", { text: "hello world" });
     expect(await seen).toMatchObject({ id: a.init.selfId, text: "hello world", scope: "world" });
   });
+
+  it("refuses the 11th world chat line in the window with a typed cooldown (not a silent drop)", async () => {
+    const a = await joinAs((await createPlayer("cra")).token);
+    const b = await joinAs((await createPlayer("crb")).token);
+
+    // The shared world/room chat window is 10 per player; the 11th is refused.
+    for (let index = 0; index < 10; index += 1) {
+      const seen = once(b.socket, "chat");
+      a.socket.emit("chat", { text: `line ${index}` });
+      await seen;
+    }
+    const cooled = once<{ scope: string; retryAfterMs: number }>(a.socket, "chat-cooldown");
+    a.socket.emit("chat", { text: "one too many" });
+    const payload = await cooled;
+    expect(payload.scope).toBe("world");
+    expect(payload.retryAfterMs).toBeGreaterThan(0);
+    // The refused line never reaches other players.
+    await expectSilence(b.socket, "chat", 50);
+  });
 });
 
 describe("whisper", () => {
@@ -199,7 +218,7 @@ describe("whisper", () => {
     expect(await failed).toEqual({ name: "nobody-here" });
   });
 
-  it("drops the 21st whisper inside the rate-limit window", async () => {
+  it("refuses the 21st whisper in the window with a typed cooldown (not a silent drop)", async () => {
     const a = await joinAs((await createPlayer("wra")).token);
     const b = await joinAs((await createPlayer("wrb")).token);
 
@@ -208,7 +227,12 @@ describe("whisper", () => {
       a.socket.emit("whisper", { to: b.init.selfId, text: `msg ${index}` });
       await echoed;
     }
+    const cooled = once<{ scope: string; retryAfterMs: number }>(a.socket, "chat-cooldown");
     a.socket.emit("whisper", { to: b.init.selfId, text: "one too many" });
+    const payload = await cooled;
+    expect(payload.scope).toBe("whisper");
+    expect(payload.retryAfterMs).toBeGreaterThan(0);
+    // The refused whisper is neither delivered nor echoed.
     await expectSilence(a.socket, "whisper");
     await expectSilence(b.socket, "whisper", 50);
   });
