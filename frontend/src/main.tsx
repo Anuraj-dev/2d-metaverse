@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 import { installErrorBeacon } from "./errorBeacon";
+import { installOperationalReporter } from "./operationalReport";
 import { SERVER_URL, USE_MOCK } from "./net/config";
 import { initReducedMotion } from "./ui/reducedMotionBridge";
 
@@ -14,6 +15,9 @@ initReducedMotion();
 // (mock mode has no server to receive them). Never blocks or breaks the app.
 if (!USE_MOCK && SERVER_URL) {
   installErrorBeacon({ endpoint: `${SERVER_URL}/client-errors`, sha: __APP_SHA__ });
+  // Sibling path for CAUGHT operational failures (reconnect/media/auth-transport);
+  // call sites report via getOperationalReporter(). Same sink, bounded payloads.
+  installOperationalReporter({ endpoint: `${SERVER_URL}/client-errors/operational`, sha: __APP_SHA__ });
 }
 
 // E2E-only test hook (window.__testHook): the Playwright suite asserts through

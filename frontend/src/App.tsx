@@ -37,6 +37,7 @@ import {
   type ConnectionEvent,
   type ConnectionStatus,
 } from "./game/connectionState";
+import { getOperationalReporter } from "./operationalReport";
 import "./App.css";
 
 // Phaser (and the whole game scene) is heavy — load it only after entering.
@@ -134,6 +135,8 @@ export default function App() {
       const next = connectionReduce(connStatusRef.current, event);
       connStatusRef.current = next;
       setConnStatus(next);
+      // Report notable reconnect outcomes (reportReconnect filters healthy states).
+      getOperationalReporter().reportReconnect(next);
       // The "recovered" acknowledgement is transient: hold it briefly so the
       // convergence is visible, then settle to plain connected.
       if (next === "recovered") {
