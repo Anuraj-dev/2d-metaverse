@@ -21,6 +21,15 @@ const media = vi.hoisted(() => ({
 }));
 vi.mock("../media/livekit", () => media);
 vi.mock("../net/auth", () => ({ USE_MOCK: false }));
+// Spy on the operational reporter to assert media-publish failures are reported.
+const reportMediaPublishFailure = vi.hoisted(() => vi.fn());
+vi.mock("../operationalReport", () => ({
+  getOperationalReporter: () => ({
+    reportMediaPublishFailure,
+    reportReconnect: vi.fn(),
+    reportAuthTransport: vi.fn(),
+  }),
+}));
 // Keep the test focused on the bar; Settings + the WebAudio meter are out of scope.
 vi.mock("./Settings", () => ({ default: () => <div data-testid="settings-stub" /> }));
 vi.mock("./MicMeter", () => ({ default: () => null }));
@@ -39,6 +48,7 @@ beforeEach(() => {
   media.stageVideo.setCamEnabled.mockClear();
   media.roomVideo.setScreenShareEnabled.mockClear();
   media.roomVideo.isScreenSharing.mockReturnValue(false);
+  reportMediaPublishFailure.mockClear();
 });
 afterEach(cleanup);
 
@@ -137,5 +147,16 @@ describe("ControlBar", () => {
     // No revert: the control stays on and never shows a failure toast.
     expect(screen.getByLabelText("Turn camera off")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe("Camera on");
+    // A successful publish is never reported as an operational failure.
+    expect(reportMediaPublishFailure).not.toHaveBeenCalled();
+  });
+
+  it("reports the bounded media-publish failure when the transport reverts (PRD 25.8)", async () => {
+    media.roomVideo.setCamEnabled.mockResolvedValueOnce({ status: "unavailable" });
+    render(<ControlBar />);
+    fireEvent.click(screen.getByLabelText("Turn camera on"));
+    await waitFor(() => expect(reportMediaPublishFailure).toHaveBeenCalledWith("unavailable"));
+    // Reported exactly once per failed attempt.
+    expect(reportMediaPublishFailure).toHaveBeenCalledTimes(1);
   });
 });

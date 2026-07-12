@@ -3,8 +3,24 @@ import { signUp, signIn } from "./auth";
 
 const fetchMock = vi.fn();
 
+// Spy on the operational reporter while keeping the real pure classification
+// (authTransportReason) that auth.ts depends on.
+const reportAuthTransport = vi.hoisted(() => vi.fn());
+vi.mock("../operationalReport", async (importActual) => {
+  const actual = await importActual<typeof import("../operationalReport")>();
+  return {
+    ...actual,
+    getOperationalReporter: () => ({
+      reportAuthTransport,
+      reportReconnect: vi.fn(),
+      reportMediaPublishFailure: vi.fn(),
+    }),
+  };
+});
+
 beforeEach(() => {
   fetchMock.mockReset();
+  reportAuthTransport.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -81,5 +97,31 @@ describe("auth", () => {
   it("falls back safely when a server error body is malformed", async () => {
     fetchMock.mockReturnValue(fail(500, { error: "database exploded" }));
     await expect(signUp("x", "y")).rejects.toThrow(/server is having trouble/i);
+  });
+
+  it("reports a bounded auth-transport reason on transport failures", async () => {
+    fetchMock.mockReturnValue(fail(401, { error: "invalid-credentials" }));
+    await expect(signIn("x", "y")).rejects.toThrow();
+    expect(reportAuthTransport).toHaveBeenCalledWith("unauthorized");
+
+    reportAuthTransport.mockReset();
+    fetchMock.mockReturnValue(fail(503, {}));
+    await expect(signUp("x", "y")).rejects.toThrow();
+    expect(reportAuthTransport).toHaveBeenCalledWith("server-error");
+
+    reportAuthTransport.mockReset();
+    fetchMock.mockRejectedValue(new TypeError("upstream down"));
+    await expect(signIn("x", "y")).rejects.toThrow();
+    expect(reportAuthTransport).toHaveBeenCalledWith("network");
+  });
+
+  it("does not report expected app-level auth outcomes", async () => {
+    fetchMock.mockReturnValue(fail(400, { error: "validation" }));
+    await expect(signUp("x", "y")).rejects.toThrow();
+    fetchMock.mockReturnValue(fail(409, { error: "username-taken" }));
+    await expect(signUp("x", "y")).rejects.toThrow();
+    fetchMock.mockReturnValue(fail(429, { error: "rate-limited", retryAfterSeconds: 5 }));
+    await expect(signIn("x", "y")).rejects.toThrow();
+    expect(reportAuthTransport).not.toHaveBeenCalled();
   });
 });

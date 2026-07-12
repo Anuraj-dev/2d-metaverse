@@ -8,9 +8,12 @@ import {
   ACTIVE_SPACE_KINDS,
   ARCADE_GAMES,
   BLOCK_ACK_STATUSES,
+  AUTH_TRANSPORT_REASONS,
   LIMITS,
+  MEDIA_PUBLISH_REASONS,
   PRESENCE_ACTIVITY_KINDS,
   RATE_LIMITS,
+  RECONNECT_REASONS,
   REPORT_ACK_STATUSES,
   REPORT_CATEGORIES,
   USERNAME_PATTERN,
@@ -53,6 +56,43 @@ export const clientErrorSchema = z.object({
   context: z.string().max(LIMITS.clientErrorContextMax).optional(),
 });
 export type ClientErrorReport = z.infer<typeof clientErrorSchema>;
+
+/**
+ * `POST /client-errors/operational` body (PRD 25.8): a bounded report of a
+ * CAUGHT/handled operational failure (auth-transport, reconnect, media-publish).
+ *
+ * Privacy discipline is enforced by the schema itself, not by trusting the
+ * client: each variant is a `strictObject` (extra keys are rejected, so a
+ * report can never smuggle chat/transcripts, credentials, precise coordinates,
+ * SDP, or raw device identifiers), and `reason` is a closed enum per category —
+ * there is no free-text message or stack field. `sha`/`url`/`userAgent`/
+ * `context` reuse the same coarse, capped fields (and caps) as the crash beacon;
+ * `url` carries a pathname only and `context` a short allowlisted scene note.
+ */
+const operationalReportBase = {
+  sha: z.string().min(1).max(LIMITS.clientErrorShaMax),
+  url: z.string().max(LIMITS.clientErrorUrlMax).optional(),
+  userAgent: z.string().max(LIMITS.clientErrorUserAgentMax).optional(),
+  context: z.string().max(LIMITS.clientErrorContextMax).optional(),
+} as const;
+export const operationalReportSchema = z.discriminatedUnion("category", [
+  z.strictObject({
+    category: z.literal("auth-transport"),
+    reason: z.enum(AUTH_TRANSPORT_REASONS),
+    ...operationalReportBase,
+  }),
+  z.strictObject({
+    category: z.literal("reconnect"),
+    reason: z.enum(RECONNECT_REASONS),
+    ...operationalReportBase,
+  }),
+  z.strictObject({
+    category: z.literal("media-publish"),
+    reason: z.enum(MEDIA_PUBLISH_REASONS),
+    ...operationalReportBase,
+  }),
+]);
+export type OperationalReport = z.infer<typeof operationalReportSchema>;
 
 /** `POST /api/v1/arcade/scores` body: a client-reported score for one cabinet. */
 export const arcadeScoreSchema = z.object({
