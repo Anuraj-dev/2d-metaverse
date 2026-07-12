@@ -1,7 +1,7 @@
 import { Router, json } from "express";
 import rateLimit from "express-rate-limit";
 import type { Logger } from "pino";
-import { RATE_LIMITS, clientErrorSchema } from "@metaverse/shared";
+import { RATE_LIMITS, clientErrorSchema, operationalReportSchema } from "@metaverse/shared";
 import { requestLog } from "./request-logger.js";
 
 /**
@@ -10,6 +10,10 @@ import { requestLog } from "./request-logger.js";
  * small body cap instead. Reports are logged (module: "client-error") and
  * deliberately not persisted anywhere else. The payload schema lives in
  * @metaverse/shared.
+ *
+ * `POST /` receives UNCAUGHT crashes (free-text message/stack). `POST /operational`
+ * receives CAUGHT operational failures (PRD 25.8) as a bounded `{ category, reason }`
+ * pair — no free text — and shares this router's per-IP limiter and body cap.
  */
 export interface ClientErrorsOptions {
   windowMs?: number;
@@ -33,6 +37,20 @@ export function createClientErrorsRouter(base: Logger, options: ClientErrorsOpti
       return;
     }
     requestLog(response, base).error({ module: "client-error", ...parsed.data }, "client error reported");
+    response.status(204).end();
+  });
+  // Handled operational failures (PRD 25.8): bounded category/reason, logged at
+  // warn (they are caught + recovered, not crashes) under the same module label.
+  router.post("/operational", limiter, json({ limit: "16kb" }), (request, response) => {
+    const parsed = operationalReportSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "invalid-client-error" });
+      return;
+    }
+    requestLog(response, base).warn(
+      { module: "client-error", kind: "operational", ...parsed.data },
+      "handled operational error reported"
+    );
     response.status(204).end();
   });
   return router;

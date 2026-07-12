@@ -2,6 +2,7 @@
 import type { AuthFailureResponse, AuthTokenResponse } from "@metaverse/shared";
 import { parseAuthFailureResponse } from "@metaverse/shared/auth-failure";
 import { SERVER_URL } from "./config";
+import { authTransportReason, getOperationalReporter } from "../operationalReport";
 
 export { USE_MOCK } from "./config";
 
@@ -25,8 +26,15 @@ async function postJson(path: string, body: unknown): Promise<Response> {
       body: JSON.stringify(body),
     });
   } catch {
+    reportAuthTransport({ kind: "network" });
     throw new Error("Could not reach Hyprverse. Check your connection and try again.");
   }
+}
+
+/** One-liner bridge: classify an auth-transport failure and report it if notable. */
+function reportAuthTransport(outcome: { kind: "network" } | { kind: "http"; status: number }): void {
+  const reason = authTransportReason(outcome);
+  if (reason) getOperationalReporter().reportAuthTransport(reason);
 }
 
 async function authFailure(response: Response): Promise<AuthFailureResponse | null> {
@@ -57,6 +65,7 @@ function failureMessage(failure: AuthFailureResponse | null): string {
 export async function signUp(username: string, password: string): Promise<void> {
   const res = await postJson("/api/v1/signup", { username, password });
   if (!res.ok) {
+    reportAuthTransport({ kind: "http", status: res.status });
     throw new Error(failureMessage(await authFailure(res)));
   }
 }
@@ -64,7 +73,10 @@ export async function signUp(username: string, password: string): Promise<void> 
 /** Explicit sign-in. Returns the JWT. Never creates an account. */
 export async function signIn(username: string, password: string): Promise<string> {
   const res = await postJson("/api/v1/signin", { username, password });
-  if (!res.ok) throw new Error(failureMessage(await authFailure(res)));
+  if (!res.ok) {
+    reportAuthTransport({ kind: "http", status: res.status });
+    throw new Error(failureMessage(await authFailure(res)));
+  }
   const { token } = (await res.json()) as AuthTokenResponse;
   return token;
 }
