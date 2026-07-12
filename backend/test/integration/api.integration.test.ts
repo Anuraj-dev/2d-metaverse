@@ -269,6 +269,62 @@ describe("analytics ingestion", () => {
     );
     expect(visible.rows).toEqual([{ event_id: activeId }]);
   });
+
+  it("ingests the pilot reliability events with server time, idempotency, and conflict (PRD 25.10)", async () => {
+    const { token } = await createPlayer("analytics-reliability");
+    // Every reliability variant is accepted and server-stamped.
+    const events = [
+      { name: "world-load", properties: { outcome: "success", durationMs: 842 } },
+      { name: "reconnect", properties: { outcome: "started" } },
+      { name: "media-enable", properties: { kind: "mic", outcome: "denied" } },
+      { name: "session-start", properties: {} },
+    ] as const;
+    for (const event of events) {
+      const res = await api(base, "/api/v1/analytics/events", {
+        token,
+        body: { eventId: randomUUID(), event },
+      });
+      expect(res.status).toBe(202);
+      expect(res.json).toMatchObject({ duplicate: false });
+    }
+
+    // Retried delivery of the SAME id is suppressed as a duplicate (not stored twice).
+    const eventId = randomUUID();
+    const worldLoad = { name: "world-load", properties: { outcome: "success", durationMs: 1200 } };
+    const first = await api(base, "/api/v1/analytics/events", {
+      token,
+      body: { eventId, event: worldLoad },
+    });
+    expect(first.status).toBe(202);
+    const replay = await api(base, "/api/v1/analytics/events", {
+      token,
+      body: { eventId, event: worldLoad },
+    });
+    expect(replay).toEqual({
+      status: 200,
+      json: { acceptedAt: first.json.acceptedAt, duplicate: true },
+    });
+    const stored = await pool.query<{ count: number; properties: Record<string, unknown> }>(
+      "SELECT count(*)::int AS count, min(properties::text)::jsonb AS properties FROM analytics_events WHERE event_id = $1",
+      [eventId],
+    );
+    expect(stored.rows[0]?.count).toBe(1);
+    expect(stored.rows[0]?.properties).toEqual({ outcome: "success", durationMs: 1200 });
+
+    // A replay of the same id whose bounded payload changed is a conflict.
+    const conflict = await api(base, "/api/v1/analytics/events", {
+      token,
+      body: { eventId, event: { name: "world-load", properties: { outcome: "failure", durationMs: 5 } } },
+    });
+    expect(conflict).toEqual({ status: 409, json: { error: "event-id-conflict" } });
+
+    // An out-of-bounds duration is rejected by the shared allowlist, never stored.
+    const invalid = await api(base, "/api/v1/analytics/events", {
+      token,
+      body: { eventId: randomUUID(), event: { name: "world-load", properties: { outcome: "success", durationMs: 999_999 } } },
+    });
+    expect(invalid.status).toBe(400);
+  });
 });
 
 describe("space listing", () => {
