@@ -215,3 +215,23 @@ export async function walkToSeat(socket: ClientSocket, roomId: string, seatId: n
   await sleep(250);
   socket.emit("move", { x, y, dir: "down" });
 }
+
+function boardSeatCenter(tableId: string, seat: number): { x: number; y: number } {
+  const manifest = getGeometryManifest();
+  const chair = manifest.boardSeats.find((s) => s.tableId === tableId && s.seat === seat);
+  if (!chair) throw new Error(`no board seat geometry for table ${tableId} seat ${seat}`);
+  const half = Math.floor(manifest.tile.size / 2);
+  return { x: chair.x + half, y: chair.y + half };
+}
+
+/**
+ * Walk `socket` onto a plaza board chair — call immediately before emitting
+ * `board-sit` (PRD 25.24 gates the sit on anchor proximity to the chair tile).
+ * This is the player's FIRST move, which re-anchors from spawn regardless of
+ * distance and is always accepted; the server sets `moveAnchor` synchronously
+ * before the following `board-sit` handler runs, so no wait is needed.
+ */
+export function walkToBoardSeat(socket: ClientSocket, tableId: string, seat: number): void {
+  const { x, y } = boardSeatCenter(tableId, seat);
+  socket.emit("move", { x, y, dir: "down" });
+}
