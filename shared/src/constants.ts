@@ -120,6 +120,11 @@ export type BlockAckStatus = (typeof BLOCK_ACK_STATUSES)[number];
 export const REPORT_STATUSES = ["open", "dismissed", "actioned"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
+export const OPERATIONAL_CATEGORIES = ["auth-transport", "reconnect", "media-publish"] as const;
+export const AUTH_TRANSPORT_REASONS = ["unauthorized", "network", "server-error"] as const;
+export const RECONNECT_REASONS = ["reconnecting", "recovered", "gone"] as const;
+export const MEDIA_PUBLISH_REASONS = ["denied", "unavailable", "failed"] as const;
+
 /**
  * The reversible moderator actions (PRD 25.14). Permanent bans and content
  * deletion are deliberately out of the pilot. Every one is audit-logged.

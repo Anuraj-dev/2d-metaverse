@@ -7,10 +7,13 @@ import { dirSchema } from "./socket.js";
 import {
   ACTIVE_SPACE_KINDS,
   ARCADE_GAMES,
+  AUTH_TRANSPORT_REASONS,
   BLOCK_ACK_STATUSES,
   LIMITS,
+  MEDIA_PUBLISH_REASONS,
   PRESENCE_ACTIVITY_KINDS,
   RATE_LIMITS,
+  RECONNECT_REASONS,
   REPORT_ACK_STATUSES,
   REPORT_CATEGORIES,
   REPORT_STATUSES,
@@ -54,6 +57,20 @@ export const clientErrorSchema = z.object({
   context: z.string().max(LIMITS.clientErrorContextMax).optional(),
 });
 export type ClientErrorReport = z.infer<typeof clientErrorSchema>;
+
+const operationalReportBase = {
+  sha: z.string().min(1).max(LIMITS.clientErrorShaMax),
+  url: z.string().max(LIMITS.clientErrorUrlMax).optional(),
+  userAgent: z.string().max(LIMITS.clientErrorUserAgentMax).optional(),
+  context: z.string().max(LIMITS.clientErrorContextMax).optional(),
+} as const;
+
+export const operationalReportSchema = z.discriminatedUnion("category", [
+  z.strictObject({ category: z.literal("auth-transport"), reason: z.enum(AUTH_TRANSPORT_REASONS), ...operationalReportBase }),
+  z.strictObject({ category: z.literal("reconnect"), reason: z.enum(RECONNECT_REASONS), ...operationalReportBase }),
+  z.strictObject({ category: z.literal("media-publish"), reason: z.enum(MEDIA_PUBLISH_REASONS), ...operationalReportBase }),
+]);
+export type OperationalReport = z.infer<typeof operationalReportSchema>;
 
 /** `POST /api/v1/arcade/scores` body: a client-reported score for one cabinet. */
 export const arcadeScoreSchema = z.object({
