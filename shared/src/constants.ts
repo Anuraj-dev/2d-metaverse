@@ -170,9 +170,23 @@ export function roomDisplayName(roomId: string): string {
 
 /**
  * Terminal outcome of a knock, delivered to the knocker (PRD 14). `canceled` is
- * client-initiated and never sent back, so it is not on the wire.
+ * client-initiated and never sent back, so it is not on the wire. `too-far`
+ * (PRD 25.23) is the authoritative-proximity denial: the server refuses a knock
+ * whose knocker is not actually standing at that room's door.
  */
-export const KNOCK_RESULTS = ["approved", "denied", "timeout"] as const;
+export const KNOCK_RESULTS = ["approved", "denied", "timeout", "too-far"] as const;
+
+/**
+ * Why the server refused a private-seat sit (PRD 25.23), delivered to the
+ * would-be sitter on `seat-denied`. Distinct from a lost seat race (which stays
+ * a `seat-update` naming the real occupant): these are authority failures a
+ * spoofed client triggers — claiming a room it never entered (`not-in-room`),
+ * lacking a live access grant (`no-access`), or sitting from across the map
+ * (`too-far`). A typed denial rather than a silent drop so the client never
+ * hangs in a phantom-seated state.
+ */
+export const SEAT_DENY_REASONS = ["not-in-room", "no-access", "too-far"] as const;
+export type SeatDenyReason = (typeof SEAT_DENY_REASONS)[number];
 
 /** How adminship was conferred, carried on `admin-changed` (PRD 14). */
 export const ADMIN_CHANGE_REASONS = ["initial", "succession"] as const;

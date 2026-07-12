@@ -798,11 +798,23 @@ export default class WorldScene extends Phaser.Scene {
     this.listeners.own(
       this.net.on(
         "knock-result",
-        (p: { roomId: string; result: "approved" | "denied" | "timeout" }) => {
+        (p: { roomId: string; result: "approved" | "denied" | "timeout" | "too-far" }) => {
           if (p.result === "approved") bus.emit("room-entered", { roomId: p.roomId });
           else bus.emit("stop-knocking");
         },
       ),
+    );
+    // Authoritative sit denial (PRD 25.23): the server refused our optimistic
+    // private-seat sit (spoofed room / no access / too far). Honest clients never
+    // trip this — they only sit when in-room and standing on the seat — so it is a
+    // defensive rollback: drop the phantom local seat so we are not shown seated
+    // while the server holds us standing.
+    this.listeners.own(
+      this.net.on("seat-denied", (p: { roomId: string; seatId: number }) => {
+        if (this.seated && this.currentSeat?.roomId === p.roomId && this.currentSeat.seatId === p.seatId) {
+          this.stand();
+        }
+      }),
     );
     // Door visibility follows the room's open state for everyone near it.
     this.listeners.own(

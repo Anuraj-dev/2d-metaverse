@@ -1,7 +1,7 @@
 import { io, type Socket as ClientSocket } from "socket.io-client";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { redis } from "../../src/redis.js";
-import { createPlayer, expectSilence, once, onceMatching, sleep, startServer, teardown, type TestServer } from "./helpers.js";
+import { createPlayer, expectSilence, once, onceMatching, sleep, startServer, teardown, walkToDoor, walkToSeat, type TestServer } from "./helpers.js";
 
 // setup.ts shrinks these for the suite (defaults are 10s / 4s in production).
 const JOIN_TIMEOUT_MS = Number(process.env.JOIN_TIMEOUT_MS);
@@ -61,14 +61,32 @@ async function joinAs(token: string) {
 
 type Joined = Awaited<ReturnType<typeof joinAs>>;
 
+// The PRD 25.23 proximity gates check each socket's server move-anchor, so a
+// test must walk a player to the door before knocking / to the seat before
+// sitting. `walkToDoor` / `walkToSeat` (helpers.ts) derive the target from the
+// authoritative geometry manifest.
+
+/** Walk `player` to a room's door, then knock (anchor is set synchronously
+ *  before the knock handler runs, so no wait between the two). */
+function knockAt(player: Joined, roomId: string): void {
+  walkToDoor(player.socket, roomId);
+  player.socket.emit("knock", { roomId });
+}
+
+/** Walk an admitted `player` onto a seat, then sit. */
+async function sitAt(player: Joined, roomId: string, seatId: number): Promise<void> {
+  await walkToSeat(player.socket, roomId, seatId);
+  player.socket.emit("seat-sit", { roomId, seatId });
+}
+
 /** The first player to knock at an empty room walks straight in as its admin. */
 async function enterAsAdmin(player: Joined, roomId: string): Promise<void> {
   const approved = once(player.socket, "knock-result");
-  player.socket.emit("knock", { roomId });
+  knockAt(player, roomId);
   expect(await approved).toEqual({ roomId, result: "approved" });
 }
 
-/** A later arrival knocks; the room's admin approves them in. */
+/** A later arrival walks to the door, knocks, and is approved in by the admin. */
 async function knockAndApprove(roomId: string, admin: Joined, knocker: Joined): Promise<void> {
   const pending = onceMatching<{ knocks: Array<{ id: string }> }>(
     admin.socket,
@@ -76,7 +94,7 @@ async function knockAndApprove(roomId: string, admin: Joined, knocker: Joined): 
     (payload) => payload.knocks.some((k) => k.id === knocker.init.selfId),
   );
   const approved = once(knocker.socket, "knock-result");
-  knocker.socket.emit("knock", { roomId });
+  knockAt(knocker, roomId);
   await pending;
   admin.socket.emit("approve-knock", { roomId, playerId: knocker.init.selfId });
   expect(await approved).toEqual({ roomId, result: "approved" });
@@ -336,10 +354,24 @@ describe("room access — knock/approve (PRD 14)", () => {
       (payload) => payload.knocks.some((k) => k.id === guest.init.selfId),
     );
     const approved = once(guest.socket, "knock-result");
-    guest.socket.emit("knock", { roomId: "1" });
+    knockAt(guest, "1");
     await pending;
     admin.socket.emit("approve-knock", { roomId: "1", playerId: guest.init.selfId });
     expect(await approved).toEqual({ roomId: "1", result: "approved" });
+  });
+
+  it("denies a knock from across the map, but admits one from the door (PRD 25.23)", async () => {
+    const remote = await joinAs((await createPlayer("rkr")).token);
+    // Standing at spawn (plaza centre), far from room 3's door: authoritative
+    // proximity refuses the knock with a typed too-far result — no admin toast,
+    // no admission — instead of hanging the knocker's "Knocking…" UI forever.
+    const farResult = once<{ roomId: string; result: string }>(remote.socket, "knock-result");
+    remote.socket.emit("knock", { roomId: "3" });
+    expect(await farResult).toEqual({ roomId: "3", result: "too-far" });
+
+    // The same player, now standing at the door, walks straight into the empty
+    // room as its admin — the valid door flow is unchanged.
+    await enterAsAdmin(remote, "3");
   });
 
   it("times out an unanswered knock as denied", async () => {
@@ -349,7 +381,7 @@ describe("room access — knock/approve (PRD 14)", () => {
 
     // KNOCK_TIMEOUT_MS is shrunk to 300ms in setup.ts — no admin action.
     const result = once<{ result: string }>(guest.socket, "knock-result", 3_000);
-    guest.socket.emit("knock", { roomId: "2" });
+    knockAt(guest, "2");
     expect(await result).toEqual({ roomId: "2", result: "timeout" });
   });
 
@@ -376,13 +408,14 @@ describe("seats", () => {
     await enterAsAdmin(a, "4");
     await knockAndApprove("4", a, b);
 
+    // A walks to seat 0 and sits — near the seat, in the room: accepted.
     const sitSeenByB = once(b.socket, "seat-update");
-    a.socket.emit("seat-sit", { roomId: "4", seatId: 0 });
+    await sitAt(a, "4", 0);
     expect(await sitSeenByB).toEqual({ roomId: "4", seatId: 0, playerId: a.init.selfId });
 
-    // B contests the same seat: only B is told who the occupant is.
+    // B walks to the same seat and contests it: only B is told who the occupant is.
     const conflict = once(b.socket, "seat-update");
-    b.socket.emit("seat-sit", { roomId: "4", seatId: 0 });
+    await sitAt(b, "4", 0);
     expect(await conflict).toEqual({ roomId: "4", seatId: 0, playerId: a.init.selfId });
     await expectSilence(a.socket, "seat-update");
 
@@ -391,11 +424,27 @@ describe("seats", () => {
     expect(await standSeenByB).toEqual({ roomId: "4", seatId: 0, playerId: null });
   });
 
-  it("ignores seat-sit without room access", async () => {
+  it("denies a seat-sit for a room the player never entered (spoofed room)", async () => {
     const a = await joinAs((await createPlayer("sna")).token);
     const b = await joinAs((await createPlayer("snb")).token);
+    // A never knocked into room 5: claiming a seat there is a spoof. The server
+    // tracks membership itself (socket.data.currentRoomId), so the client's
+    // roomId payload cannot fake it — a typed denial, never a silent drop.
+    const denied = once(a.socket, "seat-denied");
     a.socket.emit("seat-sit", { roomId: "5", seatId: 0 });
+    expect(await denied).toEqual({ roomId: "5", seatId: 0, reason: "not-in-room" });
     await expectSilence(b.socket, "seat-update");
+  });
+
+  it("denies a seat-sit from across the room (too far from the seat)", async () => {
+    const a = await joinAs((await createPlayer("sfa")).token);
+    await enterAsAdmin(a, "4");
+    // A is admitted and standing at the door (its move-anchor), but has NOT
+    // walked to the seat: the sit is proximity-denied even though room + access
+    // are valid. (door 4 → seat 0 is 84px ≫ the one-tile tolerance.)
+    const denied = once(a.socket, "seat-denied");
+    a.socket.emit("seat-sit", { roomId: "4", seatId: 0 });
+    expect(await denied).toEqual({ roomId: "4", seatId: 0, reason: "too-far" });
   });
 });
 
@@ -408,7 +457,7 @@ describe("room-leave", () => {
     await knockAndApprove("5", a, b);
 
     const sat = onceMatching<{ seatId: number }>(b.socket, "seat-update", (payload) => payload.seatId === 1);
-    a.socket.emit("seat-sit", { roomId: "5", seatId: 1 });
+    await sitAt(a, "5", 1);
     expect(await sat).toEqual({ roomId: "5", seatId: 1, playerId: a.init.selfId });
 
     a.socket.emit("room-leave");
@@ -425,14 +474,17 @@ describe("room-leave", () => {
     a.socket.emit("chat", { text: "back outside" });
     expect(await worldChat).toMatchObject({ id: a.init.selfId, text: "back outside", scope: "world" });
 
-    // room-access is revoked: without re-entering, seat-sit is ignored.
+    // room membership is revoked on leave: without re-entering, a seat-sit is
+    // denied as not-in-room (a typed denial, not a silent drop).
+    const leftDenied = once(a.socket, "seat-denied");
     a.socket.emit("seat-sit", { roomId: "5", seatId: 2 });
+    expect(await leftDenied).toEqual({ roomId: "5", seatId: 2, reason: "not-in-room" });
     await expectSilence(b.socket, "seat-update", 300, (payload) => payload.seatId === 2);
 
     // room-leave alone does NOT free the seat — that is seat-stand's contract:
-    // B contesting the seat is still told A occupies it…
+    // B (still in the room, at the seat) contesting it is told A occupies it…
     const conflict = onceMatching<{ seatId: number }>(b.socket, "seat-update", (payload) => payload.seatId === 1);
-    b.socket.emit("seat-sit", { roomId: "5", seatId: 1 });
+    await sitAt(b, "5", 1);
     expect(await conflict).toEqual({ roomId: "5", seatId: 1, playerId: a.init.selfId });
 
     // …and seat-stand still works after leaving (it needs no room access).
@@ -541,7 +593,7 @@ describe("disconnect grace", () => {
       "seat-update",
       (payload) => payload.roomId === "6" && payload.seatId === 1 && payload.playerId === a.init.selfId,
     );
-    a.socket.emit("seat-sit", { roomId: "6", seatId: 1 });
+    await sitAt(a, "6", 1);
     expect(await sat).toEqual({ roomId: "6", seatId: 1, playerId: a.init.selfId });
 
     // Wait for the FREE (null) specifically: on a slow runner a's own sit

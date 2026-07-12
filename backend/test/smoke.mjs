@@ -91,13 +91,24 @@ try {
   assert.ok(b.players.some((player) => player.id === a.selfId));
 
   await new Promise((resolve) => setTimeout(resolve, 100));
-  const selected = room3.seats
-    .map((seat) => ({ roomId: room3.id, seatId: seat.id }))
-    .find(({ roomId, seatId }) => !occupiedSeats.has(`${roomId}:${seatId}`));
-  assert.ok(selected, "No free seat available for smoke test");
+  const freeSeat = room3.seats.find((seat) => !occupiedSeats.has(`${room3.id}:${seat.id}`));
+  assert.ok(freeSeat, "No free seat available for smoke test");
+  const selected = { roomId: room3.id, seatId: freeSeat.id };
+
+  // PRD 25.23: knock and sit are proximity-gated against the server's own
+  // move-anchor, so this client must physically stand at the door / on the seat.
+  // The door centre comes from the room's doorZone; the seat from its x/y (both
+  // authoritative REST geometry). The move to the door is each socket's FIRST
+  // move, re-anchored from spawn and always accepted.
+  const doorCenter = {
+    x: room3.doorZone.x + Math.floor(room3.doorZone.width / 2),
+    y: room3.doorZone.y + Math.floor(room3.doorZone.height / 2),
+  };
+  const seatSpot = { x: freeSeat.x, y: freeSeat.y };
 
   // Room access (PRD 14): A is the first in → admin; B knocks and A approves.
   const adminApproved = once(socketA, "knock-result");
+  socketA.emit("move", { x: doorCenter.x, y: doorCenter.y, dir: "down" });
   socketA.emit("knock", { roomId: selected.roomId });
   assert.deepEqual(await adminApproved, { roomId: selected.roomId, result: "approved" });
 
@@ -120,6 +131,7 @@ try {
   // B knocks; A (admin) sees the pending request and approves it.
   const pendingSeenByA = onceMatching(socketA, "knock-pending", (p) => p.knocks.some((k) => k.id === b.selfId));
   const guestApproved = once(socketB, "knock-result");
+  socketB.emit("move", { x: doorCenter.x, y: doorCenter.y, dir: "down" });
   socketB.emit("knock", { roomId: selected.roomId });
   await pendingSeenByA;
   socketA.emit("approve-knock", { roomId: selected.roomId, playerId: b.selfId });
@@ -135,15 +147,19 @@ try {
   }
 
   const seatSeenByB = once(socketB, "seat-update");
+  socketA.emit("move", { x: seatSpot.x, y: seatSpot.y, dir: "down" }); // walk onto the seat
   socketA.emit("seat-sit", selected);
   assert.deepEqual(await seatSeenByB, { ...selected, playerId: a.selfId });
 
   const privateToken = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: `room:${selected.roomId}` } });
   assert.equal(privateToken.status, 200);
 
+  // A short walk from the seat back to the door — within the movement envelope
+  // (the settle keeps the ≤~90px step in-budget); verifies move broadcast.
   const moveSeen = once(socketB, "player-moved");
-  socketA.emit("move", { x: 321, y: 288, dir: "right" });
-  assert.deepEqual(await moveSeen, { id: a.selfId, x: 321, y: 288, dir: "right" });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  socketA.emit("move", { x: doorCenter.x, y: doorCenter.y, dir: "down" });
+  assert.deepEqual(await moveSeen, { id: a.selfId, x: doorCenter.x, y: doorCenter.y, dir: "down" });
 
   const chatSeen = once(socketB, "chat");
   socketA.emit("chat", { text: "smoke test" });
@@ -160,7 +176,7 @@ try {
   assert.equal(typeof stageAudience.json.livekitToken, "string");
 
   // stage token: publish request while not standing on the stage → 403 (PRD 17
-  // server-authoritative gate; tokenA's player is at spawn, not the stage zone).
+  // server-authoritative gate; tokenA's player is by room 3's door, not the stage zone).
   const stagePublishOffStage = await api("/api/v1/livekit/token", { token: tokenA, body: { roomName: "stage:1", stagePublish: true } });
   assert.equal(stagePublishOffStage.status, 403);
   assert.equal(stagePublishOffStage.json.error, "not-on-stage");

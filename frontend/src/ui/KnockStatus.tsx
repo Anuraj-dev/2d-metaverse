@@ -29,7 +29,7 @@ export default function KnockStatus() {
       setKnock(p);
     });
     const offStop = bus.on("stop-knocking", () => setKnock(null));
-    const offResult = net.on("knock-result", (p: { result: "approved" | "denied" | "timeout" }) => {
+    const offResult = net.on("knock-result", (p: { result: "approved" | "denied" | "timeout" | "too-far" }) => {
       if (p.result === "approved") {
         setKnock(null);
         bus.emit("knock-approved");

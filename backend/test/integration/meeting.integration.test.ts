@@ -16,6 +16,8 @@ import {
   sleep,
   startServer,
   teardown,
+  walkToDoor,
+  walkToSeat,
   type TestServer,
 } from "./helpers.js";
 
@@ -45,9 +47,11 @@ interface Player {
   selfId: string;
 }
 
-/** Knock and wait to be admitted (used once allow-all is open, or as admin). */
+/** Walk to the door, knock, and wait to be admitted (used once allow-all is
+ *  open, or as the first-in admin). PRD 25.23 requires door proximity to knock. */
 async function knockInto(socket: ClientSocket, roomId: string): Promise<void> {
   const approved = once<{ result: string }>(socket, "knock-result");
+  walkToDoor(socket, roomId);
   socket.emit("knock", { roomId });
   expect((await approved).result).toBe("approved");
 }
@@ -80,12 +84,14 @@ async function joinOpenRoom(prefix: string, roomId: string): Promise<Player> {
   return { socket, selfId };
 }
 
-function sit(player: Player, roomId: string, seatId: number): Promise<unknown> {
+async function sit(player: Player, roomId: string, seatId: number): Promise<unknown> {
   const confirmed = onceMatching<{ seatId: number; playerId: string | null }>(
     player.socket,
     "seat-update",
     (seat) => seat.seatId === seatId && seat.playerId === player.selfId,
   );
+  // PRD 25.23: walk onto the seat (in-room + proximity) before sitting.
+  await walkToSeat(player.socket, roomId, seatId);
   player.socket.emit("seat-sit", { roomId, seatId });
   return confirmed;
 }
