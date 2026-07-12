@@ -85,7 +85,7 @@ export default function RoomAdminPanel() {
 
   const net = sharedNet();
   return (
-    <div className="room-admin">
+    <div className="room-admin" data-dialog-keep-live>
       <div className="room-admin-name">{roomDisplayName(roomId)}</div>
       <div className="room-admin-bar">
         {view.badge && (

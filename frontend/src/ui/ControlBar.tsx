@@ -75,7 +75,7 @@ export default function ControlBar() {
   };
 
   return (
-    <div className="control-bar">
+    <div className="control-bar" data-dialog-keep-live>
       <button
         type="button"
         className={`icon-btn control-btn ${prefs.micOn ? "on" : "off"}`}

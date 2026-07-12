@@ -71,6 +71,44 @@ export const authFailureResponseSchema = z.discriminatedUnion("error", [
 ]);
 export type AuthFailureResponse = z.infer<typeof authFailureResponseSchema>;
 
+/**
+ * Client-ingestible analytics events. Each feature must extend this
+ * discriminated union with a bounded schema before it may emit an event.
+ * Identity and timestamps are deliberately absent: the server owns both.
+ */
+export const analyticsClientEventSchema = z.discriminatedUnion("name", [
+  // Foundation-only production verification seam. Product feature events are
+  // added by their owning slices with bounded, privacy-reviewed properties.
+  z.strictObject({
+    name: z.literal("ingestion-probe"),
+    properties: z.strictObject({ nonce: z.uuid() }),
+  }),
+]);
+export type AnalyticsClientEvent = z.infer<typeof analyticsClientEventSchema>;
+
+/** `POST /api/v1/analytics/events` body. */
+export const analyticsIngestRequestSchema = z.strictObject({
+  eventId: z.uuid(),
+  event: analyticsClientEventSchema,
+});
+export type AnalyticsIngestRequest = z.infer<typeof analyticsIngestRequestSchema>;
+
+export const analyticsIngestResponseSchema = z.strictObject({
+  acceptedAt: z.iso.datetime(),
+  duplicate: z.boolean(),
+});
+export type AnalyticsIngestResponse = z.infer<typeof analyticsIngestResponseSchema>;
+
+export const analyticsIngestFailureSchema = z.discriminatedUnion("error", [
+  z.strictObject({ error: z.literal("invalid-event") }),
+  z.strictObject({ error: z.literal("event-id-conflict") }),
+  z.strictObject({
+    error: z.literal("rate-limited"),
+    retryAfterSeconds: z.number().int().min(1).max(60),
+  }),
+]);
+export type AnalyticsIngestFailure = z.infer<typeof analyticsIngestFailureSchema>;
+
 /** One leaderboard row: a player's best on a cabinet. */
 export const arcadeScoreEntrySchema = z.object({
   username: z.string(),

@@ -427,7 +427,7 @@ interactables_objs = [
                  "  Cafe (SW)               — social lounge\n"
                  "  Coworking (SE)          — open desk pods\n"
                  "  Mandakini Hostel (south)— Rooms 1, 2, 3\n"
-                 "  Game Arcade (south)     — Snake, Flappy, 2048\n"
+                 "  Game Arcade (south)     — Snake, Flappy\n"
                  "                            + Tic-Tac-Toe & Connect 4\n\n"
                  "Tip: head south past coworking for\n"
                  "the Game Arcade — or portal across the park!"
@@ -458,7 +458,7 @@ interactables_objs = [
     # tiles below it: the 32px solid cabinet body clears by row 98, so rows 98-99
     # give a collision-free approach strip that is still inside the findNear rect.
     # `game` selects the module. Snake/Flappy sit west of the north doorway
-    # (x=79-80); 2048 sits east of it.
+    # (x=79-80). (2048 was retired — PRD 25.36.)
     {
         "id": 40010, "name": "arcade_snake",
         "x": 71 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
@@ -477,16 +477,6 @@ interactables_objs = [
             {"name": "interactType", "type": "string", "value": "arcade"},
             {"name": "label",        "type": "string", "value": "Flappy"},
             {"name": "game",         "type": "string", "value": "flappy"},
-        ],
-    },
-    {
-        "id": 40012, "name": "arcade_2048",
-        "x": 84 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
-        "rotation": 0, "type": "", "visible": True,
-        "properties": [
-            {"name": "interactType", "type": "string", "value": "arcade"},
-            {"name": "label",        "type": "string", "value": "2048"},
-            {"name": "game",         "type": "string", "value": "2048"},
         ],
     },
 ]
@@ -644,7 +634,6 @@ furn("f_sofa_small",  8, 97, True)
 # little themed dressing so the hall doesn't read empty.
 furn("f_arcade_snake",  71, 96, True)
 furn("f_arcade_flappy", 76, 96, True)
-furn("f_arcade_2048",   84, 96, True)
 furn("f_vending",       68, 96, True)   # snack machine by the entrance wall
 furn("f_plant_big",     68, 107, True)  # corner greenery
 furn("f_plant_big",     86, 107, True)
