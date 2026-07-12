@@ -71,6 +71,55 @@ describe("MeetingGrid (roster fallback — media unavailable)", () => {
     expect(screen.getByText("raja (you)")).toBeTruthy();
   });
 
+  // PRD 25.16: tiles expose button semantics, activation, and focus state.
+  it("exposes each tile as a labelled button reflecting its focus state", () => {
+    render(<MeetingGrid participants={roster} selfId="me" />);
+    const bobTile = screen
+      .getAllByTestId("meet-tile")
+      .find((tile) => tile.getAttribute("data-player") === "p2");
+    if (!bobTile) throw new Error("bob tile not rendered");
+    expect(bobTile.getAttribute("role")).toBe("button");
+    expect(bobTile.getAttribute("tabindex")).toBe("0");
+    expect(bobTile.getAttribute("aria-pressed")).toBe("false");
+    expect(bobTile.getAttribute("aria-label")).toBe("Focus bob");
+
+    fireEvent.click(bobTile);
+    const focused = screen
+      .getAllByTestId("meet-tile")
+      .find((tile) => tile.getAttribute("data-focused") === "true");
+    expect(focused?.getAttribute("aria-pressed")).toBe("true");
+    expect(focused?.getAttribute("aria-label")).toBe("Unfocus bob");
+  });
+
+  it("activates focus toggle via Enter and Space", () => {
+    render(<MeetingGrid participants={roster} selfId="me" />);
+    const carolTile = () =>
+      screen.getAllByTestId("meet-tile").find((t) => t.getAttribute("data-player") === "p3");
+    const tile = carolTile();
+    if (!tile) throw new Error("carol tile not rendered");
+    fireEvent.keyDown(tile, { key: "Enter" });
+    expect(screen.getByTestId("meeting-stage").getAttribute("data-mode")).toBe("focus");
+    expect(
+      screen.getAllByTestId("meet-tile").find((t) => t.getAttribute("data-focused") === "true")
+        ?.getAttribute("data-player"),
+    ).toBe("p3");
+    // Space on the focused tile toggles back to the symmetric grid.
+    const focusedTile = screen
+      .getAllByTestId("meet-tile")
+      .find((t) => t.getAttribute("data-focused") === "true");
+    if (!focusedTile) throw new Error("focused tile missing");
+    fireEvent.keyDown(focusedTile, { key: " " });
+    expect(screen.getByTestId("meeting-stage").getAttribute("data-mode")).toBe("grid");
+  });
+
+  it("labels the self tile distinctly", () => {
+    render(<MeetingGrid participants={roster} selfId="me" />);
+    const selfTile = screen
+      .getAllByTestId("meet-tile")
+      .find((tile) => tile.getAttribute("data-player") === "me");
+    expect(selfTile?.getAttribute("aria-label")).toBe("Focus raja (you)");
+  });
+
   it("starts in symmetric-grid mode and focuses a tile on click (PRD 23)", () => {
     render(<MeetingGrid participants={roster} selfId="me" />);
     expect(screen.getByTestId("meeting-stage").getAttribute("data-mode")).toBe("grid");

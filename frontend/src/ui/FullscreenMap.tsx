@@ -150,15 +150,24 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
     setHover(dot?.name ? { x: e.clientX, y: e.clientY, name: dot.name } : null);
   };
 
+  // Pan the world camera to a player and close (the shared view-only `locate`
+  // seam — no teleport). Reused by the canvas hit-test and the keyboard list.
+  const locate = (id: string) => {
+    bus.emit("locate", { id });
+    onClose();
+  };
+
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const w = toWorld(e.clientX, e.clientY);
     if (!w) return;
     const id = nearestDot(dots, w.x, w.y, 24 / scale);
-    if (id) {
-      bus.emit("locate", { id });
-      onClose();
-    }
+    if (id) locate(id);
   };
+
+  // Named players get a keyboard/screen-reader-operable list alongside the
+  // canvas — the canvas dots are pointer-only, so this is the accessible
+  // alternative for the same locate action (PRD 25.16).
+  const namedDots = dots.filter((d) => d.name);
 
   return (
     <Dialog
@@ -178,14 +187,46 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
           <X size={18} aria-hidden="true" />
         </button>
       </div>
-      <canvas
-        ref={canvasRef}
-        className="fullmap-canvas"
-        style={{ width: `${cw}px`, height: `${ch}px` }}
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
-        onClick={onClick}
-      />
+      <div className="fullmap-body">
+        <canvas
+          ref={canvasRef}
+          className="fullmap-canvas"
+          style={{ width: `${cw}px`, height: `${ch}px` }}
+          aria-hidden="true"
+          onMouseMove={onMove}
+          onMouseLeave={() => setHover(null)}
+          onClick={onClick}
+        />
+        <nav className="fullmap-people" aria-label="People on the map">
+          {namedDots.length === 0 ? (
+            <p className="fullmap-people-empty">No one else is here right now.</p>
+          ) : (
+            <ul className="fullmap-people-list">
+              {namedDots.map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    className="fullmap-person"
+                    aria-label={`Locate ${d.name}${d.self ? " (you)" : ""}`}
+                    onClick={() => locate(d.id)}
+                  >
+                    <span
+                      className="fullmap-person-dot"
+                      data-self={d.self}
+                      aria-hidden="true"
+                    />
+                    <span className="fullmap-person-name">
+                      {d.name}
+                      {d.self ? " (you)" : ""}
+                    </span>
+                    <span className="fullmap-person-action">Locate</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </nav>
+      </div>
       {hover && (
         <div className="fullmap-tip" style={{ left: hover.x, top: hover.y }}>
           {hover.name}
