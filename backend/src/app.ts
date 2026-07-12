@@ -3,6 +3,7 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import { api } from "./api.js";
+import { beginSigninAttempt, safelyRecordSigninOutcome } from "./analytics.js";
 import { createClientErrorsRouter } from "./client-errors.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
@@ -39,6 +40,9 @@ export function createApp(): express.Express {
   app.use(helmet());
   app.use(cors({ origin: config.corsOrigins, credentials: false }));
   app.use(requestLogger(logger));
+  // The server creates the pre-auth attempt id before body parsing. It is never
+  // accepted from the client and is available even for malformed JSON.
+  app.use("/api/v1/signin", beginSigninAttempt);
   // Mounted before the app-level JSON parser so its own 16kb body cap applies.
   app.use("/client-errors", createClientErrorsRouter(log));
   app.use(express.json({ limit: "32kb" }));
@@ -54,12 +58,18 @@ export function createApp(): express.Express {
   });
   app.use("/api/v1", api);
   app.use((_request, response) => response.status(404).json({ error: "not-found" }));
-  app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+  app.use(async (error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     if (isAuthPath(_request.path) && isMalformedJson(error)) {
+      if (_request.path === "/api/v1/signin") {
+        await safelyRecordSigninOutcome(response, "validation", requestLog(response, log));
+      }
       response.status(400).json({ error: "validation" });
       return;
     }
     requestLog(response, log).error({ err: error }, "unhandled request error");
+    if (_request.path === "/api/v1/signin") {
+      await safelyRecordSigninOutcome(response, "server-error", requestLog(response, log));
+    }
     response.status(500).json({ error: isAuthPath(_request.path) ? "server-error" : "internal-error" });
   });
 

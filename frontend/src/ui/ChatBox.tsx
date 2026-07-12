@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Lock, MessageSquare, ChevronDown } from "lucide-react";
-import { LIMITS, roomDisplayName, type ChatMessage, type PlayerState } from "@metaverse/shared";
+import {
+  LIMITS,
+  SERVER_EVENTS,
+  roomDisplayName,
+  type ChatCooldownPayload,
+  type ChatMessage,
+  type PlayerState,
+} from "@metaverse/shared";
 import { sharedNet } from "../net/shared";
 import { bus } from "../game/eventBus";
+import { chatCooldownNotice } from "../game/chatCooldown";
 import {
   chatPanelReducer,
   initialChatPanelState,
@@ -143,6 +151,15 @@ export default function ChatBox() {
     const offFail = net.on("whisper-fail", () =>
       push({ kind: "sys", text: "Couldn't deliver your whisper — they may have left." })
     );
+    // Anti-spam cooldown (PRD 25.11): the server refused an over-limit send. World
+    // and whisper both surface here; the meeting panel owns its own "meeting" line.
+    const offCooldown = net.on(
+      SERVER_EVENTS.chatCooldown,
+      (p: ChatCooldownPayload) => {
+        if (p.scope === "meeting") return;
+        push({ kind: "sys", text: chatCooldownNotice(p.retryAfterMs) });
+      }
+    );
 
     const offEnter = bus.on("room-entered", (p: { roomId: string }) => {
       setRoomName(roomDisplayName(p.roomId));
@@ -161,6 +178,7 @@ export default function ChatBox() {
       offChat();
       offWhisper();
       offFail();
+      offCooldown();
       offEnter();
       offLeftRoom();
       offFocus();

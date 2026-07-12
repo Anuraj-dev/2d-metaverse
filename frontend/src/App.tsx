@@ -35,7 +35,7 @@ const GameCanvas = lazy(() => import("./game/GameCanvas"));
 // portal actually fires, keeping the entry chunk inside the bundle budget.
 const MeetingOverlay = lazy(() => import("./ui/MeetingOverlay"));
 // The arcade overlay + its game modules load only when a cabinet is opened,
-// keeping snake/flappy/2048 out of the entry chunk (bundle budget).
+// keeping snake/flappy out of the entry chunk (bundle budget).
 const ArcadeOverlay = lazy(() => import("./ui/arcade/ArcadeOverlay"));
 // The board-table panel + its board renderer load only when a player sits at (or
 // walks up to an active) board table, keeping it out of the entry chunk.

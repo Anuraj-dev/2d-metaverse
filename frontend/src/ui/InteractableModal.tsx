@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CircleHelp, FileText, Gamepad2, Orbit, SquarePen, type LucideIcon } from "lucide-react";
 import { bus } from "../game/eventBus";
 import type { InteractableType } from "../game/interactables";
+import Dialog from "./Dialog";
 
 interface ModalState {
   type: InteractableType;
@@ -26,28 +27,25 @@ export default function InteractableModal() {
   if (!modal) return null;
 
   return (
-    <div className="modal-backdrop" onClick={() => setModal(null)}>
-      <div
-        className="interactable-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={modal.label}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="interactable-modal-icon">
-          {(() => {
-            const Icon = ICON[modal.type] ?? CircleHelp;
-            return <Icon size={34} aria-hidden="true" />;
-          })()}
-        </div>
-        <h3>{modal.label}</h3>
-        <pre className="interactable-modal-content">
-          {String(modal.payload.content ?? "")}
-        </pre>
-        <button className="interactable-modal-close" onClick={() => setModal(null)}>
-          Close
-        </button>
+    <Dialog
+      onClose={() => setModal(null)}
+      label={modal.label}
+      backdropClassName="modal-backdrop"
+      className="interactable-modal"
+    >
+      <div className="interactable-modal-icon">
+        {(() => {
+          const Icon = ICON[modal.type] ?? CircleHelp;
+          return <Icon size={34} aria-hidden="true" />;
+        })()}
       </div>
-    </div>
+      <h3>{modal.label}</h3>
+      <pre className="interactable-modal-content">
+        {String(modal.payload.content ?? "")}
+      </pre>
+      <button className="interactable-modal-close" onClick={() => setModal(null)}>
+        Close
+      </button>
+    </Dialog>
   );
 }

@@ -4,6 +4,7 @@ import { bus } from "../game/eventBus";
 import { areaLabels, nearestDot } from "../game/mapView";
 import { fitScale } from "./minimapScale";
 import type { TerrainInfo } from "./minimapTerrain";
+import Dialog from "./Dialog";
 
 export interface MapArea {
   id: string;
@@ -131,17 +132,8 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
     }
   }, [info, dots, terrainCanvas, scale, cw, ch]);
 
-  // Esc closes; the scene already has movement captured via map-open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Esc, focus containment, and background inertness are owned by the Dialog
+  // primitive; the scene already has movement captured via map-open.
 
   // Map a canvas-local point to world coords.
   const toWorld = (clientX: number, clientY: number) => {
@@ -169,33 +161,36 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
   };
 
   return (
-    <div className="fullmap-backdrop" onClick={onClose} role="dialog" aria-label="Campus map">
-      <div className="fullmap-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="fullmap-head">
-          <span>Campus map</span>
-          <button
-            type="button"
-            className="icon-btn fullmap-close"
-            onClick={onClose}
-            aria-label="Close map"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-        <canvas
-          ref={canvasRef}
-          className="fullmap-canvas"
-          style={{ width: `${cw}px`, height: `${ch}px` }}
-          onMouseMove={onMove}
-          onMouseLeave={() => setHover(null)}
-          onClick={onClick}
-        />
-        {hover && (
-          <div className="fullmap-tip" style={{ left: hover.x, top: hover.y }}>
-            {hover.name}
-          </div>
-        )}
+    <Dialog
+      onClose={onClose}
+      label="Campus map"
+      backdropClassName="fullmap-backdrop"
+      className="fullmap-panel"
+    >
+      <div className="fullmap-head">
+        <span>Campus map</span>
+        <button
+          type="button"
+          className="icon-btn fullmap-close"
+          onClick={onClose}
+          aria-label="Close map"
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
       </div>
-    </div>
+      <canvas
+        ref={canvasRef}
+        className="fullmap-canvas"
+        style={{ width: `${cw}px`, height: `${ch}px` }}
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+        onClick={onClick}
+      />
+      {hover && (
+        <div className="fullmap-tip" style={{ left: hover.x, top: hover.y }}>
+          {hover.name}
+        </div>
+      )}
+    </Dialog>
   );
 }
