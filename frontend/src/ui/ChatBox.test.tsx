@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { bus } from "../game/eventBus";
+import type { ReportResult } from "../net/reports";
 
 /**
  * Persistent chat-panel test: the net layer is a tiny driveable emitter, so we
@@ -23,16 +24,25 @@ const netMock = vi.hoisted(() => {
 });
 vi.mock("../net/shared", () => ({ sharedNet: () => netMock.net }));
 
+const reportMock = vi.hoisted(() => ({
+  submitReport: vi.fn<(...args: unknown[]) => Promise<ReportResult>>(),
+}));
+vi.mock("../net/reports", () => ({ submitReport: reportMock.submitReport }));
+
 import ChatBox from "./ChatBox";
 
 beforeEach(() => {
   netMock.net.chat.mockClear();
+  reportMock.submitReport.mockReset();
+  reportMock.submitReport.mockResolvedValue({ ok: true, status: "created" });
   for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
 });
 afterEach(cleanup);
 
-function receiveChat(id: string, name: string, text: string, scope = "world") {
-  act(() => netMock.net.emit("chat", { id, name, text, scope }));
+let nextMessageId = 0;
+function receiveChat(id: string, name: string, text: string, scope = "world", messageId?: string) {
+  const mid = messageId ?? `m-${nextMessageId++}`;
+  act(() => netMock.net.emit("chat", { id, name, text, scope, messageId: mid, ts: 1 }));
 }
 
 function enterRoom() {
@@ -159,5 +169,30 @@ describe("ChatBox persistent panel", () => {
     render(<ChatBox />);
     act(() => netMock.net.emit("chat-cooldown", { scope: "meeting", retryAfterMs: 4000 }));
     expect(screen.queryByText(/sending messages too fast/)).toBeNull();
+  });
+
+  it("offers a report affordance on others' messages but not your own (PRD 25.12)", () => {
+    render(<ChatBox />);
+    receiveChat("me", "you", "my own line");
+    receiveChat("p2", "bob", "their line", "world", "m-42");
+    expect(screen.queryByRole("button", { name: "Report you's message" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Report bob's message" })).toBeTruthy();
+  });
+
+  it("reports a message by server messageId and acknowledges the outcome", async () => {
+    render(<ChatBox />);
+    receiveChat("p2", "bob", "their line", "world", "m-42");
+    fireEvent.click(screen.getByRole("button", { name: "Report bob's message" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toBeTruthy();
+    const form = dialog.querySelector("form");
+    if (!form) throw new Error("report dialog has no form");
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(reportMock.submitReport).toHaveBeenCalledWith("m-42", "harassment", undefined);
+    await waitFor(() => expect(screen.getByText(/sent to the moderators/i)).toBeTruthy());
+    // Dialog closes after a successful report.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

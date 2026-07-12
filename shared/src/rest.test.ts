@@ -12,6 +12,9 @@ import {
   pilotScheduleEntrySchema,
   pilotScheduleSchema,
   presenceSnapshotSchema,
+  reportAckSchema,
+  reportCreateSchema,
+  reportFailureResponseSchema,
   spaceInfoSchema,
 } from "./rest.js";
 import { LIMITS } from "./constants.js";
@@ -229,6 +232,42 @@ describe("arcade score submission", () => {
     expect(
       arcadeScoreSchema.safeParse({ game: "snake", score: LIMITS.arcadeScoreMax + 1 }).success,
     ).toBe(false);
+  });
+});
+
+describe("report create request", () => {
+  it("accepts a message id + category, with or without a note", () => {
+    expect(reportCreateSchema.safeParse({ messageId: "m-1", category: "harassment" }).success).toBe(true);
+    expect(
+      reportCreateSchema.safeParse({ messageId: "m-1", category: "spam", note: "flooding the room" }).success,
+    ).toBe(true);
+  });
+  it("rejects an unknown category, empty ids, over-long note, and unknown keys", () => {
+    expect(reportCreateSchema.safeParse({ messageId: "m-1", category: "banter" }).success).toBe(false);
+    expect(reportCreateSchema.safeParse({ messageId: "", category: "spam" }).success).toBe(false);
+    expect(
+      reportCreateSchema.safeParse({ messageId: "m", category: "spam", note: "x".repeat(LIMITS.reportNoteMax + 1) }).success,
+    ).toBe(false);
+    // An empty note after trim is not a valid "optional short note".
+    expect(reportCreateSchema.safeParse({ messageId: "m", category: "spam", note: "   " }).success).toBe(false);
+    // Strict: no forging author/text through extra keys.
+    expect(
+      reportCreateSchema.safeParse({ messageId: "m", category: "spam", targetId: "victim" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("report responses", () => {
+  it("validates created/duplicate acknowledgements and rejects other statuses", () => {
+    expect(reportAckSchema.safeParse({ status: "created" }).success).toBe(true);
+    expect(reportAckSchema.safeParse({ status: "duplicate" }).success).toBe(true);
+    expect(reportAckSchema.safeParse({ status: "pending" }).success).toBe(false);
+  });
+  it("validates coarse failure variants", () => {
+    expect(reportFailureResponseSchema.safeParse({ error: "message-not-found" }).success).toBe(true);
+    expect(reportFailureResponseSchema.safeParse({ error: "cannot-report-self" }).success).toBe(true);
+    expect(reportFailureResponseSchema.safeParse({ error: "rate-limited", retryAfterSeconds: 30 }).success).toBe(true);
+    expect(reportFailureResponseSchema.safeParse({ error: "rate-limited" }).success).toBe(false);
   });
 });
 

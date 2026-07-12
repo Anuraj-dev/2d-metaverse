@@ -105,7 +105,15 @@ try {
   socketB.once("chat", () => { chatLeakedToWorld = true; });
   const privateChat = once(socketA, "chat");
   socketA.emit("chat", { text: "private smoke test" });
-  assert.deepEqual(await privateChat, { id: a.selfId, name: `smokea_${suffix}`, text: "private smoke test", scope: selected.roomId });
+  {
+    // Server-stamped identity (PRD 25.12): messageId/ts are dynamic; assert the
+    // stable fields plus that identity is present and well-typed.
+    const line = await privateChat;
+    const { messageId, ts, ...rest } = line;
+    assert.deepEqual(rest, { id: a.selfId, name: `smokea_${suffix}`, text: "private smoke test", scope: selected.roomId });
+    assert.equal(typeof messageId, "string");
+    assert.equal(typeof ts, "number");
+  }
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(chatLeakedToWorld, false, "private chat leaked to a world participant");
 
@@ -119,7 +127,12 @@ try {
 
   const privateChatSeenByB = once(socketB, "chat");
   socketA.emit("chat", { text: "room peer smoke test" });
-  assert.deepEqual(await privateChatSeenByB, { id: a.selfId, name: `smokea_${suffix}`, text: "room peer smoke test", scope: selected.roomId });
+  {
+    const { messageId, ts, ...rest } = await privateChatSeenByB;
+    assert.deepEqual(rest, { id: a.selfId, name: `smokea_${suffix}`, text: "room peer smoke test", scope: selected.roomId });
+    assert.equal(typeof messageId, "string");
+    assert.equal(typeof ts, "number");
+  }
 
   const seatSeenByB = once(socketB, "seat-update");
   socketA.emit("seat-sit", selected);

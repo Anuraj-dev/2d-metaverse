@@ -10,28 +10,36 @@ import {
   analyticsIngestRequestSchema,
   credentialsSchema,
   liveKitSchema,
+  reportCreateSchema,
   type ArcadeGame,
   type ArcadeLeaderboard,
+  type ReportAck,
 } from "@metaverse/shared";
 import { issueToken, requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { ingestAnalyticsEvent, safelyRecordSigninOutcome } from "./analytics.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
+import { childLogger } from "./logger.js";
 import { hashSecret, verifySecret } from "./password.js";
 import {
   getArcadeBest,
   getArcadeLeaderboard,
   getRoom,
   getSpace,
+  insertReport,
   spaceExists,
   submitArcadeScore,
 } from "./repository.js";
-import { redis } from "./redis.js";
+import { getReportableMessage, redis } from "./redis.js";
 import { canPublishFromStage } from "./stage.js";
 import { childLogger } from "./logger.js";
 import { requestLog } from "./request-logger.js";
 
 const analyticsFallbackLog = childLogger({ module: "analytics" });
+
+// Privacy-safe moderation analytics (PRD 25.12): coarse ingestion events only —
+// never the message text, the note, or the reporter/target identities.
+const moderationLog = childLogger({ module: "moderation" });
 
 // Request schemas live in @metaverse/shared (single source of truth for wire shapes).
 export const api = Router();
@@ -101,6 +109,21 @@ const arcadeLeaderboardLimiter = rateLimit({
   limit: RATE_LIMITS.arcadeLeaderboardLimit,
   standardHeaders: "draft-8",
   legacyHeaders: false
+});
+const reportLimiter = rateLimit({
+  windowMs: RATE_LIMITS.reportWindowMs,
+  limit: RATE_LIMITS.reportLimit,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  handler: (request, response) => {
+    const resetTime = (request as typeof request & { rateLimit?: RateLimitInfo }).rateLimit?.resetTime;
+    const remainingMs = resetTime ? resetTime.getTime() - Date.now() : RATE_LIMITS.reportWindowMs;
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.min(Math.ceil(remainingMs / 1000), Math.ceil(RATE_LIMITS.reportWindowMs / 1000)),
+    );
+    response.status(429).json({ error: "rate-limited", retryAfterSeconds });
+  },
 });
 
 function isArcadeGame(value: string): value is ArcadeGame {
@@ -202,6 +225,41 @@ api.get("/arcade/scores/:game", arcadeLeaderboardLimiter, requireAuth, async (re
   ]);
   const payload: ArcadeLeaderboard = { game, top, best };
   response.json(payload);
+});
+
+// Report ingestion (PRD 25.12): flag one broadcast chat line. The client sends
+// only the server-stamped messageId + category (+ optional note); the server binds
+// author/target/text from its own message snapshot and rejects forged context.
+api.post("/reports", reportLimiter, requireAuth, async (request, response) => {
+  const parsed = reportCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "validation" });
+    return;
+  }
+  const reporter = (request as AuthenticatedRequest).user;
+  const snapshot = await getReportableMessage(parsed.data.messageId);
+  if (!snapshot) {
+    // Unknown or expired message → the context cannot be authenticated. Refuse
+    // rather than trust a client-supplied author/text (anti-forgery).
+    response.status(404).json({ error: "message-not-found" });
+    return;
+  }
+  if (snapshot.authorId === reporter.id) {
+    response.status(400).json({ error: "cannot-report-self" });
+    return;
+  }
+  const status = await insertReport({
+    reporterId: reporter.id,
+    targetId: snapshot.authorId,
+    messageId: parsed.data.messageId,
+    messageText: snapshot.text,
+    scope: snapshot.scope,
+    category: parsed.data.category,
+    note: parsed.data.note,
+  });
+  moderationLog.info({ event: "report_created", status, category: parsed.data.category, scope: snapshot.scope }, "chat report ingested");
+  const ack: ReportAck = { status };
+  response.status(status === "created" ? 201 : 200).json(ack);
 });
 
 api.post("/livekit/token", requireAuth, async (request, response) => {

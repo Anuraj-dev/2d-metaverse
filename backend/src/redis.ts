@@ -55,10 +55,64 @@ export async function isRateLimitExceeded(key: string, limit: number, windowSeco
   return exceeded;
 }
 
+/**
+ * The authoritative snapshot of a broadcast chat line, kept briefly so a later
+ * report can bind who actually said what without trusting the client or
+ * retaining a transcript (PRD 25.12). Written at broadcast, read at report time.
+ */
+export interface ReportableMessage {
+  authorId: string;
+  authorName: string;
+  text: string;
+  scope: string;
+  spaceId: string;
+  ts: number;
+}
+
+function chatMessageKey(messageId: string): string {
+  return `chatmsg:${messageId}`;
+}
+
+/** Store a chat line's authoritative snapshot under a bounded TTL (PRD 25.12). */
+export async function storeReportableMessage(
+  messageId: string,
+  snapshot: ReportableMessage,
+  ttlSeconds: number,
+): Promise<void> {
+  await redis.set(chatMessageKey(messageId), JSON.stringify(snapshot), { EX: ttlSeconds });
+}
+
+/**
+ * Read a chat line's snapshot for report binding, or null if it is unknown or
+ * expired. A null result means the reported context cannot be authenticated —
+ * the report is refused rather than trusting client-supplied author/text.
+ */
+export async function getReportableMessage(messageId: string): Promise<ReportableMessage | null> {
+  const raw = await redis.get(chatMessageKey(messageId));
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (
+      typeof value === "object" && value !== null &&
+      "authorId" in value && typeof value.authorId === "string" &&
+      "authorName" in value && typeof value.authorName === "string" &&
+      "text" in value && typeof value.text === "string" &&
+      "scope" in value && typeof value.scope === "string" &&
+      "spaceId" in value && typeof value.spaceId === "string" &&
+      "ts" in value && typeof value.ts === "number"
+    ) {
+      return { authorId: value.authorId, authorName: value.authorName, text: value.text, scope: value.scope, spaceId: value.spaceId, ts: value.ts };
+    }
+  } catch {
+    // Malformed snapshot → treat as unknown (report refused).
+  }
+  return null;
+}
+
 export async function resetEphemeralGameState(): Promise<void> {
   // This deployment intentionally runs one Socket.IO process. If it restarts,
   // every old socket is gone, so persisted presence/seat locks are stale.
-  for (const pattern of ["presence:*", "seat:*", "player-seat:*", "room-access:*", "board:*", "room-admin:*"]) {
+  for (const pattern of ["presence:*", "seat:*", "player-seat:*", "room-access:*", "board:*", "room-admin:*", "chatmsg:*"]) {
     for await (const keys of redis.scanIterator({ MATCH: pattern, COUNT: 100 })) {
       if (keys.length > 0) await redis.del(keys);
     }
