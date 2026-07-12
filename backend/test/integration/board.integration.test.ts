@@ -231,9 +231,17 @@ describe("board tables — socket seam", () => {
       const denied = boardError(a, "ttt-1");
       a.socket.emit("board-sit", { tableId: "ttt-1", seat: 0 });
       expect((await denied).reason).toBe("too-far");
-      // The match machine was never dispatched, so no board-update arms an offer
-      // (the seat stays empty — a spoofed remote sit cannot claim the chair).
-      await expectSilence(a.socket, "board-update", 300, (u) => u.tableId === "ttt-1");
+      // The match machine was never dispatched, so the spoofer never lands in a
+      // seat and no offer is armed. (A stray empty "waiting" reset broadcast from
+      // a prior test's teardown can reach the shared space — that's not our sit,
+      // so the predicate only flags an update where THIS player claimed the chair
+      // or a match was armed.)
+      await expectSilence(
+        a.socket,
+        "board-update",
+        300,
+        (u: BoardUpdatePayload) => u.tableId === "ttt-1" && (u.phase !== "waiting" || u.seats.some((s) => s?.id === a.selfId)),
+      );
     });
 
     it("still starts a legitimate match once both players walk up", async () => {
