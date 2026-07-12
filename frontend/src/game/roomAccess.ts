@@ -78,7 +78,15 @@ export function adminPanelView(input: {
 
 export const CAPACITY_MESSAGE = "This room is at max capacity.";
 
-/** Feedback copy for a knock that did not get in. */
-export function knockResultMessage(result: "denied" | "timeout"): string {
-  return result === "timeout" ? "No answer — nobody let you in." : "The admin declined your knock.";
+/** Feedback copy for a knock that did not get in. `too-far` (PRD 25.23) is the
+ *  server's authoritative-proximity denial: the knocker was not at the door. */
+export function knockResultMessage(result: "denied" | "timeout" | "too-far"): string {
+  switch (result) {
+    case "timeout":
+      return "No answer — nobody let you in.";
+    case "too-far":
+      return "Step up to the door to knock.";
+    default:
+      return "The admin declined your knock.";
+  }
 }

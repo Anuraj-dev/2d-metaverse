@@ -96,6 +96,9 @@ describe("requester feedback copy", () => {
     expect(knockResultMessage("denied")).toMatch(/declined/i);
     expect(knockResultMessage("timeout")).toMatch(/no answer/i);
   });
+  it("tells a too-far knocker to step up to the door", () => {
+    expect(knockResultMessage("too-far")).toMatch(/door/i);
+  });
   it("has a capacity message", () => {
     expect(CAPACITY_MESSAGE).toMatch(/capacity/i);
   });

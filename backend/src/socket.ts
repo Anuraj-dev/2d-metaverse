@@ -30,6 +30,7 @@ import { blocks } from "./block-cache.js";
 import { config } from "./config.js";
 import { getGeometryManifest } from "./geometry.js";
 import { createWalkability, validateMove, type Walkability } from "./movement.js";
+import { PROXIMITY_TOLERANCE_TILES, nearRoomDoor, nearSeat } from "./proximity.js";
 import { childLogger } from "./logger.js";
 import { getRoom, getSeatIds, getSpace, seatExists, spaceExists } from "./repository.js";
 import { checkRateLimit, isRateLimitExceeded, redis, storeReportableMessage } from "./redis.js";
@@ -608,6 +609,23 @@ export function createGameServer(httpServer: HttpServer) {
       if (socket.data.currentRoomId === parsed.data.roomId) return;
       const room = await getRoom(parsed.data.roomId);
       if (!room || room.spaceId !== spaceId) return;
+      // Authoritative door proximity (PRD 25.23): a knock is a physical action —
+      // the knocker must actually be standing at THIS room's door. Checked
+      // against the server's own last-accepted position (`moveAnchor`), never a
+      // client-supplied coordinate, so a remote/cross-room knock cannot admit.
+      // A typed `too-far` result (not a silent drop) keeps the knocker's UI from
+      // hanging on a "Knocking…" state that will never resolve.
+      const manifest = getGeometryManifest();
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y };
+      const tolerance = PROXIMITY_TOLERANCE_TILES * manifest.tile.size;
+      if (!nearRoomDoor(anchor, manifest.doors, room.id, tolerance)) {
+        log.child({ module: "proximity" }).warn(
+          { event: "knock_denied", reason: "too-far", roomId: room.id },
+          "knock rejected: not at door",
+        );
+        socket.emit("knock-result", { roomId: room.id, result: "too-far" });
+        return;
+      }
       // Anti-harassment: cap knock attempts per player+room.
       if (await isRateLimitExceeded(`knock:${playerId}:${room.id}`, KNOCK_LIMIT, KNOCK_WINDOW_SECONDS)) return;
       socket.data.knockRoomId = room.id;
@@ -655,8 +673,31 @@ export function createGameServer(httpServer: HttpServer) {
       const { playerId, spaceId } = socket.data;
       if (!parsed.success || !playerId || !spaceId) return;
       const room = await getRoom(parsed.data.roomId);
-      const hasAccess = await redis.exists(`room-access:${playerId}:${parsed.data.roomId}`);
-      if (!room || room.spaceId !== spaceId || !hasAccess || !(await seatExists(room.id, parsed.data.seatId))) return;
+      if (!room || room.spaceId !== spaceId || !(await seatExists(room.id, parsed.data.seatId))) return;
+
+      // Authoritative sit gate (PRD 25.23): acquiring a private seat requires
+      // server-tracked current-room membership (the socket's joined room, NOT a
+      // client-claimed roomId), a live access grant, AND anchor proximity to the
+      // seat coordinate. Each failure is a TYPED `seat-denied` (never a silent
+      // drop) so a spoofed client cannot phantom-sit and honest UI never hangs.
+      // Ordered cheapest-first; membership catches the "claiming a room I never
+      // entered / left" case before any geometry work.
+      const denySeat = (reason: "not-in-room" | "no-access" | "too-far"): void => {
+        log.child({ module: "proximity" }).warn(
+          { event: "seat_denied", reason, roomId: room.id, seatId: parsed.data.seatId },
+          "seat-sit rejected",
+        );
+        socket.emit("seat-denied", { roomId: room.id, seatId: parsed.data.seatId, reason });
+      };
+      if (socket.data.currentRoomId !== room.id) return denySeat("not-in-room");
+      if (!(await redis.exists(`room-access:${playerId}:${room.id}`))) return denySeat("no-access");
+      const manifest = getGeometryManifest();
+      const seat = manifest.seats.find(
+        (s) => s.roomId === room.id && s.seatId === parsed.data.seatId,
+      );
+      const anchor = socket.data.moveAnchor ?? { x: SPAWN_X, y: SPAWN_Y };
+      const tolerance = PROXIMITY_TOLERANCE_TILES * manifest.tile.size;
+      if (!seat || !nearSeat(anchor, seat, manifest.tile.size, tolerance)) return denySeat("too-far");
 
       const result = await sitPlayer(playerId, room.id, parsed.data.seatId);
       if (!result.ok) {
