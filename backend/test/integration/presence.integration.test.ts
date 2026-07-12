@@ -68,7 +68,7 @@ describe("presence read model over the socket boundary", () => {
     const bothVisible = onceMatching<PresenceSnapshot>(
       a.socket,
       "presence-snapshot",
-      (snap) => Boolean(personFor(snap, a.selfId)) && snap.people.length >= 2,
+      (snap) => Boolean(personFor(snap, a.selfId)) && Boolean(personFor(snap, second.id)),
     );
     const b = connect(second.token);
     await once(b, "connect");
