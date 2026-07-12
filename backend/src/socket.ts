@@ -243,28 +243,46 @@ export function createGameServer(httpServer: HttpServer) {
     // Correlation for every log line this connection produces. Re-bound with
     // playerId/spaceId once the player joins a space.
     let log = childLogger({ module: "socket", socketId: socket.id, userId: socket.data.userId, username: socket.data.username });
+    let recoveryReady = Promise.resolve();
     const safeHandler = <T extends unknown[]>(event: string, handler: (...args: T) => Promise<void> | void) =>
-      (...args: T) => void Promise.resolve(handler(...args)).catch((error) => log.error({ err: error, event }, "socket handler failed"));
+      (...args: T) => void recoveryReady.then(() => handler(...args)).catch((error) => log.error({ err: error, event }, "socket handler failed"));
 
     let joined = false;
     let joinTimeout: NodeJS.Timeout | undefined;
-    if (socket.recovered && socket.data.playerId && socket.data.spaceId) {
+    if (socket.recovered && socket.data.playerId && socket.data.spaceId && socket.data.username) {
       log = log.child({ playerId: socket.data.playerId, spaceId: socket.data.spaceId });
       const timeout = pendingLeaves.get(socket.data.playerId);
       if (timeout) clearTimeout(timeout);
       pendingLeaves.delete(socket.data.playerId);
       boards.cancelForfeit(socket.data.playerId);
-      activeSockets.set(socket.data.playerId, socket);
-      void redis.hSet(`presence:${socket.data.spaceId}`, socket.data.playerId, JSON.stringify({
-        id: socket.data.playerId,
-        name: socket.data.username,
-        x: SPAWN_X,
-        y: SPAWN_Y,
-        dir: "down",
-        connectionId: socket.id
-      }));
       joined = true;
-      log.info("socket connection recovered");
+      const playerId = socket.data.playerId;
+      const spaceId = socket.data.spaceId;
+      const username = socket.data.username;
+      recoveryReady = (async () => {
+        const raw = await redis.hGet(`presence:${spaceId}`, playerId);
+        let restored: ReturnType<typeof moveSchema.safeParse> | null = null;
+        try {
+          restored = moveSchema.safeParse(raw ? JSON.parse(raw) : null);
+        } catch {
+          // Invalid JSON follows the same safe fallback as an invalid shape.
+        }
+        const position = restored?.success
+          ? restored.data
+          : { x: SPAWN_X, y: SPAWN_Y, dir: "down" as const };
+        if (!restored?.success) log.warn("invalid recovered presence; restoring spawn");
+        const self: PlayerState = { id: playerId, name: username, ...position };
+        // One Redis write transfers connection ownership and position together;
+        // the expired socket's grace cleanup cannot delete the recovered state.
+        await redis.hSet(`presence:${spaceId}`, playerId, JSON.stringify({ ...self, connectionId: socket.id }));
+        activeSockets.set(playerId, socket);
+        const players = (await presenceFor(spaceId)).filter((player) => player.id !== playerId);
+        socket.emit("init", { selfId: playerId, players: [self, ...players] });
+        log.info("socket connection recovered");
+      })().catch((error: unknown) => {
+        log.error({ err: error }, "socket recovery failed");
+        socket.disconnect(true);
+      });
     } else {
       log.info("socket connected");
     }
