@@ -32,7 +32,6 @@ import {
 } from "./repository.js";
 import { getReportableMessage, redis } from "./redis.js";
 import { canPublishFromStage } from "./stage.js";
-import { childLogger } from "./logger.js";
 import { requestLog } from "./request-logger.js";
 
 const analyticsFallbackLog = childLogger({ module: "analytics" });

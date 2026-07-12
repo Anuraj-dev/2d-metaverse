@@ -9,6 +9,7 @@ import {
   clientErrorSchema,
   credentialsSchema,
   liveKitSchema,
+  operationalReportSchema,
   pilotScheduleEntrySchema,
   pilotScheduleSchema,
   presenceSnapshotSchema,
@@ -209,6 +210,57 @@ describe("client error report", () => {
     expect(
       clientErrorSchema.safeParse({ message: "x".repeat(LIMITS.clientErrorMessageMax + 1), sha: "abc" }).success,
     ).toBe(false);
+  });
+});
+
+describe("operational report", () => {
+  it("accepts a bounded report per category", () => {
+    expect(
+      operationalReportSchema.safeParse({ category: "reconnect", reason: "gone", sha: "abc123" }).success,
+    ).toBe(true);
+    expect(
+      operationalReportSchema.safeParse({ category: "media-publish", reason: "denied", sha: "abc123" }).success,
+    ).toBe(true);
+    expect(
+      operationalReportSchema.safeParse({
+        category: "auth-transport",
+        reason: "unauthorized",
+        sha: "abc123",
+        url: "/",
+        userAgent: "vitest",
+        context: "WorldScene",
+      }).success,
+    ).toBe(true);
+  });
+  it("rejects an unknown category or a reason from the wrong category", () => {
+    expect(operationalReportSchema.safeParse({ category: "chat", reason: "gone", sha: "a" }).success).toBe(false);
+    // `denied` is a media reason, not a reconnect reason.
+    expect(
+      operationalReportSchema.safeParse({ category: "reconnect", reason: "denied", sha: "a" }).success,
+    ).toBe(false);
+    // `connecting` is a healthy status, never a reportable reconnect reason.
+    expect(
+      operationalReportSchema.safeParse({ category: "reconnect", reason: "connecting", sha: "a" }).success,
+    ).toBe(false);
+  });
+  it("rejects a missing sha or a free-text reason", () => {
+    expect(operationalReportSchema.safeParse({ category: "reconnect", reason: "gone" }).success).toBe(false);
+    expect(
+      operationalReportSchema.safeParse({ category: "media-publish", reason: "camera exploded", sha: "a" }).success,
+    ).toBe(false);
+  });
+  it("rejects extra keys that could smuggle sensitive content (strictObject)", () => {
+    for (const leak of [
+      { coordinates: { x: 42.1, y: 88.7 } },
+      { sdp: "v=0\no=- 4611731400430051336" },
+      { deviceId: "b7c1e...raw-device-id" },
+      { transcript: "secret meeting notes" },
+      { token: "eyJhbGciOi..." },
+    ]) {
+      expect(
+        operationalReportSchema.safeParse({ category: "reconnect", reason: "gone", sha: "abc123", ...leak }).success,
+      ).toBe(false);
+    }
   });
 });
 
