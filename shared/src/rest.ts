@@ -14,6 +14,9 @@ import {
   PRESENCE_ACTIVITY_KINDS,
   RATE_LIMITS,
   RECONNECT_REASONS,
+  RELIABILITY_MAX_DURATION_MS,
+  RELIABILITY_MEDIA_OUTCOMES,
+  RELIABILITY_RECONNECT_OUTCOMES,
   REPORT_ACK_STATUSES,
   REPORT_CATEGORIES,
   REPORT_STATUSES,
@@ -169,6 +172,25 @@ export const analyticsClientEventSchema = z.discriminatedUnion("name", [
     name: z.literal("ingestion-probe"),
     properties: z.strictObject({ nonce: z.uuid() }),
   }),
+  z.strictObject({
+    name: z.literal("world-load"),
+    properties: z.strictObject({
+      outcome: z.enum(["success", "failure"]),
+      durationMs: z.number().int().min(0).max(RELIABILITY_MAX_DURATION_MS),
+    }),
+  }),
+  z.strictObject({
+    name: z.literal("reconnect"),
+    properties: z.strictObject({ outcome: z.enum(RELIABILITY_RECONNECT_OUTCOMES) }),
+  }),
+  z.strictObject({
+    name: z.literal("media-enable"),
+    properties: z.strictObject({
+      kind: z.enum(["mic", "camera"]),
+      outcome: z.enum(RELIABILITY_MEDIA_OUTCOMES),
+    }),
+  }),
+  z.strictObject({ name: z.literal("session-start"), properties: z.strictObject({}) }),
   // Social arrival (PRD 25.26): the arrival surface was shown with live presence.
   // Bounded counts only — no student identities, names, positions, or space ids,
   // so the pilot can measure "did arrival feel populated?" without tracking who.
