@@ -20,6 +20,7 @@ x-backend-environment: &backend-environment
   LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
   MAP_JSON_URL: ${MAP_JSON_URL:-/assets/maps/campus.json}
   TRUST_PROXY: "true"
+  MODERATOR_USER_IDS: ${MODERATOR_USER_IDS:-}
 
 services:
   postgres:
