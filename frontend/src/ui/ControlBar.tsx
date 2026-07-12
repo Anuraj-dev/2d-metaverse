@@ -12,6 +12,8 @@ import { getMediaPrefs, setMediaPrefs, subscribeMediaPrefs } from "../media/medi
 import { outcomeNeedsAttention, type MediaOutcome } from "../media/publicationState";
 import { micToastText, camToastText, mediaFailureText } from "../game/controlBar";
 import { getOperationalReporter } from "../operationalReport";
+import { getAnalyticsEmitter } from "../analytics";
+import { mediaEnableEvent, mediaEnableOutcome } from "../game/reliability";
 import Settings from "./Settings";
 import MicMeter from "./MicMeter";
 
@@ -67,7 +69,13 @@ export default function ControlBar() {
     bus.emit(device === "mic" ? "mic-toggle" : "cam-toggle", { on });
     flash(okText);
     void apply(on).then(({ status }) => {
-      // Only an attempted turn-on can fail meaningfully; a mute always succeeds.
+      // Only an attempted turn-on carries a meaningful outcome; a mute always
+      // succeeds. Record the media enable outcome (success or a bounded failure)
+      // for the pilot reliability baseline (PRD 25.10).
+      if (on) {
+        const kind = device === "mic" ? "mic" : "camera";
+        getAnalyticsEmitter().emit(mediaEnableEvent(kind, mediaEnableOutcome(status)));
+      }
       if (on && outcomeNeedsAttention(status)) {
         setMediaPrefs(device === "mic" ? { micOn: false } : { camOn: false });
         flash(mediaFailureText(device, status));

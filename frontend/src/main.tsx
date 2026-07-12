@@ -3,6 +3,8 @@ import "./index.css";
 import App from "./App.tsx";
 import { installErrorBeacon } from "./errorBeacon";
 import { installOperationalReporter } from "./operationalReport";
+import { installAnalyticsEmitter } from "./analytics";
+import { authToken } from "./net/auth";
 import { SERVER_URL, USE_MOCK } from "./net/config";
 import { initReducedMotion } from "./ui/reducedMotionBridge";
 
@@ -18,6 +20,12 @@ if (!USE_MOCK && SERVER_URL) {
   // Sibling path for CAUGHT operational failures (reconnect/media/auth-transport);
   // call sites report via getOperationalReporter(). Same sink, bounded payloads.
   installOperationalReporter({ endpoint: `${SERVER_URL}/client-errors/operational`, sha: __APP_SHA__ });
+  // Authenticated product-analytics sink for the pilot reliability baseline
+  // (PRD 25.10). Bounded, allowlisted events only; server owns identity + time.
+  installAnalyticsEmitter({
+    endpoint: `${SERVER_URL}/api/v1/analytics/events`,
+    getToken: authToken,
+  });
 }
 
 // E2E-only test hook (window.__testHook): the Playwright suite asserts through
