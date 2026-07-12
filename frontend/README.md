@@ -156,6 +156,7 @@ into the modules).
 | `game/arcade/snake.ts` | Snake tick/turn/eat/collision rules |
 | `game/arcade/flappy.ts` | Flappy gravity/flap/pipe/collision rules |
 | `game/boardTable.ts` | board-table view model: snapshot + selfId → grid/whose-turn/offer/spectator/status + click→move (rules themselves live in `@metaverse/shared`) |
+| `game/reliability.ts` | pilot reliability analytics (PRD 25.10): world-load duration clamp, reconnect-transition → outcome, media status → enable outcome, once-guards, and the same-event-id retry policy (transport in `analytics.ts`) |
 
 **Still living in the scene** (not yet extracted — fair game for future PRDs):
 locked-room position rollback (`keepLockedRoomsClosed`), portal payload validation
