@@ -26,6 +26,8 @@ const WELL_Y = 48;
 const LADDER_Y = 490;
 const LADDER_STEP = 42;
 const POP_TICKS = 18;
+/** Ticks of aim travel granted by a single arrow-key tap (see the key handler). */
+const TAP_TICKS = 9;
 
 /** Wobble/pop envelope for a body that was just fused (1 → 0 over POP_TICKS). */
 function popPhase(body: MergeBody, tick: number): number {
@@ -69,6 +71,7 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
   // Input, sampled once per tick.
   const moveRef = useRef<-1 | 0 | 1>(0);
   const heldRef = useRef({ left: false, right: false });
+  const tapRef = useRef<{ dir: -1 | 0 | 1; ticks: number }>({ dir: 0, ticks: 0 });
   const dropRef = useRef(false);
   const aimRef = useRef<number | null>(null);
 
@@ -91,7 +94,7 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
       for (let i = 0; i < count; i++) {
         const angle = fxRandom() * Math.PI * 2;
         const speed = spread * (0.35 + fxRandom() * 0.8);
-        const life = 22 + Math.floor(fxRandom() * 26);
+        const life = 30 + Math.floor(fxRandom() * 30);
         list.push({
           x,
           y,
@@ -304,7 +307,9 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     if (banner.life > 0) {
       ctx.globalAlpha = Math.min(1, banner.life / 20);
       ctx.fillStyle = "#ffd166";
-      ctx.font = "bold 13px system-ui, sans-serif";
+      // 11px keeps the longest banner ("SUPERNOVA") inside the 80px-wide left
+      // column instead of spilling over the well wall.
+      ctx.font = "bold 11px system-ui, sans-serif";
       ctx.fillText(banner.text, 40, 182);
       ctx.globalAlpha = 1;
     }
@@ -316,27 +321,33 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
       ctx.fillText(`${s.novas}x NOVA`, 40, 212);
     }
 
-    // Danger meter (right column).
-    ctx.fillStyle = "rgba(180, 194, 224, 0.75)";
+    // Heat meter (right column): how full the well is, so it reads live from the
+    // first drop; it goes red and pulses only once a body is actually overflowing.
+    const critical = s.danger > 0;
+    ctx.fillStyle = critical ? "#ff4d5e" : "rgba(180, 194, 224, 0.75)";
     ctx.font = "9px system-ui, sans-serif";
     ctx.fillText("HEAT", 380, 66);
     const meterY = 76;
     const meterH = 190;
     ctx.fillStyle = "rgba(14, 20, 36, 0.7)";
-    ctx.strokeStyle = "rgba(120, 140, 190, 0.35)";
+    ctx.strokeStyle = critical ? "rgba(255, 77, 94, 0.7)" : "rgba(120, 140, 190, 0.35)";
     ctx.beginPath();
     ctx.roundRect(368, meterY, 24, meterH, 6);
     ctx.fill();
     ctx.stroke();
-    const fill = meterH * s.danger;
-    if (fill > 0) {
+    const level = Math.max(s.stackHeight, s.danger);
+    const fill = meterH * level;
+    if (fill > 0.5) {
       const grad = ctx.createLinearGradient(0, meterY + meterH, 0, meterY);
-      grad.addColorStop(0, "#ffd166");
+      grad.addColorStop(0, "#7ee8fa");
+      grad.addColorStop(0.6, "#ffd166");
       grad.addColorStop(1, "#ff4d5e");
+      ctx.globalAlpha = critical ? 0.7 + Math.sin(s.tick * 0.2) * 0.3 : 1;
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.roundRect(370, meterY + meterH - fill, 20, fill, 5);
       ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
     // Highest rung reached.
@@ -484,7 +495,8 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(226, 234, 255, 0.8)";
       ctx.font = "11px system-ui, sans-serif";
-      ctx.fillText("Aim with ← → or the mouse — Space or click to release", W / 2, H - 62);
+      // Kept short so the line stays inside the well's 260px width.
+      ctx.fillText("← → or mouse to aim · Space to drop", W / 2, H - 62);
     }
   }, [drawBody, drawPanels, drawStarfield, fxRandom]);
 
@@ -495,8 +507,17 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     if (paused) return;
     const id = window.setInterval(() => {
       const prev = stateRef.current;
+      // A physically-held key wins; otherwise spend any latched tap ticks.
+      const held = moveRef.current;
+      const tap = tapRef.current;
+      let move: -1 | 0 | 1 = held;
+      if (held !== 0) tap.ticks = 0;
+      else if (tap.ticks > 0) {
+        move = tap.dir;
+        tap.ticks -= 1;
+      }
       const input: MergeDropInput = {
-        move: moveRef.current,
+        move,
         aimTo: aimRef.current,
         drop: dropRef.current,
       };
@@ -521,7 +542,7 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
           burst(WELL_X + event.x, WELL_Y + event.y, 90, 5.5, ["#fff4d6", "#ffd166", "#ff7b00", "#ff4d5e"]);
           shakeRef.current = 9;
           flashRef.current = 30;
-          bannerRef.current = { text: "SUPERNOVA!", life: 70 };
+          bannerRef.current = { text: "SUPERNOVA", life: 70 };
           bus.emit("arcade-nova", { tier: MAX_TIER });
         } else if (event.type === "drop") {
           bus.emit("arcade-drop", { tier: event.tier });
@@ -560,11 +581,21 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     const axis = () => (heldRef.current.left === heldRef.current.right ? 0 : heldRef.current.left ? -1 : 1);
     const onKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      if (key === "arrowleft" || key === "a") heldRef.current.left = true;
-      else if (key === "arrowright" || key === "d") heldRef.current.right = true;
-      else if (key === " " || key === "arrowdown" || key === "s" || key === "enter") dropRef.current = true;
-      else return;
+      let dir: -1 | 0 | 1 = 0;
+      if (key === "arrowleft" || key === "a") {
+        heldRef.current.left = true;
+        dir = -1;
+      } else if (key === "arrowright" || key === "d") {
+        heldRef.current.right = true;
+        dir = 1;
+      } else if (key === " " || key === "arrowdown" || key === "s" || key === "enter") {
+        dropRef.current = true;
+      } else return;
       e.preventDefault();
+      // A *tap* can begin and end inside one 16ms tick, which would sample an
+      // axis of 0 and move the aim nowhere. Latch the direction for a few ticks
+      // so a tap is always a visible nudge; holding the key overrides it below.
+      if (dir !== 0) tapRef.current = { dir, ticks: TAP_TICKS };
       moveRef.current = axis();
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -578,6 +609,7 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     const onBlur = () => {
       heldRef.current = { left: false, right: false };
       moveRef.current = 0;
+      tapRef.current = { dir: 0, ticks: 0 };
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);

@@ -89,7 +89,12 @@ export function playCue(
   if (vol <= 0) return;
   const node = el(clip).cloneNode(true) as HTMLAudioElement;
   node.volume = vol;
-  if (opts.rate !== undefined && opts.rate !== 1) node.playbackRate = opts.rate;
+  if (opts.rate !== undefined && opts.rate !== 1) {
+    // Browsers default `preservesPitch` to true, which time-stretches instead of
+    // transposing — the opposite of what a tier-pitched cue wants.
+    node.preservesPitch = false;
+    node.playbackRate = opts.rate;
+  }
   void node.play().catch(() => {
     /* autoplay blocked until first gesture — ignore */
   });

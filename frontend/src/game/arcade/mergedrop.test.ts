@@ -279,6 +279,31 @@ describe("danger line and game over", () => {
     const s = fastForward(initMergeDrop(1), 500);
     expect(s.over).toBe(false);
     expect(s.danger).toBe(0);
+    expect(s.stackHeight).toBe(0);
+  });
+
+  it("reports stack height from the first body, long before any danger", () => {
+    // The heat meter reads `stackHeight`, so it must move on an ordinary drop —
+    // `danger` alone stays 0 for most of a run and would look broken.
+    const low = fastForward(withBodies(1, [body(1, 0, 130, restY(0))]), 5);
+    expect(low.stackHeight).toBeGreaterThan(0);
+    expect(low.stackHeight).toBeLessThan(0.2);
+    expect(low.danger).toBe(0);
+
+    // A body sitting on the danger line pins the readout at full.
+    const high = fastForward(withBodies(1, [body(2, 4, 130, CFG.dangerY)]), 1);
+    expect(high.stackHeight).toBe(1);
+  });
+
+  it("grows the stack-height readout monotonically as the column fills", () => {
+    let s = initMergeDrop(5);
+    let previous = 0;
+    for (let i = 0; i < 8; i++) {
+      s = fastForward(stepMergeDrop(s, drop(130)), 120);
+      expect(s.stackHeight).toBeGreaterThanOrEqual(previous - 0.001);
+      previous = s.stackHeight;
+    }
+    expect(previous).toBeGreaterThan(0.1);
   });
 
   it("gives a fresh body a settle grace before it counts as overflow", () => {

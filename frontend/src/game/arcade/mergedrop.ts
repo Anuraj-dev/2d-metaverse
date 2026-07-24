@@ -184,6 +184,13 @@ export interface MergeDropState {
   readonly novas: number;
   readonly over: boolean;
   readonly nextId: number;
+  /**
+   * 0..1 — how full the well is: the tallest body's top edge measured from the
+   * floor toward the danger line (1 = the stack has reached the line). This is
+   * the readout the heat meter shows, so the player gets continuous feedback
+   * long before `danger` starts ticking.
+   */
+  readonly stackHeight: number;
   /** 0..1 — how close the tallest danger-zone body is to ending the run. */
   readonly danger: number;
   /** Events produced by the step that returned this state. */
@@ -249,6 +256,7 @@ export function initMergeDrop(
     novas: 0,
     over: false,
     nextId: 1,
+    stackHeight: 0,
     danger: 0,
     events: [],
   };
@@ -519,14 +527,20 @@ export function stepMergeDrop(
   // ── 6. Danger line / game over ────────────────────────────────────────────
   let over = false;
   let danger = 0;
+  let stackTop = config.height;
   for (const b of survivors) {
+    const top = b.y - b.r;
+    if (top < stackTop) stackTop = top;
     const settled = tick - b.bornTick >= config.settleTicks;
-    if (settled && b.y - b.r < config.dangerY) b.aboveTicks = b.aboveTicks + 1;
+    if (settled && top < config.dangerY) b.aboveTicks = b.aboveTicks + 1;
     else b.aboveTicks = 0;
     if (b.aboveTicks > danger) danger = b.aboveTicks;
     if (b.aboveTicks >= config.dangerTicks) over = true;
   }
   if (over) events.push({ type: "over", score });
+  const span = config.height - config.dangerY;
+  const stackHeight =
+    span > 0 ? Math.max(0, Math.min(1, (config.height - stackTop) / span)) : 0;
 
   return {
     config,
@@ -544,6 +558,7 @@ export function stepMergeDrop(
     novas,
     over,
     nextId,
+    stackHeight,
     danger: config.dangerTicks > 0 ? Math.min(1, danger / config.dangerTicks) : 0,
     events,
   };
