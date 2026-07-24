@@ -28,6 +28,9 @@ class EventBus {
  *  Meeting (PRD 10): the server meeting-lifecycle events are mirrored here by the
  *  app shell, incl. 'meeting-chat'{roomId,id,name,text} (participant-scoped chat).
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
+ *  Arcade (PRD 11 / issue #163): 'open-arcade'{game,label} | 'arcade-eat' | 'arcade-point' |
+ *  'arcade-near' | 'arcade-flap' | 'arcade-over' | 'arcade-best' — domain events only; the
+ *  sound mixer's event->clip table decides what (if anything) they sound like.
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' |
  *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip)
  *  Screen share (PRD 23): 'screen-share-on' | 'screen-share-off' (control bar intent; sound blip + e2e hook)

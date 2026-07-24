@@ -151,3 +151,97 @@
 .board-panel__btn--accept:hover {
   background: #4aa168;
 }
+
+/* ── Pieces + animation (issue #163) ───────────────────────────────────────
+   Marks mount exactly once per cell (a filled cell never empties within a
+   match), so a plain mount-time CSS animation is the whole mechanism — no
+   animation bookkeeping in React. Reduced motion drops the motion but keeps
+   every terminal state (a drawn mark stays drawn, a landed disc stays landed). */
+
+/* The Connect-4 frame clips a falling disc at the board's top edge, so a piece
+   drops in through the top like the real thing instead of floating over the HUD. */
+.board-panel__grid--connect4 {
+  overflow: hidden;
+}
+
+.board-mark {
+  width: 76%;
+  height: 76%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.board-mark line,
+.board-mark circle {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: board-draw-in 240ms ease-out forwards;
+}
+/* The X's second stroke starts once the first has (almost) landed. */
+.board-mark--x line:nth-of-type(2) {
+  animation-delay: 130ms;
+}
+@keyframes board-draw-in {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.board-disc {
+  width: 80%;
+  height: 80%;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28), inset 0 2px 0 rgba(255, 255, 255, 0.22);
+  animation: board-drop 340ms cubic-bezier(0.4, 0, 0.5, 1) both;
+}
+/* Falls from just above the board — one grid step per row it passes — and
+   settles with a short bounce. */
+@keyframes board-drop {
+  0% {
+    transform: translateY(calc((var(--drop-rows, 0) + 1) * -132%));
+  }
+  70% {
+    transform: translateY(0);
+  }
+  84% {
+    transform: translateY(-14%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* The winning line lights up along its length rather than all at once. */
+.board-cell.win {
+  animation: board-win-pop 620ms ease-out both;
+  animation-delay: calc(var(--win-step, 0) * 90ms);
+  z-index: 1;
+}
+@keyframes board-win-pop {
+  0% {
+    box-shadow: 0 0 0 0 rgba(110, 231, 160, 0);
+    transform: scale(1);
+  }
+  35% {
+    box-shadow: 0 0 0 7px rgba(110, 231, 160, 0.32);
+    transform: scale(1.14);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(110, 231, 160, 0);
+    transform: scale(1);
+  }
+}
+
+/* Reduced motion (PRD 25.19): skip the motion, never the end state. */
+:root[data-reduced-motion="true"] .board-mark line,
+:root[data-reduced-motion="true"] .board-mark circle {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+:root[data-reduced-motion="true"] .board-disc,
+:root[data-reduced-motion="true"] .board-cell.win {
+  animation: none;
+  transform: none;
+}

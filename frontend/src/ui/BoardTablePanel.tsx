@@ -4,9 +4,18 @@
  * reports clicks/accept/leave upward. It does NOT sleep the world — players stay
  * seated in-world while it floats over the HUD. Lazy-loaded so the board code
  * stays out of the entry chunk.
+ *
+ * Issue #163 adds the motion: Connect-4 discs fall into place, tic-tac-toe marks
+ * draw themselves in, and the winning line lights up along its length. All three
+ * are CSS animations that run when the mark element MOUNTS (a cell fills exactly
+ * once per match), so no animation bookkeeping leaks into React state. The only
+ * decisions — how far a disc falls, and a cell's position in the win line — come
+ * from the pure module. Sounds stay out of here: App.tsx emits `board-move` /
+ * `board-win` on the bus and the sound mixer picks the clip.
  */
-import type { BoardUpdatePayload } from "@metaverse/shared";
-import { boardTableView, clickToMove } from "../game/boardTable";
+import type { CSSProperties } from "react";
+import type { BoardGame, BoardUpdatePayload } from "@metaverse/shared";
+import { boardTableView, cellRow, clickToMove, winLineStep } from "../game/boardTable";
 import "./BoardTablePanel.css";
 
 export interface BoardTablePanelProps {
@@ -21,9 +30,46 @@ export interface BoardTablePanelProps {
 
 const TABLE_TITLES: Record<string, string> = { tictactoe: "Tic-Tac-Toe", connect4: "Connect 4" };
 
+/**
+ * CSS custom properties are not part of React's CSSProperties type; this is the
+ * standard, contained cast for passing them through `style`.
+ */
+function cssVars(vars: Record<string, string | number>): CSSProperties {
+  return vars as CSSProperties;
+}
+
+/**
+ * The piece drawn in a filled cell. Connect-4 gets a disc that drops from above
+ * its landing row; tic-tac-toe gets a stroke-drawn X or O. `pathLength="1"`
+ * normalises each stroke so one dash-offset keyframe animates any shape.
+ */
+function Mark({ game, player, row }: { game: BoardGame; player: 1 | 2; row: number }) {
+  if (game === "connect4") {
+    return (
+      <span
+        className={`board-disc board-disc--p${player}`}
+        style={cssVars({ "--drop-rows": row })}
+        aria-hidden="true"
+      />
+    );
+  }
+  if (player === 1) {
+    return (
+      <svg className="board-mark board-mark--x" viewBox="0 0 32 32" aria-hidden="true">
+        <line x1="8" y1="8" x2="24" y2="24" pathLength="1" />
+        <line x1="24" y1="8" x2="8" y2="24" pathLength="1" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="board-mark board-mark--o" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="9" pathLength="1" />
+    </svg>
+  );
+}
+
 export default function BoardTablePanel({ snapshot, selfId, error, onMove, onAccept, onLeave }: BoardTablePanelProps) {
   const view = boardTableView(snapshot, selfId);
-  const winning = new Set(view.winningLine);
 
   return (
     <div className="board-panel" role="dialog" aria-label={`${TABLE_TITLES[view.game] ?? "Board game"} table`}>
@@ -46,18 +92,25 @@ export default function BoardTablePanel({ snapshot, selfId, error, onMove, onAcc
         className={`board-panel__grid board-panel__grid--${view.game}`}
         style={{ gridTemplateColumns: `repeat(${view.columns}, 1fr)` }}
       >
-        {view.cells.map((cell, i) => (
-          <button
-            key={i}
-            type="button"
-            className={`board-cell${cell === 1 ? " p1" : cell === 2 ? " p2" : ""}${winning.has(i) ? " win" : ""}`}
-            disabled={!view.interactive}
-            aria-label={`cell ${i}${cell === 0 ? " empty" : cell === 1 ? " player one" : " player two"}`}
-            onClick={() => view.interactive && onMove(clickToMove(view.game, i))}
-          >
-            {cell === 1 ? "●" : cell === 2 ? "●" : ""}
-          </button>
-        ))}
+        {view.cells.map((cell, i) => {
+          const player: 1 | 2 | null = cell === 1 ? 1 : cell === 2 ? 2 : null;
+          const step = winLineStep(view.winningLine, i);
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`board-cell${player === 1 ? " p1" : player === 2 ? " p2" : ""}${step !== null ? " win" : ""}`}
+              style={cssVars(step !== null ? { "--win-step": step } : {})}
+              disabled={!view.interactive}
+              aria-label={`cell ${i}${player === null ? " empty" : player === 1 ? " player one" : " player two"}`}
+              onClick={() => view.interactive && onMove(clickToMove(view.game, i))}
+            >
+              {player !== null && (
+                <Mark game={view.game} player={player} row={cellRow(i, view.columns)} />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="board-panel__status" role="status">

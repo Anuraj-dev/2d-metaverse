@@ -43,6 +43,13 @@ const CLIPS = [
   "arcade_start",
   "arcade_point",
   "arcade_over",
+  // Issue #163: per-event arcade cues + dedicated board-table foley.
+  "arcade_eat",
+  "arcade_near",
+  "arcade_flap",
+  "arcade_best",
+  "board_place",
+  "board_win",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */

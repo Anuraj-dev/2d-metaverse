@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
-import { Maximize, Volume2, VolumeX, X } from "lucide-react";
+import { Maximize, Volume2, VolumeX, Vibrate, VibrateOff, X } from "lucide-react";
 import type { ArcadeGame, ArcadeLeaderboard } from "@metaverse/shared";
 import { toSeed } from "../../game/arcade/prng";
+import type { SnakeLevelId, SnakeSpeedId } from "../../game/arcade/snake";
+import { isNewBest } from "../../game/arcade/feedback";
+import { bus } from "../../game/eventBus";
 import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
+import SnakeOptions from "./SnakeOptions";
 import type { ArcadeGameProps } from "./gameTypes";
 import "./arcade.css";
 
@@ -19,6 +23,9 @@ const CONTROLS: Record<ArcadeGame, string> = {
   flappy: "Space / ↑ / click to flap",
 };
 
+/** Keys that instantly start a new run from the game-over card. */
+const RESTART_KEYS = new Set([" ", "Enter", "r", "R"]);
+
 export interface ArcadeOverlayProps {
   game: ArcadeGame;
   label: string;
@@ -28,10 +35,14 @@ export interface ArcadeOverlayProps {
 /**
  * Full-screen arcade surface. Hosts one game on its own canvas/DOM, shows the
  * live score + leaderboard, and owns run lifecycle (restart, score submit),
- * robust keyboard focus, and a per-arcade sound control. It requests the browser
- * Fullscreen API on open (with a graceful CSS-maximized fallback when denied)
- * and exits fullscreen on close. Escape closes instantly. The world scene sleeps
- * underneath (WorldScene reacts to open-arcade/close-arcade).
+ * robust keyboard focus, and per-arcade sound + screen-shake controls. It
+ * requests the browser Fullscreen API on open (with a graceful CSS-maximized
+ * fallback when denied) and exits fullscreen on close. Escape closes instantly.
+ * The world scene sleeps underneath (WorldScene reacts to open-arcade/close-arcade).
+ *
+ * Per-game options (Snake's speed + level) are persisted in the shared settings
+ * store and applied by bumping the run seed, which remounts the game component —
+ * the renderers read their options once per run.
  */
 export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -39,23 +50,31 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const [seed, setSeed] = useState(() => toSeed(Date.now()));
   const [score, setScore] = useState(0);
   const [finalScore, setFinalScore] = useState<number | null>(null);
+  const [newBest, setNewBest] = useState(false);
   const [board, setBoard] = useState<ArcadeLeaderboard | null>(null);
   const [paused, setPaused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // Arcade sound settings (own volume + mute), mirrored from the shared store.
+  // Arcade sound settings (own volume + mute) + the shake toggle, mirrored from
+  // the shared store.
   const [arcadeVolume, setArcadeVolume] = useState(() => getSettings().arcadeVolume);
   const [muteArcade, setMuteArcade] = useState(() => getSettings().muteArcade);
+  const [arcadeShake, setArcadeShake] = useState(() => getSettings().arcadeShake);
+  const [snakeSpeed, setSnakeSpeed] = useState<SnakeSpeedId>(() => getSettings().snakeSpeed);
+  const [snakeLevel, setSnakeLevel] = useState<SnakeLevelId>(() => getSettings().snakeLevel);
 
   const onScore = useCallback((s: number) => setScore(s), []);
   const onGameOver = useCallback((s: number) => setFinalScore(s), []);
 
-  // Keep the local sound-control mirror in sync with the shared settings store
-  // (e.g. if the global Settings panel changes it while the overlay is open).
+  // Keep the local settings mirror in sync with the shared store (e.g. if the
+  // global Settings panel changes something while the overlay is open).
   useEffect(
     () =>
       subscribeSettings((s) => {
         setArcadeVolume(s.arcadeVolume);
         setMuteArcade(s.muteArcade);
+        setArcadeShake(s.arcadeShake);
+        setSnakeSpeed(s.snakeSpeed);
+        setSnakeLevel(s.snakeLevel);
       }),
     []
   );
@@ -137,19 +156,43 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     };
   }, []);
 
-  // On game over, submit the run's score and refresh the board.
+  const restart = useCallback(() => {
+    setFinalScore(null);
+    setNewBest(false);
+    setScore(0);
+    setSeed(toSeed(Date.now()));
+  }, []);
+
+  // The best score standing BEFORE the current run — captured while a run is in
+  // progress, because submitting the final score updates `board.best` in place.
+  const bestBeforeRun = useRef<number | null>(null);
+  useEffect(() => {
+    if (finalScore === null) bestBeforeRun.current = board?.best ?? null;
+  }, [board, finalScore]);
+
+  // On game over, flag a personal best, then submit the run and refresh.
   useEffect(() => {
     if (finalScore === null) return;
+    const better = isNewBest(finalScore, bestBeforeRun.current);
+    setNewBest(better);
+    // Audio-agnostic: emit the domain event and let the sound mixer pick a clip.
+    if (better) bus.emit("arcade-best");
     submitScore(game, finalScore)
       .then(setBoard)
       .catch(() => refresh());
   }, [finalScore, game, refresh]);
 
-  const restart = () => {
-    setFinalScore(null);
-    setScore(0);
-    setSeed(toSeed(Date.now()));
-  };
+  // One-key instant restart from the game-over card (issue #163).
+  useEffect(() => {
+    if (finalScore === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!RESTART_KEYS.has(e.key)) return;
+      e.preventDefault();
+      restart();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [finalScore, restart]);
 
   const Game = GAMES[game];
 
@@ -188,6 +231,15 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
             </div>
             <button
               className="icon-btn arcade-icon-btn"
+              onClick={() => setSettings({ arcadeShake: !arcadeShake })}
+              aria-label={arcadeShake ? "Turn screen shake off" : "Turn screen shake on"}
+              aria-pressed={arcadeShake}
+              title="Screen shake"
+            >
+              {arcadeShake ? <Vibrate size={16} aria-hidden="true" /> : <VibrateOff size={16} aria-hidden="true" />}
+            </button>
+            <button
+              className="icon-btn arcade-icon-btn"
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
               aria-pressed={isFullscreen}
@@ -202,6 +254,20 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
 
         <div className="arcade-body">
           <div className="arcade-stage">
+            {game === "snake" && (
+              <SnakeOptions
+                speed={snakeSpeed}
+                level={snakeLevel}
+                onPickSpeed={(id) => {
+                  setSettings({ snakeSpeed: id });
+                  restart();
+                }}
+                onPickLevel={(id) => {
+                  setSettings({ snakeLevel: id });
+                  restart();
+                }}
+              />
+            )}
             <div className="arcade-scoreline">
               <span className="arcade-score">Score {score}</span>
               <span className="arcade-controls-hint">{CONTROLS[game]}</span>
@@ -219,9 +285,11 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
                 <div className="arcade-gameover">
                   <p>Game over</p>
                   <p className="arcade-final">Score {finalScore}</p>
+                  {newBest && <p className="arcade-newbest">New personal best!</p>}
                   <button className="arcade-play-again" onClick={restart}>
                     Play again
                   </button>
+                  <p className="arcade-restart-hint">Press Space to play again</p>
                 </div>
               )}
               {paused && finalScore === null && (
