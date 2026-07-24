@@ -1,26 +1,24 @@
 # 2D Metaverse — State
-> **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-07-12
+> **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-07-25
 
 ## 🚧 In progress / next
-- ~~Production moderator configuration~~ **DONE 2026-07-12**: `MODERATOR_USER_IDS` set to the two operator-account UUIDs (chosen by Raja) in the box `.env`, synced to the `/metaverse/prod/env` SSM parameter (v6), and the compose env anchor now forwards the var (it previously silently dropped it). Backend recreated and healthy with the var live.
-- Continue PRD 25 from the remaining frontier: #107, #117, #108, #118–#121, #124/#125, #127–#130, #131/#132. Re-evaluate dependencies against merged #138–#160 before starting.
-- Non-blocking review follow-ups remain on the merged PRs: #148 stage go-live failure teardown, #152 invalid block target/cache eviction/whisper visibility, #153 report-to-action linkage, #156 reconnect re-anchor trust window, and deferred analytics hooks noted in PR bodies.
+- **Arcade 2.0 (spec 27) ready to implement.** Spec = GitHub [#162](https://github.com/Anuraj-dev/2d-metaverse/issues/162); tickets #163 (juice+Snake rework) → #164 (merge-drop flagship) → #165 (race mode) → #166 (leaderboard meta), all `ready-for-agent`. Pointer doc: `docs/specs/27-arcade-2.md`. **Next step: dispatch an Opus 5 coder on #163** (fresh agent per ticket, feature branch, PR, never merges).
+- **Opus 5 capability benchmark is live**: Opus 5 implements ALL spec-27 tickets (UI + backend — deliberate override of the Sol-backend routing). Orchestrator logs every dispatch/review round in `docs/benchmark.md` (coders never touch docs).
+- Review protocol for spec-27 PRs: Sol high first pass, Sol medium re-reviews, PLUS `@codex review` cloud-trigger comment right after `gh pr create` (Codex cloud experiment window 2026-07-24→27; log in `~/Anuraj-Dev/CODEX_REVIEW_EXPERIMENT_LOG.md`; never reply `@codex` on its own review comment).
+- Parked: remaining PRD 25 frontier (#107, #117, #108, #118–#121, #124/#125, #127–#132) and the non-blocking review follow-ups on #148/#152/#153/#156 — Raja chose to do the arcade line first.
 
 ## Status
-- **PRD 25 batch fully landed:** all 23 PRs #138–#160 are on `main`; final feature merge #160 is `39c22f3`, and final CI stabilization HEAD is `7a4186f`.
-- Six stacked children that GitHub auto-closed (#146/#147/#148/#149/#150/#155) were landed as auditable local squash commits with the landing SHA commented on each PR. The nine surviving children were retargeted and merged without deleting parent branches mid-stack.
-- Final campus generation was run after #140/#143/#150/#154; `campus.json` and `campus.geometry.json` exactly matched generated output.
-- All 15 leftover feature branches were deleted from origin after every PR landed.
-- Final Backend CI run `29179622916` is green (unit/typecheck/build, image, shell/alerter, Docker integration + smoke). Frontend CI run `29179463189` is green (lint/typecheck/unit/build/budget, Playwright E2E, Vercel deploy).
-- Backend deploy run `29179669753` succeeded; `https://api.space.raja-dev.me/health/ready` reports `ok: true` at SHA `7a4186f`.
+- PRD 25 batch fully landed (#138–#160); PRD 26 moderator dashboard merged (#161). CI green both pipelines.
+- Prod healthy: `https://api.space.raja-dev.me/health/ready` ok at SHA `7a4186f`; FE auto-deploys via Vercel; `MODERATOR_USER_IDS` live.
+- Arcade today (what spec 27 replaces/extends): Snake+Flappy procedural-canvas cabinets w/ client-trusted REST scores; TTT+Connect-4 board tables (flat CSS, borrowed sounds). 2048 was retired.
 
 ## Architecture map
 - Wire contracts and shared rules -> `shared/src/`
 - Backend API, sockets, moderation, authority FSMs -> `backend/src/`
 - Frontend React/Phaser/media/UI -> `frontend/src/`
-- Generated campus + geometry -> `frontend/scripts/gen_campus.py`, `frontend/public/assets/maps/campus.json`, `backend/assets/campus.geometry.json`
+- Arcade reducers -> `frontend/src/game/arcade/`; overlay/renderers -> `frontend/src/ui/arcade/`; board stack -> `shared/src/games/` + `backend/src/boardMatch.ts`/`board-manager.ts` (the pattern spec 27's race manager copies)
+- Generated campus + geometry -> `frontend/scripts/gen_campus.py` (cabinets/tables placed ONLY here)
 - Deploy and production operations -> `.github/workflows/`, `deploy/`
-- Pilot design and implementation order -> `docs/specs/25-pilot-delivery.md`
 
 ## Stack & run
 - Stack: TypeScript strict npm workspaces, React + Phaser, Express + Socket.IO, Postgres/Redis/LiveKit.
@@ -28,15 +26,14 @@
 - Test: CI is authoritative. Do not run full local build/test suites; only focused touched-file tests are permitted.
 
 ## Key decisions (top 3–5)
-- `@metaverse/shared` owns every wire shape and shared runtime constant; consumers never redeclare contracts.
-- Game rules and backend state transitions stay in pure modules; Phaser/socket handlers are side-effect shells.
-- Server-authoritative geometry, movement, door/seat/board-seat proximity, and stage publishing now form one generated-manifest authority chain.
-- Never delete a stacked base branch until every child is retargeted: GitHub closes children when their base disappears and may refuse reopening.
+- `@metaverse/shared` owns every wire shape; game rules stay pure seeded reducers; managers are side-effect shells (full log: `docs/decisions.md`).
+- Spec 27 (2026-07-25): RACE not duel (first-to-goal, no dead waiting); Flappy kept, Snake reworked; merge-drop = space theme (IP-safe, Tetris-likes rejected); anti-cheat = plausibility checks only; Opus 5 builds everything (benchmark).
 - Full local gates are prohibited on Raja's machine; GitHub CI is the verifier.
+- Never delete a stacked base branch until every child is retargeted.
 
 ## Gotchas
-- The prod compose `x-backend-environment` anchor must explicitly forward any new backend env var — `.env` values not listed there are silently dropped (this is how `MODERATOR_USER_IDS` was inert until 2026-07-12).
-- The auth limiter is process/IP scoped; integration fixtures should use direct `createPlayer` except where REST auth itself is under test.
-- Presence integration waits must match the intended player ID, not merely a people-count threshold; grace-timer occupants can linger.
+- Entry bundle budget is nearly full (~124.9/130 KB gzip) — all new arcade code must stay in lazy chunks; only tiny registry/settings bits may touch the entry.
+- Prod compose `x-backend-environment` anchor must explicitly forward any new backend env var — unlisted `.env` values are silently dropped.
 - Generated campus artifacts must be regenerated with `cd frontend && python3 scripts/gen_campus.py`, never hand-merged.
-- `gh pr edit --base` can fail on the deprecated Projects Classic GraphQL field; use `gh api repos/<owner>/<repo>/pulls/<n> -X PATCH -f base=main`.
+- Auth limiter is process/IP scoped; integration fixtures use direct `createPlayer` except when REST auth itself is under test.
+- Merge-drop determinism: fixed timestep + seeded spawns, avoid non-deterministic math — race fairness and reducer tests depend on it.

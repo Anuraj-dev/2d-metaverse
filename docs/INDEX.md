@@ -10,8 +10,10 @@
 | product-direction.md | Owner-approved Hyprverse product direction, MVP boundaries, pilot, metrics, and agent handoff |
 | product-v2-strategy.md | Evidence-backed product/code/UX audit, strategic alternatives, and owner decision gate for Hyprverse Next |
 | old_context.md | Honest pre-tracking backstory reconstructed at adoption |
+| benchmark.md | Live Opus 5 capability benchmark for the Arcade 2.0 build (orchestrator-owned findings log) |
 | specs/ | Numbered specs for complex features (see /spec) |
 | specs/25-pilot-delivery.md | Dependency-ordered implementation and acceptance architecture for the Student Social World pilot |
+| specs/27-arcade-2.md | Arcade 2.0 pointer/decision record — canonical spec is GitHub #162, tickets #163–#166 |
 | sessions/ | One append-only log per day |
 
 > Also at repo root: `CLAUDE.md` — the authoritative detailed operating rules (monorepo layout, shared-contract
