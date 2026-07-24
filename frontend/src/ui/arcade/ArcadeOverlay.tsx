@@ -6,17 +6,20 @@ import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
+import MergeDropGame from "./MergeDropGame";
 import type { ArcadeGameProps } from "./gameTypes";
 import "./arcade.css";
 
 const GAMES: Record<ArcadeGame, ComponentType<ArcadeGameProps>> = {
   snake: SnakeGame,
   flappy: FlappyGame,
+  "merge-drop": MergeDropGame,
 };
 
 const CONTROLS: Record<ArcadeGame, string> = {
   snake: "Arrows / WASD to steer",
   flappy: "Space / ↑ / click to flap",
+  "merge-drop": "← → / AD to aim · Space or click to drop",
 };
 
 export interface ArcadeOverlayProps {

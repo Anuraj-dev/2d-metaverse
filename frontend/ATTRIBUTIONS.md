@@ -32,6 +32,7 @@ Nothing is synthesized from oscillators.
 | `meeting_join.ogg`, `meeting_leave.ogg` | Four `8-Intro` notes | Up/down arpeggio in the retired bed's key with a warm room reverb. |
 | `portal_in.ogg`, `portal_out.ogg` | **CC0 library** (see the note below) — reversed-cymbal riser `711683__leonseptavaux`, transition whoosh `427823__kinoton__whoosh-1`, sub-impact `394642__screamstudio` (in); low swoosh `517877__the_real_not_important__swoosh_low` (out) | PRD 16 cinematic transition: rising riser + whoosh landing on a soft sub-impact (in); softer, lighter descending swoosh, long fade, no impact (out). `scripts/curate_audio.py` → `curate_portal_transitions`. |
 | `arcade_start.ogg`, `arcade_point.ogg`, `arcade_over.ogg` | **Project-original** — synthesized square-wave chiptune (`scripts/curate_audio.py` → `synth_arcade`) | Diegetic 8-bit arcade blips (open arpeggio, score blip, game-over descend). Intentionally a different family from the recorded foley — a cozy pack has no arcade beeps to cut. Project asset (no third-party source). |
+| `arcade_merge.ogg`, `arcade_nova.ogg` | **Project-original** — synthesized square-wave chiptune (`scripts/curate_audio.py` → `synth_arcade`) | Stellar Forge merge-drop cabinet (Arcade 2.0): a short two-note fusion chime that the mixer repitches per evolution tier (`soundMixer.mergePitchRate`), and a five-note rising supernova fanfare. Same 8-bit family as the blips above. Project asset (no third-party source). |
 
 **Retired:** `music_bed.ogg` (Ogg Opus stem `6-Loop(without Drums)`, G#) — the
 single looping music bed shipped through PRD 20. PRD 21 replaced it with the
@@ -63,6 +64,7 @@ release.
 | `furniture/*.png` (desk, chair, sofa, plant, water, vending, …) | Top-Down Retro Interior / Office Furniture pixel packs | (respective pack authors) | Free-use pixel furniture; cool office palette. |
 | `furniture/table_round.png` | Project-original | Redrawn in-repo (PRD 12) | Project asset — replaces the prior flat placeholder, matched to the furniture palette. |
 | `furniture/arcade_snake.png`, `furniture/arcade_flappy.png` | Project-original | Generated in-repo (PRD 11, `scripts/gen_arcade_sprites.py`) | Project asset — 32×32 upright arcade cabinets in the cool-office palette, marquee/screen tinted per game (teal/amber). Not derived from any third-party pack. |
+| `furniture/arcade_merge-drop.png` | Project-original | Generated in-repo (Arcade 2.0, `scripts/gen_arcade_sprites.py`) | Project asset — the Stellar Forge cabinet: same 32×32 body as its neighbours, marquee/screen tinted violet (`#b082ff`). Not derived from any third-party pack. |
 | `landing/campus-hero.png` | Composed in-repo (`scripts/gen_landing_backdrop.py`) from `maps/campus.json` + the `exterior.png` / `floors_walls.png` tilesets and `furniture/*.png` (all attributed above) | (respective pack authors) | Landing diorama backdrop (PRD 19) — a pure composition of already-attributed pack assets: a fixed crop of the real campus map re-rendered to one palette-quantised PNG. No new art authored; inherits the licenses of its source tiles/sprites. |
 
 ## Fonts (`public/assets/fonts/`)

@@ -132,7 +132,13 @@ def encode(src: str, clip: str, quality: str = "3") -> None:
 
 
 def synth_arcade() -> None:
-    """Synthesize the three arcade cabinet blips (square-wave chiptune)."""
+    """Synthesize the arcade cabinet blips (square-wave chiptune).
+
+    `arcade_merge` and `arcade_nova` belong to the Stellar Forge merge-drop
+    cabinet: the merge chime is deliberately short and mid-register because the
+    mixer REPITCHES it per tier (soundMixer.mergePitchRate), so one clip covers
+    the whole evolution ladder instead of ten near-identical files.
+    """
     def blip(name: str, *segs: tuple[float, int], fade: float) -> str:
         parts = []
         for i, (dur, freq) in enumerate(segs):
@@ -148,6 +154,11 @@ def synth_arcade() -> None:
     encode(blip("arcade_point", (0.09, 880), (0.05, 1180), fade=0.14), "arcade_point")
     encode(blip("arcade_start", (0.08, 523), (0.08, 659), (0.12, 784), fade=0.28), "arcade_start")
     encode(blip("arcade_over", (0.14, 440), (0.14, 349), (0.22, 262), fade=0.5), "arcade_over")
+    encode(blip("arcade_merge", (0.045, 659), (0.075, 988), fade=0.13), "arcade_merge")
+    encode(
+        blip("arcade_nova", (0.08, 392), (0.07, 523), (0.07, 784), (0.09, 1046), (0.26, 1568), fade=0.62),
+        "arcade_nova",
+    )
 
 
 def curate_portal_transitions() -> None:

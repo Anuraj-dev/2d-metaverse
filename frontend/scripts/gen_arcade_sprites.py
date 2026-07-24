@@ -6,7 +6,7 @@ arcade cabinet in the game's cool-office palette, one variant per game (the
 marquee + screen glow is tinted per cabinet). Cohesive with the existing 16/32px
 Pipoya-family furniture PNGs; NOT derived from any third-party pack.
 
-Writes: public/assets/furniture/arcade_{snake,flappy}.png
+Writes: public/assets/furniture/arcade_{snake,flappy,merge-drop}.png
 Run:  python3 scripts/gen_arcade_sprites.py
 """
 import os
@@ -28,8 +28,9 @@ CLEAR = (0, 0, 0, 0)
 
 # Per-game accent (marquee tint + screen glow).
 ACCENTS = {
-    "snake": (127, 209, 185, 255),   # teal  #7fd1b9
-    "flappy": (242, 193, 78, 255),   # amber #f2c14e
+    "snake": (127, 209, 185, 255),      # teal   #7fd1b9
+    "flappy": (242, 193, 78, 255),      # amber  #f2c14e
+    "merge-drop": (176, 130, 255, 255), # violet #b082ff — Stellar Forge
 }
 
 

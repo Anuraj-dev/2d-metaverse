@@ -43,6 +43,8 @@ const CLIPS = [
   "arcade_start",
   "arcade_point",
   "arcade_over",
+  "arcade_merge",
+  "arcade_nova",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */
@@ -73,18 +75,21 @@ export function preloadSfx(): void {
 /**
  * Play a one-shot clip on a channel. `notify` clips obey the `notifySound`
  * toggle; everything else obeys the channel gain (which folds in master mute +
- * per-channel mute). Cloned per call so rapid repeats overlap.
+ * per-channel mute). Cloned per call so rapid repeats overlap. `rate` is an
+ * optional playback rate (the mixer's `cueRate` decides it — e.g. the merge
+ * chime climbs with the tier); the value is clamped by the mixer, not here.
  */
 export function playCue(
   clip: string,
   channel: Channel = "sfx",
-  opts: { notify?: boolean } = {}
+  opts: { notify?: boolean; rate?: number } = {}
 ): void {
   if (opts.notify && !getSettings().notifySound) return;
   const vol = gainFor(channel);
   if (vol <= 0) return;
   const node = el(clip).cloneNode(true) as HTMLAudioElement;
   node.volume = vol;
+  if (opts.rate !== undefined && opts.rate !== 1) node.playbackRate = opts.rate;
   void node.play().catch(() => {
     /* autoplay blocked until first gesture — ignore */
   });

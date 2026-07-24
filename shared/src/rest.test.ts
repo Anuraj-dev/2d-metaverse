@@ -291,6 +291,7 @@ describe("arcade score submission", () => {
   it("accepts a valid score for a known game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake", score: 12 }).success).toBe(true);
     expect(arcadeScoreSchema.safeParse({ game: "flappy", score: 0 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "merge-drop", score: 4096 }).success).toBe(true);
   });
   it("rejects an unknown game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "pong", score: 1 }).success).toBe(false);

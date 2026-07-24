@@ -48,7 +48,7 @@ export default class BootScene extends Phaser.Scene {
       "chair", "chair_side", "chair_boss", "table_round", "table_small", "desk", "desk2",
       "desk_boss", "plant_big", "plant_small", "bookshelf", "bookshelf_tall",
       "sofa", "sofa_small", "water", "vending", "coffee", "clock",
-      "arcade_snake", "arcade_flappy",
+      "arcade_snake", "arcade_flappy", "arcade_merge-drop",
     ];
     for (const f of furniture) this.load.image(`f_${f}`, `${BASE}/furniture/${f}.png`);
   }

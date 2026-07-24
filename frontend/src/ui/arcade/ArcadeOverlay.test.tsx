@@ -117,4 +117,15 @@ describe("ArcadeOverlay", () => {
     expect(screen.getByText("Game over")).toBeTruthy();
     expect(net.submitScore).toHaveBeenCalledWith("snake", expect.any(Number));
   });
+
+  // Arcade 2.0: the merge-drop cabinet is registered like any other game — the
+  // overlay resolves it from the shared registry and its renderer mounts on a
+  // canvas, with its own leaderboard fetched for the same REST resource.
+  it("mounts the merge-drop cabinet from the shared registry", async () => {
+    render(<ArcadeOverlay game="merge-drop" label="Stellar Forge" onClose={() => {}} />);
+    expect(await screen.findByText(/Your best: 17/)).toBeTruthy();
+    expect(net.fetchLeaderboard).toHaveBeenCalledWith("merge-drop");
+    expect(document.querySelector("canvas.arcade-canvas")).toBeTruthy();
+    expect(screen.getByText(/to aim/)).toBeTruthy();
+  });
 });

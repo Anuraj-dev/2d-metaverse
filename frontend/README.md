@@ -579,18 +579,19 @@ swallow the game's keys via the scene's `isTyping` guard).
 slider bound to a dedicated **`arcade` mixer channel** (`arcadeVolume` /
 `muteArcade` in `ui/settings.ts`). Kept in the (lazy-loaded) overlay rather than
 the core Settings panel so the entry bundle stays lean under the size budget.
-Arcade blips (`open-arcade`, `arcade-point`, `arcade-over`) route on that channel
-in the pure `soundMixer` `EVENT_SOUNDS` table, so a player can quiet a noisy game
-independently of world sfx. Scope is **arcade-wide**, not per-game: all three
-games share the same three domain cues and the `SfxBridge` is game-agnostic, so a
-per-game volume would mean threading the active game through the global bridge for
-marginal value — arcade-wide is the clean seam and still honours the pure-mixer
+Arcade blips (`open-arcade`, `arcade-point`, `arcade-over`, and the merge-drop
+`arcade-drop`/`arcade-merge`/`arcade-nova`) route on that channel in the pure
+`soundMixer` `EVENT_SOUNDS` table, so a player can quiet a noisy game
+independently of world sfx. Scope is **arcade-wide**, not per-game: the
+`SfxBridge` is game-agnostic (it only forwards the event payload to the pure
+`cueRate`), so a per-game volume would mean threading the active game through the
+global bridge for marginal value — arcade-wide is the clean seam and still honours the pure-mixer
 rule (games stay audio-agnostic; the mixer decides the blip).
 
 **Architecture — pure rules, thin renderers, audio-agnostic:**
 
 - **Rules** live in pure modules under `src/game/arcade/` — `snake.ts`,
-  `flappy.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
+  `flappy.ts`, `mergedrop.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
   plain values out; no Phaser/net/DOM imports. Randomness flows through the
   serializable `rngSeed` in each state, so *a given seed + input script always
   reproduces a run* (asserted by determinism tests). Each module lands with its
@@ -599,12 +600,14 @@ rule (games stay audio-agnostic; the mixer decides the blip).
   own a canvas/DOM surface, run the module's tick/reduce on a loop, draw the
   returned state, and report score/game-over upward. No game *rules* in a
   renderer or the scene. The overlay (`ArcadeOverlay.tsx`) and its game modules
-  are **lazy-loaded** — a separate chunk, so snake/flappy never bloat the
-  entry bundle.
+  are **lazy-loaded** — a separate chunk, so no cabinet's code ever bloats the
+  entry bundle (only the tiny `ARCADE_GAMES` registry entry is shared).
 - **Sound stays out of game logic:** games emit domain events on `eventBus`
-  (`arcade-point`, `arcade-over`, `arcade-flap`); `open-arcade` opens the
-  overlay. The sound mixer's event→clip table decides the blip (see *Sound +
-  polish pipeline*) — the games never touch audio.
+  (`arcade-point`, `arcade-over`, `arcade-flap`, and the merge-drop
+  `arcade-drop`/`arcade-merge`/`arcade-nova`); `open-arcade` opens the
+  overlay. The sound mixer's event→clip table decides the blip — including the
+  playback rate for tier-pitched cues (see *Sound + polish pipeline*) — and the
+  games never touch audio.
 - **High scores** are one REST resource (`/api/v1/arcade/scores`), shapes in
   `@metaverse/shared`. The overlay shows your best + a top-N leaderboard per
   cabinet. **Scores are client-reported and trusted at this level** — there is
@@ -623,6 +626,38 @@ by editing `scripts/gen_campus.py` (a solid `furn(...)` sprite + an
 `interactType="arcade"` interactable carrying a `game` payload) and regenerate
 the map — never hand-edit `campus.json`. Add a cabinet sprite via
 `scripts/gen_arcade_sprites.py` (+ BootScene key + an ATTRIBUTIONS row).
+
+#### Stellar Forge — the merge-drop cabinet (Arcade 2.0)
+
+The flagship cabinet (`merge-drop`, east of the Arcade Hall doorway at tile
+82,96). You release celestial bodies into a gravity well; two touching bodies of
+the same tier fuse into the next rung of a ten-step evolution ladder (Pebble →
+Meteoroid → Asteroid → Comet → Moon → Terra → Ice Giant → Gas Giant → Dwarf Star
+→ Sun), and two Suns go **supernova** for a bonus. Let the stack sit above the
+danger line and the run ends. Aim with `← →` / `A D` or the mouse; drop with
+Space / click.
+
+- **Physics is part of the pure reducer** (`game/arcade/mergedrop.ts`), not a
+  library: a fixed-timestep position-based (Verlet) solver — gravity, a speed
+  cap so nothing tunnels, fixed-order circle/circle relaxation passes, and a
+  positional well clamp. **Determinism is load-bearing** (race mode replays
+  these states), so the module uses only `+ - * /`, `Math.sqrt`, `Math.floor`
+  and `Math.min/max` — never `Math.pow`/`Math.hypot`/`Math.sin`, never wall-clock
+  time, and every loop walks a fixed index order. Spawns come off `rngSeed`
+  through a fixed 8-slot table. `mergedrop.test.ts` asserts step-for-step replay
+  equality for a seed + input script, plus the merge/chain/supernova/overflow
+  transitions.
+- **The renderer owns presentation only** (`ui/arcade/MergeDropGame.tsx`):
+  particles, screen shake, the chain banner, glow/wobble and the starfield. It
+  reacts to the reducer's domain events (`drop`/`merge`/`nova`/`over`) — it never
+  decides a rule. Its own randomness also runs through `prng.ts`, never
+  `Math.random`.
+- **Per-tier merge pitch, decided by the mixer.** The game emits
+  `arcade-merge {tier}`; `soundMixer.mergePitchRate` turns the tier into an
+  HTMLAudio `playbackRate` (via `cueRate`, applied by `sfx.playCue`), so one
+  clip covers the whole ladder instead of ten near-identical files. Adding
+  another tier-pitched cue means extending `cueRate` — never calling audio from
+  game logic.
 
 ### Board-game tables (two-player, server-authoritative, PRD 11 phase 2)
 
