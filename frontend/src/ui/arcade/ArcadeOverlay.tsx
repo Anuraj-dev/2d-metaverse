@@ -143,14 +143,33 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
 
   // ── Pre-run best + celebration (event-driven — decided in the game-over and
   // response callbacks, never derived in effects) ───────────────────────────
-  // The authoritative best standing before the current run; unknown until the
-  // first leaderboard response lands. Refs, because the deciders are event
-  // callbacks, not renders.
+  // The authoritative best standing before the current run; unknown until a
+  // leaderboard response has been absorbed. Refs, because the deciders are
+  // event callbacks, not renders.
   const knownBestRef = useRef<KnownBest>({ known: false });
   const finalScoreRef = useRef<number | null>(null);
-  // Set when a run ends before any authoritative data arrived: the first
-  // response to land settles the deferred celebration.
+  // Set when a run ends before any authoritative data arrived: only a pre-run
+  // FETCH response settles the deferred celebration, never the submit
+  // response — see absorbBoard.
   const awaitingBestRef = useRef(false);
+
+  // True while mounted: a leaderboard response landing after close must be
+  // inert — it would otherwise decide a best and emit a global sound event
+  // with the arcade gone. (Re-armed on mount for StrictMode re-runs.)
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  // Monotonic request identity, stamped at dispatch time. Baseline and aside
+  // updates are refused from any response older than the newest one already
+  // absorbed, so a stale pre-run fetch resolving after the submit POST can
+  // never regress the post-submit baseline for future runs.
+  const reqSeqRef = useRef(0);
+  const lastAbsorbedRef = useRef(0);
 
   const decideBest = useCallback((score: number, best: number | null) => {
     const better = isNewBest(score, best);
@@ -159,17 +178,23 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     if (better) bus.emit("arcade-best");
   }, []);
 
-  // Every leaderboard response (initial fetch or submit) funnels through here:
-  // it updates the aside, settles a deferred celebration if one is waiting
-  // (the run ended while the fetch was still pending — never announce a best
-  // from unknown data), and becomes the next run's baseline.
+  // Every leaderboard response funnels through here with its request identity
+  // and purpose. Only a FETCH response may settle a deferred celebration: it
+  // carries pre-run data, while a submit response already includes the
+  // just-submitted run (deciding from it would compare the score against
+  // itself and suppress a genuine best). The staleness check comes second on
+  // purpose — a late pre-run fetch is exactly the authority a deferred
+  // decision is waiting for, even when it may no longer update the baseline.
   const absorbBoard = useCallback(
-    (b: ArcadeLeaderboard) => {
-      setBoard(b);
-      if (awaitingBestRef.current && finalScoreRef.current !== null) {
+    (b: ArcadeLeaderboard, reqId: number, source: "fetch" | "submit") => {
+      if (!aliveRef.current) return;
+      if (source === "fetch" && awaitingBestRef.current && finalScoreRef.current !== null) {
         awaitingBestRef.current = false;
         decideBest(finalScoreRef.current, b.best);
       }
+      if (reqId < lastAbsorbedRef.current) return; // stale — never regress
+      lastAbsorbedRef.current = reqId;
+      setBoard(b);
       knownBestRef.current = { known: true, best: b.best };
     },
     [decideBest]
@@ -177,9 +202,12 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
 
   // Load the leaderboard for this cabinet.
   const refresh = useCallback(() => {
+    const reqId = ++reqSeqRef.current;
     fetchLeaderboard(game)
-      .then(absorbBoard)
-      .catch(() => setBoard(null));
+      .then((b) => absorbBoard(b, reqId, "fetch"))
+      .catch(() => {
+        if (aliveRef.current && reqId >= lastAbsorbedRef.current) setBoard(null);
+      });
   }, [game, absorbBoard]);
   useEffect(refresh, [refresh]);
 
@@ -189,11 +217,16 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
       setFinalScore(s);
       // Persistence is decoupled from the death-freeze presentation: submit the
       // moment the run ends, so closing or restarting mid-freeze never loses it.
+      const reqId = ++reqSeqRef.current;
       submitScore(game, s)
-        .then(absorbBoard)
-        .catch(() => refresh());
-      // Decide the personal best only from authoritative data: immediately when
-      // the pre-run best is known, otherwise once the first response lands.
+        .then((b) => absorbBoard(b, reqId, "submit"))
+        .catch(() => {
+          // A failed submit leaves the server pre-run: re-fetching restores
+          // the aside and (being a fetch) can settle a deferred best.
+          if (aliveRef.current) refresh();
+        });
+      // Decide the personal best only from authoritative pre-run data:
+      // immediately when known, otherwise once the pre-run fetch lands.
       const kb = knownBestRef.current;
       if (kb.known) decideBest(s, kb.best);
       else awaitingBestRef.current = true;
