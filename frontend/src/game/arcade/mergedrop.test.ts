@@ -9,13 +9,17 @@ import {
   MAX_TIER,
   MERGE_DROP_TIERS,
   NOVA_SCORE,
-  SPAWN_TABLE,
+  PRESSURE_PHASES,
+  phaseFor,
   type MergeBody,
   type MergeDropInput,
   type MergeDropState,
+  type PressurePhase,
 } from "./mergedrop";
 
 const CFG = DEFAULT_MERGE_DROP_CONFIG;
+/** Phase-0 spawn table — what the opening minutes draw from. */
+const SPAWN_TABLE = PRESSURE_PHASES[0]?.spawnTable ?? [];
 
 /** Indexed access with a throwing guard — `noUncheckedIndexedAccess`, no `!`. */
 function at<T>(list: readonly T[], index: number): T {
@@ -68,11 +72,13 @@ describe("MERGE_DROP_TIERS", () => {
     expect(at(MERGE_DROP_TIERS, MAX_TIER).radius * 2).toBeLessThan(CFG.width);
   });
 
-  it("only ever spawns the small rungs, so the ladder is climbed by merging", () => {
-    for (const tier of SPAWN_TABLE) {
-      expect(tier).toBeGreaterThanOrEqual(0);
-      expect(tier).toBeLessThan(MAX_TIER);
-      expect(at(MERGE_DROP_TIERS, tier).radius * 2).toBeLessThan(CFG.width);
+  it("only ever spawns the lower rungs, so the ladder is climbed by merging", () => {
+    for (const phase of PRESSURE_PHASES) {
+      for (const tier of phase.spawnTable) {
+        expect(tier).toBeGreaterThanOrEqual(0);
+        expect(tier).toBeLessThan(MAX_TIER);
+        expect(at(MERGE_DROP_TIERS, tier).radius * 2).toBeLessThan(CFG.width);
+      }
     }
   });
 
@@ -172,7 +178,8 @@ describe("physics", () => {
   it("settles a lone body on the floor and leaves it at rest", () => {
     const s0 = stepMergeDrop(initMergeDrop(1), drop(120));
     const tier = at(s0.bodies, 0).tier;
-    const s = fastForward(s0, 400);
+    // 250 ticks: plenty to settle, still inside the phase-0 auto-drop deadline.
+    const s = fastForward(s0, 250);
     const b = at(s.bodies, 0);
     expect(b.y).toBeCloseTo(restY(tier), 5);
     expect(Math.abs(b.y - b.py)).toBeLessThan(1e-3);
@@ -181,7 +188,8 @@ describe("physics", () => {
 
   it("stacks two bodies instead of letting them interpenetrate", () => {
     // Two different-tier bodies cannot fuse, so they must rest on each other.
-    const s = fastForward(withBodies(1, [body(1, 0, 130, restY(0)), body(2, 1, 130, restY(0) - 40)]), 400);
+    // (250 ticks keeps the run inside the phase-0 auto-drop deadline.)
+    const s = fastForward(withBodies(1, [body(1, 0, 130, restY(0)), body(2, 1, 130, restY(0) - 40)]), 250);
     expect(s.bodies).toHaveLength(2);
     const a = at(s.bodies, 0);
     const b = at(s.bodies, 1);
@@ -276,10 +284,12 @@ describe("merging", () => {
 
 describe("danger line and game over", () => {
   it("stays alive while the well is empty", () => {
-    const s = fastForward(initMergeDrop(1), 500);
+    // Just short of the phase-0 auto-drop deadline, so the well really is empty.
+    const s = fastForward(initMergeDrop(1), at(PRESSURE_PHASES, 0).autoDropTicks - 1);
     expect(s.over).toBe(false);
     expect(s.danger).toBe(0);
     expect(s.stackHeight).toBe(0);
+    expect(s.bodies).toHaveLength(0);
   });
 
   it("reports stack height from the first body, long before any danger", () => {
@@ -337,6 +347,82 @@ describe("danger line and game over", () => {
     const after = stepMergeDrop(s, drop(60));
     expect(JSON.stringify(after)).toBe(JSON.stringify(final));
     expect(stepMergeDrop(after, drop(60))).toBe(after);
+  });
+});
+
+describe("pressure phases", () => {
+  const TICKS_PER_MINUTE = 62.5 * 60; // renderer steps every 16ms
+
+  it("ramps monotonically: later phases spawn bigger and force drops sooner", () => {
+    expect(at(PRESSURE_PHASES, 0).fromTick).toBe(0);
+    const meanTier = (p: PressurePhase) =>
+      p.spawnTable.reduce((sum, t) => sum + t, 0) / p.spawnTable.length;
+    for (let i = 1; i < PRESSURE_PHASES.length; i++) {
+      const prev = at(PRESSURE_PHASES, i - 1);
+      const cur = at(PRESSURE_PHASES, i);
+      expect(cur.fromTick).toBeGreaterThan(prev.fromTick);
+      // Pressure only ever mounts: heavier spawns, tighter forced-drop deadline.
+      expect(meanTier(cur)).toBeGreaterThan(meanTier(prev));
+      expect(cur.autoDropTicks).toBeLessThan(prev.autoDropTicks);
+      expect(cur.spawnTable).toHaveLength(prev.spawnTable.length);
+    }
+  });
+
+  it("resolves the phase in force at a tick, totally", () => {
+    const second = at(PRESSURE_PHASES, 1);
+    expect(phaseFor(0)).toBe(at(PRESSURE_PHASES, 0));
+    expect(phaseFor(second.fromTick - 1)).toBe(at(PRESSURE_PHASES, 0));
+    expect(phaseFor(second.fromTick)).toBe(second);
+    expect(phaseFor(10 ** 9)).toBe(at(PRESSURE_PHASES, PRESSURE_PHASES.length - 1));
+  });
+
+  it("force-drops the held body once the deadline lapses", () => {
+    const deadline = at(PRESSURE_PHASES, 0).autoDropTicks;
+    let s = fastForward(initMergeDrop(7), deadline - 1);
+    expect(s.bodies).toHaveLength(0);
+    s = stepMergeDrop(s);
+    expect(s.bodies).toHaveLength(1);
+    expect(s.events.some((e) => e.type === "drop")).toBe(true);
+    expect(s.lastDropTick).toBe(deadline);
+  });
+
+  /**
+   * "Mediocre play": a steady drop cadence at cycling aims with no matching
+   * strategy. Same seed + same script ⇒ same run, so these bounds are exact
+   * regression gates, not statistics.
+   */
+  function mediocreRun(seed: number, maxTicks: number): MergeDropState {
+    const aims = [30, 205, 95, 235, 60, 150, 115, 180];
+    let s = initMergeDrop(seed);
+    let drops = 0;
+    while (!s.over && s.tick < maxTicks) {
+      const wantDrop = s.tick % 75 === 0;
+      if (wantDrop) drops++;
+      s = stepMergeDrop(s, wantDrop ? drop(at(aims, drops % aims.length)) : IDLE_INPUT);
+    }
+    return s;
+  }
+
+  it("ends a scripted mediocre run inside the 5-8 minute target window", () => {
+    for (const seed of [11, 4242]) {
+      const s = mediocreRun(seed, 40_000);
+      expect(s.over).toBe(true);
+      // Fair but relentless: never punishingly fast, never a 15-minute stall.
+      expect(s.tick).toBeGreaterThan(4 * TICKS_PER_MINUTE);
+      expect(s.tick).toBeLessThan(8.5 * TICKS_PER_MINUTE);
+    }
+  });
+
+  it("replays the pressure ramp byte-identically (auto-drops included)", () => {
+    expect(JSON.stringify(mediocreRun(11, 40_000))).toBe(
+      JSON.stringify(mediocreRun(11, 40_000))
+    );
+  });
+
+  it("ends even a fully idle run — stalling is not a strategy", () => {
+    let s = initMergeDrop(3);
+    while (!s.over && s.tick < 60_000) s = stepMergeDrop(s);
+    expect(s.over).toBe(true);
   });
 });
 

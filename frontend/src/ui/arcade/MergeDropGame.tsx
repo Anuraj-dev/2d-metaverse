@@ -8,6 +8,7 @@ import {
   DEFAULT_MERGE_DROP_CONFIG,
   MAX_TIER,
   MERGE_DROP_TIERS,
+  phaseFor,
   type MergeBody,
   type MergeDropInput,
   type MergeDropState,
@@ -432,10 +433,19 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
-    // Drop guide from the held body down to the floor.
+    // Drop guide from the held body down to the floor. Once the phase's
+    // forced-drop deadline nears, the guide turns amber and pulses — the
+    // auto-drop must never feel like it came from nowhere.
     const holdX = WELL_X + s.aimX;
-    ctx.globalAlpha = 0.22;
-    ctx.strokeStyle = "#7ee8fa";
+    const deadline = phaseFor(s.tick).autoDropTicks;
+    const urgency = Math.min(1, (s.tick - s.lastDropTick) / deadline);
+    if (urgency > 0.7 && !s.over) {
+      ctx.globalAlpha = 0.22 + (urgency - 0.7) * (1.7 + Math.sin(tick * 0.3));
+      ctx.strokeStyle = "#ffd166";
+    } else {
+      ctx.globalAlpha = 0.22;
+      ctx.strokeStyle = "#7ee8fa";
+    }
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 7]);
     ctx.beginPath();

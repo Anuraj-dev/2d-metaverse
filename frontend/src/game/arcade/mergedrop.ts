@@ -67,11 +67,49 @@ export const MAX_TIER = MERGE_DROP_TIERS.length - 1;
 export const NOVA_SCORE = 1024;
 
 /**
- * Spawn distribution for the held body: a fixed 8-slot table drawn with one
- * `nextInt(seed, 8)`. Weighted toward the smallest rungs so the ladder is
- * climbed by merging, never by luck.
+ * Mounting-pressure schedule (review round 1, owner finding): a casual run must
+ * genuinely end, in roughly 5-8 minutes. Two deterministic, tick-driven knobs
+ * ramp together across phases:
+ *
+ * - `spawnTable`: the fixed 8-slot draw table for the held body (one
+ *   `nextInt(seed, 8)` per draw) widens toward the middle rungs, so later
+ *   phases pour area into the well faster (each rung is ~1.56x the area of the
+ *   one below) while easy same-tier pairs grow scarcer.
+ * - `autoDropTicks`: the forced-drop deadline. Once the player has gone this
+ *   many ticks without a drop, the held body releases itself at the current
+ *   aim — stalling forever above a full well is not a strategy.
+ *
+ * Both derive from `state.tick` alone (never wall-clock), so replays stay
+ * byte-identical. The balance tests script a mediocre run and assert it
+ * overflows inside the target window, and that both knobs are monotone.
  */
-export const SPAWN_TABLE: readonly number[] = [0, 0, 0, 1, 1, 2, 2, 3];
+export interface PressurePhase {
+  /** First tick this phase applies to (phases are sorted ascending). */
+  readonly fromTick: number;
+  /** 8-slot spawn table for the held-body draw. */
+  readonly spawnTable: readonly number[];
+  /** Forced-drop deadline, in ticks since the last drop. */
+  readonly autoDropTicks: number;
+}
+
+/** ~62.5 ticks/sec at the renderer's 16ms timestep: phase edges below are minutes. */
+export const PRESSURE_PHASES: readonly PressurePhase[] = [
+  { fromTick: 0,      spawnTable: [0, 0, 0, 1, 1, 2, 2, 3], autoDropTicks: 300 }, // 0:00
+  { fromTick: 5_000,  spawnTable: [0, 0, 1, 1, 2, 2, 3, 3], autoDropTicks: 240 }, // 1:20
+  { fromTick: 10_000, spawnTable: [0, 1, 1, 2, 2, 3, 3, 3], autoDropTicks: 200 }, // 2:40
+  { fromTick: 15_000, spawnTable: [0, 1, 1, 2, 2, 3, 3, 4], autoDropTicks: 160 }, // 4:00
+  { fromTick: 20_000, spawnTable: [1, 1, 2, 2, 3, 3, 4, 4], autoDropTicks: 120 }, // 5:20
+];
+
+/** The pressure phase in force at `tick` (total: phase 0 starts at tick 0). */
+export function phaseFor(tick: number): PressurePhase {
+  let phase = PRESSURE_PHASES[0];
+  for (const p of PRESSURE_PHASES) {
+    if (tick >= p.fromTick) phase = p;
+  }
+  if (!phase) throw new Error("merge-drop: PRESSURE_PHASES is empty");
+  return phase;
+}
 
 /** Consecutive-merge window (ticks) and the cap on the chain multiplier. */
 export const CHAIN_WINDOW = 45;
@@ -175,6 +213,8 @@ export interface MergeDropState {
   /** Centre x of the held body, clamped so it always fits inside the well. */
   readonly aimX: number;
   readonly dropCooldown: number;
+  /** Tick of the last drop — the phase's `autoDropTicks` deadline counts from here. */
+  readonly lastDropTick: number;
   readonly score: number;
   /** Highest tier produced so far — lights the evolution ladder. */
   readonly best: number;
@@ -218,10 +258,11 @@ export function tierAt(index: number): MergeTier {
   return tier;
 }
 
-/** Draw the next held tier from the spawn table, advancing the seed. */
-function drawTier(seed: number): { tier: number; seed: number } {
-  const { value, seed: nextSeed } = nextInt(seed, SPAWN_TABLE.length);
-  const tier = SPAWN_TABLE[value] ?? 0;
+/** Draw the next held tier from the tick's phase spawn table, advancing the seed. */
+function drawTier(seed: number, tick: number): { tier: number; seed: number } {
+  const table = phaseFor(tick).spawnTable;
+  const { value, seed: nextSeed } = nextInt(seed, table.length);
+  const tier = table[value] ?? 0;
   return { tier, seed: nextSeed };
 }
 
@@ -238,8 +279,8 @@ export function initMergeDrop(
   seed: number,
   config: MergeDropConfig = DEFAULT_MERGE_DROP_CONFIG
 ): MergeDropState {
-  const first = drawTier(seed);
-  const second = drawTier(first.seed);
+  const first = drawTier(seed, 0);
+  const second = drawTier(first.seed, 0);
   return {
     config,
     tick: 0,
@@ -249,6 +290,7 @@ export function initMergeDrop(
     next: second.tier,
     aimX: clampAim(config.width / 2, tierAt(first.tier).radius, config),
     dropCooldown: 0,
+    lastDropTick: 0,
     score: 0,
     best: 0,
     chain: 0,
@@ -421,7 +463,11 @@ export function stepMergeDrop(
 
   // ── 2. Drop ───────────────────────────────────────────────────────────────
   let dropCooldown = Math.max(0, state.dropCooldown - 1);
-  if (input.drop && dropCooldown === 0) {
+  let lastDropTick = state.lastDropTick;
+  // Pressure: past the phase deadline the held body releases itself. Derived
+  // from ticks only, so replays are unaffected by when the player blinked.
+  const forcedDrop = tick - state.lastDropTick >= phaseFor(tick).autoDropTicks;
+  if ((input.drop || forcedDrop) && dropCooldown === 0) {
     bodies.push({
       id: nextId,
       tier: current,
@@ -437,10 +483,11 @@ export function stepMergeDrop(
     events.push({ type: "drop", tier: current, x: aimX });
     nextId = nextId + 1;
     current = next;
-    const drawn = drawTier(rngSeed);
+    const drawn = drawTier(rngSeed, tick);
     next = drawn.tier;
     rngSeed = drawn.seed;
     dropCooldown = config.dropCooldown;
+    lastDropTick = tick;
     // The new held body may be wider than the one just released.
     aimX = clampAim(aimX, tierAt(current).radius, config);
   }
@@ -551,6 +598,7 @@ export function stepMergeDrop(
     next,
     aimX,
     dropCooldown,
+    lastDropTick,
     score,
     best,
     chain,
