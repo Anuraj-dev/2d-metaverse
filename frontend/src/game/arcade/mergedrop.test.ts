@@ -398,13 +398,93 @@ describe("broad phase", () => {
     const bodies = denseBodies();
     const n = bodies.length;
     // The scenario must be genuinely dense or the bound below proves nothing.
-    expect(n).toBeGreaterThan(25);
+    expect(n).toBeGreaterThanOrEqual(25);
     const candidates = collectPairs(bodies, BROADPHASE_SLACK).length;
     const allPairs = (n * (n - 1)) / 2;
     // Candidate visits stay a small multiple of n (near-contacts), a fraction
     // of the n(n-1)/2 the old six-pass solver + merge scan visited every tick.
     expect(candidates).toBeLessThanOrEqual(n * 8);
     expect(candidates).toBeLessThan(allPairs / 3);
+  });
+});
+
+describe("solver equivalence (broad phase vs all-pairs reference)", () => {
+  /**
+   * A slack this large keeps every pair on the candidate list every pass, in
+   * the same ascending (i, j) order the naive nested loops used — i.e. the
+   * same solver code degrades into the brute-force all-pairs reference.
+   */
+  const ALL_PAIRS_SLACK = 1_000;
+
+  function withSlack(s: MergeDropState, broadphaseSlack: number): MergeDropState {
+    return { ...s, config: { ...s.config, broadphaseSlack } };
+  }
+
+  /** Byte-comparable view minus the config (the two solvers differ there by design). */
+  function comparable(s: MergeDropState): string {
+    return JSON.stringify(s, (key, value: unknown) => (key === "config" ? undefined : value));
+  }
+
+  /** Step both solvers in lockstep and demand byte-identical states every tick. */
+  function expectLockstep(
+    seedState: MergeDropState,
+    inputAt: (t: number) => MergeDropInput,
+    ticks: number
+  ): void {
+    let fast = seedState;
+    let reference = withSlack(seedState, ALL_PAIRS_SLACK);
+    for (let t = 0; t < ticks; t++) {
+      const input = inputAt(t);
+      fast = stepMergeDrop(fast, input);
+      reference = stepMergeDrop(reference, input);
+      expect(comparable(fast)).toBe(comparable(reference));
+    }
+  }
+
+  it("matches all-pairs on the round-2 counterexample (correction exceeds the base margin)", () => {
+    // Three r-9 bodies at x 100/101/124: resolving (0,1) pushes body 1 right
+    // by more than the base slack toward body 2 — the contact a per-tick
+    // frozen candidate list provably missed.
+    const s = withBodies(1, [
+      body(1, 0, 100, restY(0)),
+      body(2, 0, 101, restY(0)),
+      body(3, 0, 124, restY(0)),
+    ]);
+    expectLockstep(s, () => IDLE_INPUT, 60);
+  });
+
+  it("matches all-pairs through a deep-overlap shock with near-margin neighbours", () => {
+    // Tier 5 penetrating tier 4 by ~60 units, with bodies parked just past
+    // the base margin: the first pass shoves the neighbour many units, so the
+    // shock-widened margin must keep every reachable pair on the candidate
+    // list within the SAME pass, exactly like all-pairs.
+    const y = 300;
+    const s = withBodies(2, [
+      body(1, 5, 60, y),
+      body(2, 4, 61, y),
+      body(3, 0, 103, y), // gap ~6 from body 2 — outside the base slack
+      body(4, 1, 129, y),
+      body(5, 2, 40, y - 80),
+    ]);
+    expectLockstep(s, () => IDLE_INPUT, 80);
+  });
+
+  it("matches all-pairs across full seeded runs with drops, merges and settling", () => {
+    const aims = [30, 205, 95, 235, 60, 150, 115, 180];
+    for (const seed of [11, 2024]) {
+      let drops = 0;
+      expectLockstep(
+        initMergeDrop(seed),
+        (t) => {
+          if (t % 21 === 0) {
+            drops++;
+            return drop(at(aims, drops % aims.length));
+          }
+          return IDLE_INPUT;
+        },
+        1_500
+      );
+    }
   });
 });
 

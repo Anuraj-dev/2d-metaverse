@@ -121,6 +121,16 @@ export const MAX_CHAIN = 4;
 /** Absolute slack (well units) added to the contact test before two bodies fuse. */
 export const MERGE_SLACK = 1;
 
+/**
+ * Base broad-phase margin (well units): candidate pairs are collected from
+ * AABBs expanded by this much. Collection runs at the start of EVERY
+ * relaxation pass (a frozen per-tick list is not a safe superset — one
+ * correction can move a body further than the margin, see `solve`), and the
+ * margin additionally widens with the deepest observed penetration so a
+ * post-merge shock cannot outrun the candidate list within a pass.
+ */
+export const BROADPHASE_SLACK = 4;
+
 export interface MergeDropConfig {
   /** Well interior width; x runs 0..width. */
   readonly width: number;
@@ -152,6 +162,13 @@ export interface MergeDropConfig {
   readonly settleTicks: number;
   /** Consecutive danger-zone ticks that end the run. */
   readonly dangerTicks: number;
+  /**
+   * Broad-phase base margin for contact candidate collection. Large values
+   * degrade gracefully toward the all-pairs solver (every pair becomes a
+   * candidate, visited in the same ascending order) — the equivalence tests
+   * use exactly that as the brute-force reference.
+   */
+  readonly broadphaseSlack: number;
 }
 
 export const DEFAULT_MERGE_DROP_CONFIG: MergeDropConfig = {
@@ -170,6 +187,7 @@ export const DEFAULT_MERGE_DROP_CONFIG: MergeDropConfig = {
   aimSpeed: 3.4,
   settleTicks: 90,
   dangerTicks: 90,
+  broadphaseSlack: BROADPHASE_SLACK,
 };
 
 /** One celestial body in the well. Verlet: `px/py` is the previous position. */
@@ -409,14 +427,6 @@ function applyBoundaryResponse(b: MergeBody, config: MergeDropConfig): void {
   }
 }
 
-/**
- * Broad-phase margin (well units): candidate pairs are collected once per tick
- * from slack-expanded AABBs, then reused across all relaxation passes. The
- * margin absorbs the small positional corrections a pass can apply, so a pair
- * driven into contact mid-solve is still on the candidate list.
- */
-export const BROADPHASE_SLACK = 4;
-
 /** Pair-key radix (`key = i * PAIR_BASE + j`). Body counts stay orders of magnitude below this. */
 export const PAIR_BASE = 2 ** 20;
 
@@ -472,10 +482,51 @@ export function collectPairs(bodies: readonly MergeBody[], slack: number): numbe
   return keys;
 }
 
-/** Fixed-order relaxation passes: every candidate contact, then every well boundary. */
+/** Deepest circle penetration among the candidate pairs (0 when none touch). */
+function maxPenetration(bodies: readonly MergeBody[], pairs: readonly number[]): number {
+  let max = 0;
+  for (let k = 0; k < pairs.length; k++) {
+    const key = pairs[k];
+    if (key === undefined) continue;
+    const i = Math.floor(key / PAIR_BASE);
+    const a = bodies[i];
+    const b = bodies[key - i * PAIR_BASE];
+    if (!a || !b) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const min = a.r + b.r;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= min * min) continue;
+    const pen = min - Math.sqrt(d2);
+    if (pen > max) max = pen;
+  }
+  return max;
+}
+
+/**
+ * Fixed-order relaxation passes: every candidate contact, then every well
+ * boundary. Candidates are recollected at the start of EVERY pass (round-2
+ * review): a list frozen at tick start is not a safe superset, because one
+ * pass's corrections can push a body further than the base margin and create
+ * a contact the frozen list would never visit.
+ *
+ * Within a single pass the margin must also cover the displacement the pass
+ * itself can cause. Every penetrating pair is a candidate at any slack >= 0,
+ * so the deepest penetration is known at collection time; when a shock is
+ * present (fresh merge dropping a wider body into a settled pile) the margin
+ * widens to `base + 2 * maxPenetration` — a correction displaces each body
+ * by at most its pair's penetration (share <= 1, separation < 1), and chained
+ * pushes attenuate by the separation factor, so twice the deepest penetration
+ * bounds what a pass can move two bodies toward each other. The equivalence
+ * tests pin this against the brute-force all-pairs solver byte-for-byte on
+ * adversarial shock states and full seeded runs.
+ */
 function solve(bodies: MergeBody[], config: MergeDropConfig): void {
-  const pairs = collectPairs(bodies, BROADPHASE_SLACK);
+  const baseSlack = config.broadphaseSlack;
   for (let pass = 0; pass < config.iterations; pass++) {
+    let pairs = collectPairs(bodies, baseSlack);
+    const pen = maxPenetration(bodies, pairs);
+    if (2 * pen > baseSlack) pairs = collectPairs(bodies, baseSlack + 2 * pen);
     for (let k = 0; k < pairs.length; k++) {
       const key = pairs[k];
       if (key === undefined) continue;
