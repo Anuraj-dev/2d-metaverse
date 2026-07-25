@@ -146,15 +146,62 @@ describe("snake levels (data)", () => {
   }
 
   it("parses ASCII maps into walls + start", () => {
-    const l = parseSnakeLevel("pillars", "T", "t", ["..#..", ".>...", "#...#"]);
+    const l = parseSnakeLevel("pillars", "T", "t", ["..#..", "..>..", "#...#"]);
     expect(l.width).toBe(5);
     expect(l.height).toBe(3);
-    expect(l.start).toEqual({ x: 1, y: 1 });
+    expect(l.start).toEqual({ x: 2, y: 1 });
     expect(l.walls).toEqual([
       { x: 2, y: 0 },
       { x: 0, y: 2 },
       { x: 4, y: 2 },
     ]);
+  });
+
+  // parseSnakeLevel validates its documented invariants instead of assuming
+  // them; the shipped levels parse at module load, so a malformed layout edit
+  // fails the suite immediately.
+  describe("parseSnakeLevel — malformed layouts throw", () => {
+    it("rejects an empty layout and an empty first row", () => {
+      expect(() => parseSnakeLevel("open", "T", "t", [])).toThrow(/non-empty row/);
+      expect(() => parseSnakeLevel("open", "T", "t", ["", ""])).toThrow(/non-empty row/);
+    });
+
+    it("rejects ragged (non-rectangular) rows", () => {
+      expect(() => parseSnakeLevel("open", "T", "t", ["..>..", "...."])).toThrow(/rectangular/);
+      expect(() => parseSnakeLevel("open", "T", "t", ["..>..", "......"])).toThrow(/rectangular/);
+    });
+
+    it("rejects a layout without a start marker", () => {
+      expect(() => parseSnakeLevel("open", "T", "t", [".....", "....."])).toThrow(
+        /missing the ">"/
+      );
+    });
+
+    it("rejects more than one start marker", () => {
+      expect(() => parseSnakeLevel("open", "T", "t", ["..>.>", "....."])).toThrow(
+        /more than one/
+      );
+    });
+
+    it("rejects a start with fewer than two cells to its left", () => {
+      expect(() => parseSnakeLevel("open", "T", "t", [">....", "....."])).toThrow(
+        /two cells to its left/
+      );
+      expect(() => parseSnakeLevel("open", "T", "t", [".>...", "....."])).toThrow(
+        /two cells to its left/
+      );
+    });
+
+    it("rejects walls where the starting body spawns", () => {
+      expect(() => parseSnakeLevel("open", "T", "t", ["#.>..", "....."])).toThrow(/floor/);
+      expect(() => parseSnakeLevel("open", "T", "t", [".#>..", "....."])).toThrow(/floor/);
+    });
+
+    it("accepts walls elsewhere on the start row", () => {
+      const l = parseSnakeLevel("open", "T", "t", ["..>.#", "....."]);
+      expect(l.start).toEqual({ x: 2, y: 0 });
+      expect(l.walls).toEqual([{ x: 4, y: 0 }]);
+    });
   });
 
   it("resolves level ids, falling back to Open Field for unknown ones", () => {

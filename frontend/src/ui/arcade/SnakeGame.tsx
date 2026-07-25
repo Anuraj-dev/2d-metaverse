@@ -35,12 +35,6 @@ import type { ArcadeGameProps } from "./gameTypes";
 const CELL = SNAKE_TILE_PX * 2;
 /** Frame cadence for juice + drawing; the reducer ticks on the level's own cadence. */
 const FRAME_MS = 16;
-/**
- * Reporting game-over pauses the loop and drops the overlay's card over the
- * canvas, so the death burst + shake would never be seen. Hold the run open just
- * long enough for them to read, then hand up the score.
- */
-const DEATH_FREEZE_MS = 450;
 
 const KEY_DIR: Record<string, Dir> = {
   ArrowUp: "up",
@@ -88,9 +82,10 @@ function roundRect(
 
 /**
  * Thin canvas renderer for the pure Snake module. A new run remounts this
- * component (ArcadeOverlay keys it by seed), so the refs init fresh from `seed`
- * AND from the persisted level/speed/shake settings — which is why changing an
- * option in the overlay bumps the seed.
+ * component (ArcadeOverlay keys it by a monotonic run id), so the refs init
+ * fresh from `seed` AND from the persisted level/speed settings — which is why
+ * changing an option in the overlay starts a new run. Screen shake is a live
+ * prop (accessibility toggle mid-run must apply immediately).
  *
  * All game rules stay in game/arcade/snake; the level layout and tick cadence
  * are data from that module; the particles/pop-ups/shake are the pure
@@ -98,20 +93,30 @@ function roundRect(
  * audio-agnostic: it emits domain events on the bus and the sound mixer decides
  * the clip.
  */
-export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
+// The `shake` prop is destructured as `shakeSetting` — the bare name would
+// shadow the imported juice `shake` reducer.
+export default function SnakeGame({
+  seed,
+  paused,
+  shake: shakeSetting,
+  onScore,
+  onGameOver,
+}: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Snapshot the options once per run so a mid-run settings change cannot
-  // reshape the board under the player. The overlay remounts this component for
-  // every run (it keys the game by seed), so a fresh run always re-reads them.
+  // Snapshot the board-shaping options once per run so a mid-run settings
+  // change cannot reshape the board under the player. The overlay remounts this
+  // component for every run (it keys the game by run id), so a fresh run always
+  // re-reads them. Screen shake is deliberately NOT snapshotted: it arrives as
+  // a live prop so the accessibility toggle applies to the active run.
   const [options] = useState(() => {
     const s = getSettings();
     return {
       level: snakeLevelById(s.snakeLevel),
       tickMs: snakeSpeedById(s.snakeSpeed).tickMs,
-      shakeEnabled: s.arcadeShake && !isReducedMotion(),
       reduced: isReducedMotion(),
     };
   });
+  const shakeEnabled = shakeSetting && !options.reduced;
 
   const stateRef = useRef<SnakeState>(initSnake(seed, options.level));
   // Juice gets its own PRNG stream seeded from the run seed, so the feedback is
@@ -120,16 +125,6 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
   const overRef = useRef(false);
   const nearRef = useRef(false);
   const accRef = useRef(0);
-  const endTimerRef = useRef<number | null>(null);
-
-  // A restart unmounts this component; never let a pending game-over land on the
-  // next run.
-  useEffect(
-    () => () => {
-      if (endTimerRef.current !== null) window.clearTimeout(endTimerRef.current);
-    },
-    []
-  );
 
   const centre = useCallback(
     (c: { x: number; y: number }) => ({ x: c.x * CELL + CELL / 2, y: c.y * CELL + CELL / 2 }),
@@ -153,7 +148,7 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
     ctx.fillStyle = "#0b0f18";
     ctx.fillRect(0, 0, width, height);
 
-    const off = options.shakeEnabled ? shakeOffset(j) : { x: 0, y: 0 };
+    const off = shakeEnabled ? shakeOffset(j) : { x: 0, y: 0 };
     ctx.save();
     ctx.translate(off.x, off.y);
 
@@ -238,7 +233,7 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
     ctx.strokeStyle = "#1d2740";
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
-  }, [options]);
+  }, [options, shakeEnabled]);
 
   // Paint the initial frame once mounted, and again when the sheet decodes.
   useEffect(() => {
@@ -276,7 +271,7 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
             size: 2.5,
           });
           j = popup(j, { x: at.x, y: at.y - 6, text: "+1" });
-          if (options.shakeEnabled) j = shake(j, 0.16);
+          if (shakeEnabled) j = shake(j, 0.16);
         }
 
         // Near miss: edge-triggered so threading a long corridor blips once.
@@ -300,12 +295,13 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
               size: 3,
             });
           }
-          if (options.shakeEnabled) j = shake(j, next.won ? 0.4 : 0.9);
+          if (shakeEnabled) j = shake(j, next.won ? 0.4 : 0.9);
           bus.emit("arcade-over");
-          endTimerRef.current = window.setTimeout(
-            () => onGameOver(next.score),
-            DEATH_FREEZE_MS
-          );
+          // Report immediately — a deferred report is lost if we unmount first.
+          // The overlay owns the death-freeze presentation; this loop keeps
+          // running (the reducer is idempotent on terminal states) so the death
+          // burst + shake still animate until the overlay pauses us.
+          onGameOver(next.score);
         }
         juiceRef.current = j;
       }
@@ -313,7 +309,7 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
       draw();
     }, FRAME_MS);
     return () => window.clearInterval(id);
-  }, [paused, draw, onScore, onGameOver, options, centre]);
+  }, [paused, draw, onScore, onGameOver, options, centre, shakeEnabled]);
 
   // Keyboard: window-level so a stale focused input can't swallow it.
   useEffect(() => {

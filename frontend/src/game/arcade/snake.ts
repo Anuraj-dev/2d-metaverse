@@ -97,8 +97,12 @@ export function snakeSpeedById(id: string): SnakeSpeed {
 /**
  * Parse an ASCII level map. `#` is a wall, `>` marks the head start cell (the
  * snake starts heading right with two body cells to its left), everything else
- * is empty floor. Rows must all be the same length and contain exactly one `>`
- * with two free cells to its left — asserted by the level tests.
+ * is empty floor. The documented invariants are VALIDATED here, not assumed:
+ * rows must be non-empty and all the same length, there must be exactly one
+ * `>`, and the two cells to its left must exist and be floor (initSnake places
+ * the starting body there). Violations throw — the shipped levels parse at
+ * module load, so a bad layout edit fails the suite instantly instead of
+ * shipping a level whose snake starts inside a wall or off the board.
  */
 export function parseSnakeLevel(
   id: SnakeLevelId,
@@ -106,17 +110,47 @@ export function parseSnakeLevel(
   hint: string,
   rows: readonly string[]
 ): SnakeLevel {
+  const first = rows[0];
+  if (first === undefined || first.length === 0) {
+    throw new Error(`snake level "${id}": layout must have at least one non-empty row`);
+  }
   const height = rows.length;
-  const width = rows[0]?.length ?? 0;
+  const width = first.length;
   const walls: Cell[] = [];
-  let start: Cell = { x: 2, y: 0 };
-  rows.forEach((row, y) => {
+  let start: Cell | null = null;
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y] ?? "";
+    if (row.length !== width) {
+      throw new Error(
+        `snake level "${id}": row ${y} has length ${row.length}, expected ${width} (rows must be rectangular)`
+      );
+    }
     for (let x = 0; x < row.length; x++) {
       const ch = row[x];
       if (ch === "#") walls.push({ x, y });
-      else if (ch === ">") start = { x, y };
+      else if (ch === ">") {
+        if (start !== null) {
+          throw new Error(`snake level "${id}": more than one ">" start marker`);
+        }
+        start = { x, y };
+      }
     }
-  });
+  }
+  if (start === null) {
+    throw new Error(`snake level "${id}": missing the ">" start marker`);
+  }
+  // The starting snake is head + two body cells extending left of it.
+  if (start.x < 2) {
+    throw new Error(
+      `snake level "${id}": start at (${start.x}, ${start.y}) needs two cells to its left for the body`
+    );
+  }
+  const startRow = rows[start.y] ?? "";
+  if (startRow[start.x - 1] === "#" || startRow[start.x - 2] === "#") {
+    throw new Error(
+      `snake level "${id}": the two cells left of the start must be floor (the body spawns there)`
+    );
+  }
   return { id, name, hint, width, height, walls, start };
 }
 

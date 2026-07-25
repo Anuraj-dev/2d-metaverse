@@ -26,6 +26,21 @@ const CONTROLS: Record<ArcadeGame, string> = {
 /** Keys that instantly start a new run from the game-over card. */
 const RESTART_KEYS = new Set([" ", "Enter", "r", "R"]);
 
+/**
+ * How long the finished run stays visible (loop running, card hidden) so the
+ * death burst + shake can be seen before the game-over card covers the canvas.
+ * Purely presentation: the final score is recorded and submitted immediately at
+ * the terminal tick — closing or restarting during the freeze never loses it.
+ */
+const DEATH_FREEZE_MS = 450;
+
+/**
+ * The best standing before the current run. Unknown until the leaderboard
+ * fetch resolves — a personal best is only ever announced from authoritative
+ * data, never from a fetch that has not answered yet.
+ */
+type KnownBest = { known: false } | { known: true; best: number | null };
+
 export interface ArcadeOverlayProps {
   game: ArcadeGame;
   label: string;
@@ -41,15 +56,21 @@ export interface ArcadeOverlayProps {
  * The world scene sleeps underneath (WorldScene reacts to open-arcade/close-arcade).
  *
  * Per-game options (Snake's speed + level) are persisted in the shared settings
- * store and applied by bumping the run seed, which remounts the game component —
+ * store and applied by starting a new run, which remounts the game component —
  * the renderers read their options once per run.
  */
 export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [seed, setSeed] = useState(() => toSeed(Date.now()));
+  // The run's identity is a monotonic id (the React key — unique even for
+  // same-millisecond restarts) plus the gameplay seed, which mixes the id in so
+  // back-to-back restarts never replay the identical run.
+  const [run, setRun] = useState(() => ({ id: 1, seed: toSeed(Date.now()) }));
   const [score, setScore] = useState(0);
   const [finalScore, setFinalScore] = useState<number | null>(null);
+  // The death freeze: the run has ended (finalScore set, score submitted) but
+  // the card is held back so the death juice stays visible. Presentation only.
+  const [cardShown, setCardShown] = useState(false);
   const [newBest, setNewBest] = useState(false);
   const [board, setBoard] = useState<ArcadeLeaderboard | null>(null);
   const [paused, setPaused] = useState(false);
@@ -63,7 +84,6 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const [snakeLevel, setSnakeLevel] = useState<SnakeLevelId>(() => getSettings().snakeLevel);
 
   const onScore = useCallback((s: number) => setScore(s), []);
-  const onGameOver = useCallback((s: number) => setFinalScore(s), []);
 
   // Keep the local settings mirror in sync with the shared store (e.g. if the
   // global Settings panel changes something while the overlay is open).
@@ -121,13 +141,65 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     onClose();
   }, [onClose]);
 
+  // ── Pre-run best + celebration (event-driven — decided in the game-over and
+  // response callbacks, never derived in effects) ───────────────────────────
+  // The authoritative best standing before the current run; unknown until the
+  // first leaderboard response lands. Refs, because the deciders are event
+  // callbacks, not renders.
+  const knownBestRef = useRef<KnownBest>({ known: false });
+  const finalScoreRef = useRef<number | null>(null);
+  // Set when a run ends before any authoritative data arrived: the first
+  // response to land settles the deferred celebration.
+  const awaitingBestRef = useRef(false);
+
+  const decideBest = useCallback((score: number, best: number | null) => {
+    const better = isNewBest(score, best);
+    setNewBest(better);
+    // Audio-agnostic: emit the domain event and let the sound mixer pick a clip.
+    if (better) bus.emit("arcade-best");
+  }, []);
+
+  // Every leaderboard response (initial fetch or submit) funnels through here:
+  // it updates the aside, settles a deferred celebration if one is waiting
+  // (the run ended while the fetch was still pending — never announce a best
+  // from unknown data), and becomes the next run's baseline.
+  const absorbBoard = useCallback(
+    (b: ArcadeLeaderboard) => {
+      setBoard(b);
+      if (awaitingBestRef.current && finalScoreRef.current !== null) {
+        awaitingBestRef.current = false;
+        decideBest(finalScoreRef.current, b.best);
+      }
+      knownBestRef.current = { known: true, best: b.best };
+    },
+    [decideBest]
+  );
+
   // Load the leaderboard for this cabinet.
   const refresh = useCallback(() => {
     fetchLeaderboard(game)
-      .then(setBoard)
+      .then(absorbBoard)
       .catch(() => setBoard(null));
-  }, [game]);
+  }, [game, absorbBoard]);
   useEffect(refresh, [refresh]);
+
+  const onGameOver = useCallback(
+    (s: number) => {
+      finalScoreRef.current = s;
+      setFinalScore(s);
+      // Persistence is decoupled from the death-freeze presentation: submit the
+      // moment the run ends, so closing or restarting mid-freeze never loses it.
+      submitScore(game, s)
+        .then(absorbBoard)
+        .catch(() => refresh());
+      // Decide the personal best only from authoritative data: immediately when
+      // the pre-run best is known, otherwise once the first response lands.
+      const kb = knownBestRef.current;
+      if (kb.known) decideBest(s, kb.best);
+      else awaitingBestRef.current = true;
+    },
+    [game, absorbBoard, refresh, decideBest]
+  );
 
   // Escape closes instantly (capture so nothing downstream eats it).
   useEffect(() => {
@@ -157,42 +229,42 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   }, []);
 
   const restart = useCallback(() => {
+    finalScoreRef.current = null;
+    awaitingBestRef.current = false;
     setFinalScore(null);
+    setCardShown(false);
     setNewBest(false);
     setScore(0);
-    setSeed(toSeed(Date.now()));
+    setRun((r) => ({ id: r.id + 1, seed: toSeed(Date.now() + r.id) }));
   }, []);
 
-  // The best score standing BEFORE the current run — captured while a run is in
-  // progress, because submitting the final score updates `board.best` in place.
-  const bestBeforeRun = useRef<number | null>(null);
-  useEffect(() => {
-    if (finalScore === null) bestBeforeRun.current = board?.best ?? null;
-  }, [board, finalScore]);
-
-  // On game over, flag a personal best, then submit the run and refresh.
+  // Hold the game-over card back for the death freeze (loop keeps running so
+  // the death juice animates), then pause the game and show the card. A restart
+  // or unmount during the freeze just cancels the presentation — the score was
+  // already submitted the moment the run ended.
   useEffect(() => {
     if (finalScore === null) return;
-    const better = isNewBest(finalScore, bestBeforeRun.current);
-    setNewBest(better);
-    // Audio-agnostic: emit the domain event and let the sound mixer pick a clip.
-    if (better) bus.emit("arcade-best");
-    submitScore(game, finalScore)
-      .then(setBoard)
-      .catch(() => refresh());
-  }, [finalScore, game, refresh]);
+    const t = window.setTimeout(() => setCardShown(true), DEATH_FREEZE_MS);
+    return () => window.clearTimeout(t);
+  }, [finalScore]);
 
-  // One-key instant restart from the game-over card (issue #163).
+  // One-key instant restart from the game-over card (issue #163). Active only
+  // while the card is actually shown, and never for key events originating from
+  // an interactive control — keyboard users must still be able to activate
+  // Close/fullscreen/mute/shake with Space/Enter while the card is up.
   useEffect(() => {
-    if (finalScore === null) return;
+    if (!cardShown) return;
     const onKey = (e: KeyboardEvent) => {
       if (!RESTART_KEYS.has(e.key)) return;
+      if (e.target instanceof Element && e.target.closest("button, input, select, textarea, a[href]")) {
+        return;
+      }
       e.preventDefault();
       restart();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [finalScore, restart]);
+  }, [cardShown, restart]);
 
   const Game = GAMES[game];
 
@@ -273,15 +345,18 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
               <span className="arcade-controls-hint">{CONTROLS[game]}</span>
             </div>
             <div className="arcade-surface">
-              {/* key=seed remounts the game for a fresh, deterministic run. */}
+              {/* key=run.id remounts the game for a fresh, deterministic run.
+                  The game keeps running through the death freeze (cardShown
+                  still false) so the death juice stays visible. */}
               <Game
-                key={seed}
-                seed={seed}
-                paused={paused || finalScore !== null}
+                key={run.id}
+                seed={run.seed}
+                paused={paused || cardShown}
+                shake={arcadeShake}
                 onScore={onScore}
                 onGameOver={onGameOver}
               />
-              {finalScore !== null && (
+              {finalScore !== null && cardShown && (
                 <div className="arcade-gameover">
                   <p>Game over</p>
                   <p className="arcade-final">Score {finalScore}</p>

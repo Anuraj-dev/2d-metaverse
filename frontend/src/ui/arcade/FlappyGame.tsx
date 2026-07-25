@@ -18,7 +18,6 @@ import {
   stepJuice,
   type JuiceState,
 } from "../../game/arcade/juice";
-import { getSettings } from "../settings";
 import { isReducedMotion } from "../reducedMotionBridge";
 import type { ArcadeGameProps } from "./gameTypes";
 
@@ -28,22 +27,24 @@ const { width: W, height: H } = DEFAULT_FLAPPY_CONFIG;
 // scales the canvas to fill the stage.
 const S = 2;
 const GROUND_H = 24;
-/**
- * Reporting game-over pauses the loop and drops the overlay's card over the
- * canvas, so the death burst + shake would never be seen. Hold the run open just
- * long enough for them to read, then hand up the score.
- */
-const DEATH_FREEZE_MS = 450;
 
 /**
  * Thin canvas renderer for the pure Flappy module. A new run remounts this
- * component (ArcadeOverlay keys it by seed), so the refs init fresh from `seed`.
- * All game rules stay in game/arcade/flappy — this only draws the returned state
- * and layers the pure game/arcade/juice feedback (particles, pop-ups, shake) on
- * top. Flappy's MECHANICS are deliberately unchanged by issue #163: nothing here
- * feeds back into the reducer.
+ * component (ArcadeOverlay keys it by a monotonic run id), so the refs init
+ * fresh from `seed`. All game rules stay in game/arcade/flappy — this only
+ * draws the returned state and layers the pure game/arcade/juice feedback
+ * (particles, pop-ups, shake) on top. Flappy's MECHANICS are deliberately
+ * unchanged by issue #163: nothing here feeds back into the reducer.
  */
-export default function FlappyGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
+// The `shake` prop is destructured as `shakeSetting` — the bare name would
+// shadow the imported juice `shake` reducer.
+export default function FlappyGame({
+  seed,
+  paused,
+  shake: shakeSetting,
+  onScore,
+  onGameOver,
+}: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<FlappyState>(initFlappy(seed));
   // Juice gets its own PRNG stream seeded from the run seed, so the feedback is
@@ -51,20 +52,11 @@ export default function FlappyGame({ seed, paused, onScore, onGameOver }: Arcade
   const juiceRef = useRef<JuiceState>(initJuice(((seed ^ 0x9e3779b9) >>> 0) || 1));
   const overRef = useRef(false);
   const nearRef = useRef(false);
-  const endTimerRef = useRef<number | null>(null);
 
-  // A restart unmounts this component; never let a pending game-over land on the
-  // next run.
-  useEffect(
-    () => () => {
-      if (endTimerRef.current !== null) window.clearTimeout(endTimerRef.current);
-    },
-    []
-  );
-
-  // Snapshot the motion preference once per run. The overlay remounts this
-  // component for every run, so a fresh run always re-reads the setting.
-  const [shakeEnabled] = useState(() => getSettings().arcadeShake && !isReducedMotion());
+  // Snapshot the reduced-motion preference once per run; screen shake itself is
+  // a LIVE prop so the accessibility toggle applies to the active run.
+  const [reduced] = useState(() => isReducedMotion());
+  const shakeEnabled = shakeSetting && !reduced;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -246,7 +238,11 @@ export default function FlappyGame({ seed, paused, onScore, onGameOver }: Arcade
         });
         if (shakeEnabled) j = shake(j, 0.9);
         bus.emit("arcade-over");
-        endTimerRef.current = window.setTimeout(() => onGameOver(next.score), DEATH_FREEZE_MS);
+        // Report immediately — a deferred report is lost if we unmount first.
+        // The overlay owns the death-freeze presentation; this loop keeps
+        // running (the reducer is idempotent on terminal states) so the death
+        // burst + shake still animate until the overlay pauses us.
+        onGameOver(next.score);
       }
 
       juiceRef.current = stepJuice(j, TICK_MS);
