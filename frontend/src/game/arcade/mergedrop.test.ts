@@ -369,6 +369,7 @@ describe("broad phase", () => {
   it("finds every pair the narrow phase could accept (brute-force cross-check)", () => {
     const bodies = denseBodies();
     const got = new Set(collectPairs(bodies, BROADPHASE_SLACK));
+    const missing: number[] = [];
     for (let i = 0; i < bodies.length; i++) {
       for (let j = i + 1; j < bodies.length; j++) {
         const a = at(bodies, i);
@@ -376,11 +377,11 @@ describe("broad phase", () => {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const reach = a.r + b.r + BROADPHASE_SLACK;
-        if (dx * dx + dy * dy <= reach * reach) {
-          expect(got.has(i * PAIR_BASE + j)).toBe(true);
-        }
+        const withinReach = dx * dx + dy * dy <= reach * reach;
+        if (withinReach && !got.has(i * PAIR_BASE + j)) missing.push(i * PAIR_BASE + j);
       }
     }
+    expect(missing).toEqual([]);
   });
 
   it("emits pairs deterministically, in the all-pairs loops' ascending (i, j) order", () => {

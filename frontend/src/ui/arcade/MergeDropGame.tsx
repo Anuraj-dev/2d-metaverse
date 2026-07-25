@@ -13,6 +13,14 @@ import {
   type MergeDropInput,
   type MergeDropState,
 } from "../../game/arcade/mergedrop";
+import {
+  IDLE_TAP_LATCH,
+  sampleTap,
+  tapBlur,
+  tapKeyDown,
+  tapKeyUp,
+  type TapLatchState,
+} from "../../game/arcade/tapLatch";
 import type { ArcadeGameProps } from "./gameTypes";
 
 const TICK_MS = 16;
@@ -30,8 +38,6 @@ const LADDER_STEP = 42;
 const LADDER_TOP = LADDER_Y - 20;
 const LADDER_H = 40;
 const POP_TICKS = 18;
-/** Ticks of aim travel granted by a single arrow-key tap (see the key handler). */
-const TAP_TICKS = 9;
 
 /** Wobble/pop envelope for a body that was just fused (1 → 0 over POP_TICKS). */
 function popPhase(body: MergeBody, tick: number): number {
@@ -201,10 +207,11 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
   const stateRef = useRef<MergeDropState>(initMergeDrop(seed));
   const overRef = useRef(false);
 
-  // Input, sampled once per tick.
-  const moveRef = useRef<-1 | 0 | 1>(0);
-  const heldRef = useRef({ left: false, right: false });
-  const tapRef = useRef<{ dir: -1 | 0 | 1; ticks: number }>({ dir: 0, ticks: 0 });
+  // Input, sampled once per tick. Aim keys flow through the pure tap latch
+  // (game/arcade/tapLatch): every tap gets its minimum nudge regardless of
+  // where it falls relative to a tick boundary, taps queue instead of
+  // overwriting, and physically held keys always win.
+  const latchRef = useRef<TapLatchState>(IDLE_TAP_LATCH);
   const dropRef = useRef(false);
   const aimRef = useRef<number | null>(null);
 
@@ -650,17 +657,11 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     if (paused) return;
     const id = window.setInterval(() => {
       const prev = stateRef.current;
-      // A physically-held key wins; otherwise spend any latched tap ticks.
-      const held = moveRef.current;
-      const tap = tapRef.current;
-      let move: -1 | 0 | 1 = held;
-      if (held !== 0) tap.ticks = 0;
-      else if (tap.ticks > 0) {
-        move = tap.dir;
-        tap.ticks -= 1;
-      }
+      // One latch sample per tick: held keys first, queued tap nudges after.
+      const sampled = sampleTap(latchRef.current);
+      latchRef.current = sampled.state;
       const input: MergeDropInput = {
-        move,
+        move: sampled.move,
         aimTo: aimRef.current,
         drop: dropRef.current,
       };
@@ -721,38 +722,25 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    const axis = () => (heldRef.current.left === heldRef.current.right ? 0 : heldRef.current.left ? -1 : 1);
     const onKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      let dir: -1 | 0 | 1 = 0;
       if (key === "arrowleft" || key === "a") {
-        heldRef.current.left = true;
-        dir = -1;
+        latchRef.current = tapKeyDown(latchRef.current, -1);
       } else if (key === "arrowright" || key === "d") {
-        heldRef.current.right = true;
-        dir = 1;
+        latchRef.current = tapKeyDown(latchRef.current, 1);
       } else if (key === " " || key === "arrowdown" || key === "s" || key === "enter") {
         dropRef.current = true;
       } else return;
       e.preventDefault();
-      // A *tap* can begin and end inside one 16ms tick, which would sample an
-      // axis of 0 and move the aim nowhere. Latch the direction for a few ticks
-      // so a tap is always a visible nudge; holding the key overrides it below.
-      if (dir !== 0) tapRef.current = { dir, ticks: TAP_TICKS };
-      moveRef.current = axis();
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      if (key === "arrowleft" || key === "a") heldRef.current.left = false;
-      else if (key === "arrowright" || key === "d") heldRef.current.right = false;
-      else return;
-      moveRef.current = axis();
+      if (key === "arrowleft" || key === "a") latchRef.current = tapKeyUp(latchRef.current, -1);
+      else if (key === "arrowright" || key === "d") latchRef.current = tapKeyUp(latchRef.current, 1);
     };
     // Losing focus mid-hold must not leave the aim stuck travelling.
     const onBlur = () => {
-      heldRef.current = { left: false, right: false };
-      moveRef.current = 0;
-      tapRef.current = { dir: 0, ticks: 0 };
+      latchRef.current = tapBlur();
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
