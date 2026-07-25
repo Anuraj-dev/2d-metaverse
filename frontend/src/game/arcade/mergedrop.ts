@@ -14,7 +14,10 @@
  * `Math.sqrt` (all exactly-rounded in IEEE-754) plus `Math.floor`/`Math.min`/
  * `Math.max`. No `Math.pow`, `Math.hypot`, `Math.sin`, no wall-clock time, and
  * every loop walks a fixed index order so the float sequence never depends on
- * iteration order, engine version or platform.
+ * iteration order, engine version or platform. Pair visits are pruned by a
+ * deterministic sweep-and-prune broad phase (`collectPairs`) whose candidate
+ * list is re-sorted into ascending (i, j) — the same order the naive all-pairs
+ * loops used — so pruning changes cost, never outcomes.
  *
  * Integration is position-based (Verlet): a body carries its previous position
  * instead of a velocity, contacts are solved as positional corrections over a
@@ -406,17 +409,81 @@ function applyBoundaryResponse(b: MergeBody, config: MergeDropConfig): void {
   }
 }
 
-/** Fixed-order relaxation passes: every contact, then every well boundary. */
+/**
+ * Broad-phase margin (well units): candidate pairs are collected once per tick
+ * from slack-expanded AABBs, then reused across all relaxation passes. The
+ * margin absorbs the small positional corrections a pass can apply, so a pair
+ * driven into contact mid-solve is still on the candidate list.
+ */
+export const BROADPHASE_SLACK = 4;
+
+/** Pair-key radix (`key = i * PAIR_BASE + j`). Body counts stay orders of magnitude below this. */
+export const PAIR_BASE = 2 ** 20;
+
+/**
+ * Deterministic sweep-and-prune broad phase. Returns the pairs whose
+ * slack-expanded AABBs overlap, encoded `i * PAIR_BASE + j` with `i < j`, and
+ * sorted ascending — i.e. re-sorted into the exact lexicographic (i, j) order
+ * the old all-pairs loops visited. The pairs it prunes are separated by more
+ * than `slack` on an axis, which both the contact solver and the merge scan
+ * would have rejected on distance anyway, so narrow-phase outcomes (and replay
+ * determinism) are unchanged; only the wasted pair visits go away.
+ *
+ * Determinism: the sweep sorts on plain float comparisons with index
+ * tie-breaks (a total order), and the output order is fully normalized by the
+ * final numeric sort — nothing depends on engine sort stability.
+ */
+export function collectPairs(bodies: readonly MergeBody[], slack: number): number[] {
+  const n = bodies.length;
+  // Sweep along y (piles spread across rows, so y prunes best): sort indices
+  // by each body's expanded top edge.
+  const order: number[] = [];
+  for (let i = 0; i < n; i++) order.push(i);
+  order.sort((ia, ib) => {
+    const a = bodies[ia];
+    const b = bodies[ib];
+    const ka = a ? a.y - a.r : 0;
+    const kb = b ? b.y - b.r : 0;
+    return ka === kb ? ia - ib : ka - kb;
+  });
+
+  const keys: number[] = [];
+  for (let s = 0; s < n; s++) {
+    const ia = order[s];
+    if (ia === undefined) continue;
+    const a = bodies[ia];
+    if (!a) continue;
+    const aBottom = a.y + a.r + slack;
+    for (let t = s + 1; t < n; t++) {
+      const ib = order[t];
+      if (ib === undefined) continue;
+      const b = bodies[ib];
+      if (!b) continue;
+      // Sorted by top edge: once a body starts below a's expanded bottom,
+      // every later one does too.
+      if (b.y - b.r > aBottom) break;
+      const dx = b.x - a.x;
+      const reach = a.r + b.r + slack;
+      if (dx > reach || dx < -reach) continue;
+      keys.push(ia < ib ? ia * PAIR_BASE + ib : ib * PAIR_BASE + ia);
+    }
+  }
+  keys.sort((x, y) => x - y);
+  return keys;
+}
+
+/** Fixed-order relaxation passes: every candidate contact, then every well boundary. */
 function solve(bodies: MergeBody[], config: MergeDropConfig): void {
+  const pairs = collectPairs(bodies, BROADPHASE_SLACK);
   for (let pass = 0; pass < config.iterations; pass++) {
-    for (let i = 0; i < bodies.length; i++) {
+    for (let k = 0; k < pairs.length; k++) {
+      const key = pairs[k];
+      if (key === undefined) continue;
+      const i = Math.floor(key / PAIR_BASE);
       const a = bodies[i];
-      if (!a) continue;
-      for (let j = i + 1; j < bodies.length; j++) {
-        const b = bodies[j];
-        if (!b) continue;
-        resolvePair(a, b, config.separation);
-      }
+      const b = bodies[key - i * PAIR_BASE];
+      if (!a || !b) continue;
+      resolvePair(a, b, config.separation);
     }
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i];
@@ -505,62 +572,66 @@ export function stepMergeDrop(
   const consumed: boolean[] = bodies.map(() => false);
   const fused: MergeBody[] = [];
 
-  for (let i = 0; i < bodies.length; i++) {
-    if (consumed[i]) continue;
+  // Same broad phase as the solver. Bodies do not move during this scan, so
+  // with MERGE_SLACK as the margin the candidate set provably contains every
+  // pair within touching distance — identical outcomes to the old full scan,
+  // visited in the same ascending (i, j) order.
+  const mergePairs = collectPairs(bodies, MERGE_SLACK);
+  for (let k = 0; k < mergePairs.length; k++) {
+    const key = mergePairs[k];
+    if (key === undefined) continue;
+    const i = Math.floor(key / PAIR_BASE);
+    const j = key - i * PAIR_BASE;
+    if (consumed[i] || consumed[j]) continue;
     const a = bodies[i];
-    if (!a) continue;
-    for (let j = i + 1; j < bodies.length; j++) {
-      if (consumed[i]) break;
-      if (consumed[j]) continue;
-      const b = bodies[j];
-      if (!b || b.tier !== a.tier) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const touch = a.r + b.r + MERGE_SLACK;
-      if (dx * dx + dy * dy > touch * touch) continue;
+    const b = bodies[j];
+    if (!a || !b || b.tier !== a.tier) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const touch = a.r + b.r + MERGE_SLACK;
+    if (dx * dx + dy * dy > touch * touch) continue;
 
-      consumed[i] = true;
-      consumed[j] = true;
-      chain = chain + 1;
-      lastMergeTick = tick;
-      const multiplier = Math.min(chain, MAX_CHAIN);
-      const cx = (a.x + b.x) / 2;
-      const cy = (a.y + b.y) / 2;
+    consumed[i] = true;
+    consumed[j] = true;
+    chain = chain + 1;
+    lastMergeTick = tick;
+    const multiplier = Math.min(chain, MAX_CHAIN);
+    const cx = (a.x + b.x) / 2;
+    const cy = (a.y + b.y) / 2;
 
-      if (a.tier >= MAX_TIER) {
-        // Two suns annihilate: a supernova clears both and pays a bonus.
-        score = score + NOVA_SCORE * multiplier;
-        novas = novas + 1;
-        events.push({ type: "nova", x: cx, y: cy, chain: multiplier });
-        continue;
-      }
-
-      const tier = a.tier + 1;
-      const rung = tierAt(tier);
-      score = score + rung.score * multiplier;
-      best = Math.max(best, tier);
-      // Inherit the pair's averaged momentum so a merge nudges the pile.
-      const vx = (a.x - a.px + (b.x - b.px)) / 2;
-      const vy = (a.y - a.py + (b.y - b.py)) / 2;
-      const born: MergeBody = {
-        id: nextId,
-        tier,
-        x: cx,
-        y: cy,
-        px: cx - vx,
-        py: cy - vy,
-        r: rung.radius,
-        bornTick: tick,
-        fused: true,
-        aboveTicks: 0,
-      };
-      // The new body is wider than the two it replaced, so it can straddle a
-      // wall on the tick it appears — clamp it before anything renders it.
-      clampIntoWell(born, config);
-      fused.push(born);
-      nextId = nextId + 1;
-      events.push({ type: "merge", tier, x: cx, y: cy, chain: multiplier });
+    if (a.tier >= MAX_TIER) {
+      // Two suns annihilate: a supernova clears both and pays a bonus.
+      score = score + NOVA_SCORE * multiplier;
+      novas = novas + 1;
+      events.push({ type: "nova", x: cx, y: cy, chain: multiplier });
+      continue;
     }
+
+    const tier = a.tier + 1;
+    const rung = tierAt(tier);
+    score = score + rung.score * multiplier;
+    best = Math.max(best, tier);
+    // Inherit the pair's averaged momentum so a merge nudges the pile.
+    const vx = (a.x - a.px + (b.x - b.px)) / 2;
+    const vy = (a.y - a.py + (b.y - b.py)) / 2;
+    const born: MergeBody = {
+      id: nextId,
+      tier,
+      x: cx,
+      y: cy,
+      px: cx - vx,
+      py: cy - vy,
+      r: rung.radius,
+      bornTick: tick,
+      fused: true,
+      aboveTicks: 0,
+    };
+    // The new body is wider than the two it replaced, so it can straddle a
+    // wall on the tick it appears — clamp it before anything renders it.
+    clampIntoWell(born, config);
+    fused.push(born);
+    nextId = nextId + 1;
+    events.push({ type: "merge", tier, x: cx, y: cy, chain: multiplier });
   }
 
   const survivors: MergeBody[] = [];

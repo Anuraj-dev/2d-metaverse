@@ -3,8 +3,11 @@ import {
   initMergeDrop,
   stepMergeDrop,
   tierAt,
+  collectPairs,
+  BROADPHASE_SLACK,
   DEFAULT_MERGE_DROP_CONFIG,
   IDLE_INPUT,
+  PAIR_BASE,
   MAX_CHAIN,
   MAX_TIER,
   MERGE_DROP_TIERS,
@@ -347,6 +350,60 @@ describe("danger line and game over", () => {
     const after = stepMergeDrop(s, drop(60));
     expect(JSON.stringify(after)).toBe(JSON.stringify(final));
     expect(stepMergeDrop(after, drop(60))).toBe(after);
+  });
+});
+
+describe("broad phase", () => {
+  /** A dense, settled well built by deterministic scripted play. */
+  function denseBodies(): readonly MergeBody[] {
+    let s = initMergeDrop(2024);
+    const aims = [20, 240, 130, 60, 200, 95, 165];
+    let drops = 0;
+    for (let t = 0; t < 6000 && !s.over; t++) {
+      if (t % 21 === 0) drops++;
+      s = stepMergeDrop(s, t % 21 === 0 ? drop(at(aims, drops % aims.length)) : IDLE_INPUT);
+    }
+    return s.bodies;
+  }
+
+  it("finds every pair the narrow phase could accept (brute-force cross-check)", () => {
+    const bodies = denseBodies();
+    const got = new Set(collectPairs(bodies, BROADPHASE_SLACK));
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = at(bodies, i);
+        const b = at(bodies, j);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const reach = a.r + b.r + BROADPHASE_SLACK;
+        if (dx * dx + dy * dy <= reach * reach) {
+          expect(got.has(i * PAIR_BASE + j)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("emits pairs deterministically, in the all-pairs loops' ascending (i, j) order", () => {
+    const bodies = denseBodies();
+    const pairs = collectPairs(bodies, BROADPHASE_SLACK);
+    for (let k = 1; k < pairs.length; k++) {
+      // Strictly ascending keys ⇔ unique pairs in lexicographic (i, j) order.
+      expect(at(pairs, k)).toBeGreaterThan(at(pairs, k - 1));
+    }
+    expect(collectPairs(bodies, BROADPHASE_SLACK)).toEqual(pairs);
+  });
+
+  it("prunes the quadratic pair space — deterministic operation-count regression", () => {
+    const bodies = denseBodies();
+    const n = bodies.length;
+    // The scenario must be genuinely dense or the bound below proves nothing.
+    expect(n).toBeGreaterThan(25);
+    const candidates = collectPairs(bodies, BROADPHASE_SLACK).length;
+    const allPairs = (n * (n - 1)) / 2;
+    // Candidate visits stay a small multiple of n (near-contacts), a fraction
+    // of the n(n-1)/2 the old six-pass solver + merge scan visited every tick.
+    expect(candidates).toBeLessThanOrEqual(n * 8);
+    expect(candidates).toBeLessThan(allPairs / 3);
   });
 });
 

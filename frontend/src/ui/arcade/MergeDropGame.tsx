@@ -26,6 +26,9 @@ const WELL_X = 80;
 const WELL_Y = 48;
 const LADDER_Y = 490;
 const LADDER_STEP = 42;
+/** Cached ladder strip: covers the rungs (max r ≈ 12) and their 6px labels. */
+const LADDER_TOP = LADDER_Y - 20;
+const LADDER_H = 40;
 const POP_TICKS = 18;
 /** Ticks of aim travel granted by a single arrow-key tap (see the key handler). */
 const TAP_TICKS = 9;
@@ -41,6 +44,135 @@ function popPhase(body: MergeBody, tick: number): number {
 /** Stable per-body pseudo-random in [0,1) — surface detail must not shimmer. */
 function detail(id: number, salt: number): number {
   return nextFloat(((id * 2654435761 + salt * 40503) >>> 0) || 1).value;
+}
+
+/**
+ * Surface-detail variants baked per rung. Bodies map to a variant by
+ * `id % DETAIL_VARIANTS`, so the well still reads varied while every body
+ * blits a pre-rendered sprite instead of rebuilding gradients every frame
+ * (the round-1 perf finding).
+ */
+const DETAIL_VARIANTS = 4;
+
+/** Sprite padding around a body's centre — the baked glow reaches 1.55r. */
+function spritePad(r: number): number {
+  return Math.ceil(r * 1.8);
+}
+
+/**
+ * The static artwork for one rung/variant, centred on (0,0): steady-state
+ * glow, lit sphere, per-family surface detail, gas-giant ring, rim light and
+ * specular. Everything tick-dependent (merge-pop glow, sun corona, wobble)
+ * stays dynamic in `drawBody`. Drawn once per (tier, variant) into an
+ * offscreen canvas and blitted thereafter.
+ */
+function renderBodyArt(
+  ctx: CanvasRenderingContext2D,
+  tierIndex: number,
+  variant: number,
+  r: number
+): void {
+  const rung = tierAt(tierIndex);
+
+  // Outer glow — brighter for the high rungs.
+  const glow = ctx.createRadialGradient(0, 0, r * 0.7, 0, 0, r * 1.55);
+  glow.addColorStop(0, `${rung.light}55`);
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.globalAlpha = 0.35 + tierIndex * 0.05;
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Sphere: lit from the upper left, terminator on the lower right.
+  const sphere = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
+  sphere.addColorStop(0, rung.light);
+  sphere.addColorStop(0.45, rung.color);
+  sphere.addColorStop(1, rung.shade);
+  ctx.fillStyle = sphere;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Surface detail per family — deterministic from the variant index.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+  if (tierIndex <= 2) {
+    ctx.fillStyle = rung.shade;
+    ctx.globalAlpha = 0.55;
+    for (let i = 0; i < 3; i++) {
+      const a = detail(variant, i) * Math.PI * 2;
+      const d = detail(variant, i + 30) * r * 0.6;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * d, Math.sin(a) * d, r * (0.12 + detail(variant, i + 60) * 0.14), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (tierIndex === 3) {
+    // Comet: an icy tail streaming up-right.
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = rung.light;
+    ctx.lineWidth = r * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(-r, r * 0.5);
+    ctx.lineTo(r * 0.8, -r * 0.7);
+    ctx.stroke();
+  } else if (tierIndex <= 5) {
+    // Moon craters / continents.
+    ctx.fillStyle = tierIndex === 5 ? "#2f7f52" : rung.shade;
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 5; i++) {
+      const a = detail(variant, i + 5) * Math.PI * 2;
+      const d = detail(variant, i + 40) * r * 0.65;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * d, Math.sin(a) * d, r * (0.1 + detail(variant, i + 70) * 0.18), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (tierIndex <= 7) {
+    // Gas bands.
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = rung.shade;
+    for (let i = -3; i <= 3; i++) {
+      const by = (i / 3.4) * r;
+      const bh = r * (0.09 + detail(variant, i + 90) * 0.08);
+      ctx.fillRect(-r, by, r * 2, bh);
+    }
+  } else {
+    // Stars: a churning bright core.
+    ctx.globalAlpha = 0.6;
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.85);
+    core.addColorStop(0, "#fffdf3");
+    core.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Ring for the gas giant (the sun's pulsing corona stays dynamic).
+  if (tierIndex === 7) {
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = rung.light;
+    ctx.lineWidth = Math.max(1.5, r * 0.08);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.45, r * 0.38, -0.35, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Rim light + specular highlight.
+  ctx.strokeStyle = `${rung.light}88`;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r - 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.38, -r * 0.44, r * 0.2, r * 0.13, -0.6, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 interface Particle {
@@ -83,6 +215,13 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
   const flashRef = useRef(0);
   const bannerRef = useRef<{ text: string; life: number }>({ text: "", life: 0 });
 
+  // Cached static layers (round-1 perf finding: no per-frame gradient rebuilds).
+  const bgRef = useRef<HTMLCanvasElement | null>(null);
+  const spriteCacheRef = useRef(new Map<number, HTMLCanvasElement>());
+  const ladderCacheRef = useRef<{ best: number; canvas: HTMLCanvasElement } | null>(null);
+  const previewGradsRef = useRef(new Map<number, CanvasGradient>());
+  const heatGradRef = useRef<CanvasGradient | null>(null);
+
   const fxRandom = useCallback((): number => {
     const { value, seed: next } = nextFloat(fxSeedRef.current);
     fxSeedRef.current = next;
@@ -115,7 +254,16 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
 
   // ── Drawing ────────────────────────────────────────────────────────────────
 
-  const drawStarfield = useCallback((ctx: CanvasRenderingContext2D, tick: number) => {
+  /** The static sky (gradient + nebulae), rendered once into an offscreen canvas. */
+  const backgroundLayer = useCallback((): HTMLCanvasElement | null => {
+    if (bgRef.current) return bgRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = W * S;
+    canvas.height = H * S;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(S, 0, 0, S, 0, 0);
+
     const sky = ctx.createLinearGradient(0, 0, 0, H);
     sky.addColorStop(0, "#0a0d1a");
     sky.addColorStop(0.55, "#101733");
@@ -134,19 +282,52 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
       ctx.fillStyle = neb;
       ctx.fillRect(0, 0, W, H);
     }
+    bgRef.current = canvas;
+    return canvas;
+  }, []);
 
-    // Three parallax star layers, deterministic from a fixed hash.
-    for (let layer = 0; layer < 3; layer++) {
-      const count = 34 - layer * 8;
-      const drift = tick * (0.03 + layer * 0.035);
-      ctx.fillStyle = `rgba(226, 234, 255, ${0.24 + layer * 0.22})`;
-      for (let i = 0; i < count; i++) {
-        const sx = detail(i + layer * 97 + 1, 3) * W;
-        const sy = (detail(i + layer * 97 + 1, 11) * H + drift) % H;
-        const size = 0.6 + layer * 0.5;
-        ctx.fillRect(sx, sy, size, size);
+  const drawStarfield = useCallback(
+    (ctx: CanvasRenderingContext2D, tick: number) => {
+      const bg = backgroundLayer();
+      if (bg) ctx.drawImage(bg, 0, 0, W, H);
+      else {
+        ctx.fillStyle = "#0a0d1a";
+        ctx.fillRect(0, 0, W, H);
       }
-    }
+
+      // Three parallax star layers — plain rects, deterministic from a fixed
+      // hash; only these drift, so only these redraw per frame.
+      for (let layer = 0; layer < 3; layer++) {
+        const count = 34 - layer * 8;
+        const drift = tick * (0.03 + layer * 0.035);
+        ctx.fillStyle = `rgba(226, 234, 255, ${0.24 + layer * 0.22})`;
+        for (let i = 0; i < count; i++) {
+          const sx = detail(i + layer * 97 + 1, 3) * W;
+          const sy = (detail(i + layer * 97 + 1, 11) * H + drift) % H;
+          const size = 0.6 + layer * 0.5;
+          ctx.fillRect(sx, sy, size, size);
+        }
+      }
+    },
+    [backgroundLayer]
+  );
+
+  /** Lazily bake and return the sprite for one (tier, variant) — 40 at most. */
+  const spriteFor = useCallback((tierIndex: number, variant: number): HTMLCanvasElement | null => {
+    const key = tierIndex * DETAIL_VARIANTS + variant;
+    const cached = spriteCacheRef.current.get(key);
+    if (cached) return cached;
+    const r = tierAt(tierIndex).radius;
+    const pad = spritePad(r);
+    const canvas = document.createElement("canvas");
+    canvas.width = pad * 2 * S;
+    canvas.height = pad * 2 * S;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(S, 0, 0, S, pad * S, pad * S);
+    renderBodyArt(ctx, tierIndex, variant, r);
+    spriteCacheRef.current.set(key, canvas);
+    return canvas;
   }, []);
 
   const drawBody = useCallback(
@@ -163,93 +344,29 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
       ctx.translate(cx, cy);
       ctx.scale(sx, sy);
 
-      // Outer glow — brighter for the high rungs and while popping.
-      const glow = ctx.createRadialGradient(0, 0, r * 0.7, 0, 0, r * (1.55 + pop * 0.5));
-      glow.addColorStop(0, `${rung.light}55`);
-      glow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.globalAlpha = 0.35 + pop * 0.5 + body.tier * 0.05;
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(0, 0, r * (1.55 + pop * 0.5), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      // Static artwork comes from the baked sprite; only tick-dependent juice
+      // below is drawn live.
+      const sprite = spriteFor(body.tier, body.id % DETAIL_VARIANTS);
+      if (sprite) {
+        const pad = spritePad(r);
+        ctx.drawImage(sprite, -pad, -pad, pad * 2, pad * 2);
+      }
 
-      // Sphere: lit from the upper left, terminator on the lower right.
-      const sphere = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
-      sphere.addColorStop(0, rung.light);
-      sphere.addColorStop(0.45, rung.color);
-      sphere.addColorStop(1, rung.shade);
-      ctx.fillStyle = sphere;
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Surface detail per family — all deterministic from the body id.
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.clip();
-      if (body.tier <= 2) {
-        ctx.fillStyle = rung.shade;
-        ctx.globalAlpha = 0.55;
-        for (let i = 0; i < 3; i++) {
-          const a = detail(body.id, i) * Math.PI * 2;
-          const d = detail(body.id, i + 30) * r * 0.6;
-          ctx.beginPath();
-          ctx.arc(Math.cos(a) * d, Math.sin(a) * d, r * (0.12 + detail(body.id, i + 60) * 0.14), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (body.tier === 3) {
-        // Comet: an icy tail streaming up-right.
-        ctx.globalAlpha = 0.5;
-        ctx.strokeStyle = rung.light;
-        ctx.lineWidth = r * 0.3;
+      // Merge-pop flare — at most POP_TICKS frames per merge, so the gradient
+      // here is event-driven, not a steady per-frame cost.
+      if (pop > 0) {
+        const flare = ctx.createRadialGradient(0, 0, r * 0.7, 0, 0, r * (1.55 + pop * 0.5));
+        flare.addColorStop(0, `${rung.light}55`);
+        flare.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = pop * 0.6;
+        ctx.fillStyle = flare;
         ctx.beginPath();
-        ctx.moveTo(-r, r * 0.5);
-        ctx.lineTo(r * 0.8, -r * 0.7);
-        ctx.stroke();
-      } else if (body.tier <= 5) {
-        // Moon craters / continents.
-        ctx.fillStyle = body.tier === 5 ? "#2f7f52" : rung.shade;
-        ctx.globalAlpha = 0.5;
-        for (let i = 0; i < 5; i++) {
-          const a = detail(body.id, i + 5) * Math.PI * 2;
-          const d = detail(body.id, i + 40) * r * 0.65;
-          ctx.beginPath();
-          ctx.arc(Math.cos(a) * d, Math.sin(a) * d, r * (0.1 + detail(body.id, i + 70) * 0.18), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (body.tier <= 7) {
-        // Gas bands.
-        ctx.globalAlpha = 0.4;
-        ctx.fillStyle = rung.shade;
-        for (let i = -3; i <= 3; i++) {
-          const by = (i / 3.4) * r;
-          const bh = r * (0.09 + detail(body.id, i + 90) * 0.08);
-          ctx.fillRect(-r, by, r * 2, bh);
-        }
-      } else {
-        // Stars: a churning bright core.
-        ctx.globalAlpha = 0.6;
-        const core = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.85);
-        core.addColorStop(0, "#fffdf3");
-        core.addColorStop(1, "rgba(255,255,255,0)");
-        ctx.fillStyle = core;
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * (1.55 + pop * 0.5), 0, Math.PI * 2);
         ctx.fill();
+        ctx.globalAlpha = 1;
       }
-      ctx.restore();
 
-      // Ring for the gas giant, corona for the sun.
-      if (body.tier === 7) {
-        ctx.globalAlpha = 0.75;
-        ctx.strokeStyle = rung.light;
-        ctx.lineWidth = Math.max(1.5, r * 0.08);
-        ctx.beginPath();
-        ctx.ellipse(0, 0, r * 1.45, r * 0.38, -0.35, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      // The sun's corona breathes with the tick — a cheap stroke, kept live.
       if (body.tier === MAX_TIER) {
         ctx.globalAlpha = 0.35 + Math.sin(tick * 0.12) * 0.12;
         ctx.strokeStyle = rung.light;
@@ -257,24 +374,55 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
         ctx.beginPath();
         ctx.arc(0, 0, r * 1.12, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.globalAlpha = 1;
       }
-      ctx.globalAlpha = 1;
-
-      // Rim light + specular highlight.
-      ctx.strokeStyle = `${rung.light}88`;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(0, 0, r - 0.6, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.beginPath();
-      ctx.ellipse(-r * 0.38, -r * 0.44, r * 0.2, r * 0.13, -0.6, 0, Math.PI * 2);
-      ctx.fill();
 
       ctx.restore();
     },
-    []
+    [spriteFor]
   );
+
+  /** The evolution ladder, baked per `best` (it changes a handful of times a run). */
+  const ladderLayer = useCallback((best: number): HTMLCanvasElement | null => {
+    const cached = ladderCacheRef.current;
+    if (cached && cached.best === best) return cached.canvas;
+    const canvas = cached?.canvas ?? document.createElement("canvas");
+    // (Re)setting the size also clears a reused canvas.
+    canvas.width = W * S;
+    canvas.height = LADDER_H * S;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(S, 0, 0, S, 0, -LADDER_TOP * S);
+    ctx.textAlign = "center";
+    for (let i = 0; i < MERGE_DROP_TIERS.length; i++) {
+      const rung = tierAt(i);
+      const x = 21 + i * LADDER_STEP;
+      const r = 3.5 + i * 0.95;
+      const reached = i <= best;
+      ctx.globalAlpha = reached ? 1 : 0.28;
+      const g = ctx.createRadialGradient(x - r * 0.3, LADDER_Y - r * 0.3, 0, x, LADDER_Y, r);
+      g.addColorStop(0, rung.light);
+      g.addColorStop(1, reached ? rung.color : rung.shade);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, LADDER_Y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = reached ? "rgba(226, 234, 255, 0.9)" : "rgba(160, 172, 200, 0.7)";
+      ctx.font = "6px system-ui, sans-serif";
+      ctx.fillText(rung.name.toUpperCase(), x, LADDER_Y + 16);
+      ctx.globalAlpha = 1;
+      if (i < MERGE_DROP_TIERS.length - 1) {
+        ctx.strokeStyle = "rgba(140, 156, 200, 0.25)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + r + 3, LADDER_Y);
+        ctx.lineTo(x + LADDER_STEP - (3.5 + (i + 1) * 0.95) - 3, LADDER_Y);
+        ctx.stroke();
+      }
+    }
+    ladderCacheRef.current = { best, canvas };
+    return canvas;
+  }, []);
 
   const drawPanels = useCallback((ctx: CanvasRenderingContext2D, s: MergeDropState) => {
     ctx.textAlign = "center";
@@ -291,10 +439,15 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     ctx.fill();
     ctx.stroke();
     const nextRung = tierAt(s.next);
-    const preview = ctx.createRadialGradient(34, 96, 2, 40, 102, 20);
-    preview.addColorStop(0, nextRung.light);
-    preview.addColorStop(0.5, nextRung.color);
-    preview.addColorStop(1, nextRung.shade);
+    // Fixed geometry, colours keyed by tier — ten gradients ever, not one per frame.
+    let preview = previewGradsRef.current.get(s.next);
+    if (!preview) {
+      preview = ctx.createRadialGradient(34, 96, 2, 40, 102, 20);
+      preview.addColorStop(0, nextRung.light);
+      preview.addColorStop(0.5, nextRung.color);
+      preview.addColorStop(1, nextRung.shade);
+      previewGradsRef.current.set(s.next, preview);
+    }
     ctx.fillStyle = preview;
     ctx.beginPath();
     ctx.arc(40, 102, Math.min(20, nextRung.radius), 0, Math.PI * 2);
@@ -339,10 +492,14 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     const level = Math.max(s.stackHeight, s.danger);
     const fill = meterH * level;
     if (fill > 0.5) {
-      const grad = ctx.createLinearGradient(0, meterY + meterH, 0, meterY);
-      grad.addColorStop(0, "#7ee8fa");
-      grad.addColorStop(0.6, "#ffd166");
-      grad.addColorStop(1, "#ff4d5e");
+      let grad = heatGradRef.current;
+      if (!grad) {
+        grad = ctx.createLinearGradient(0, meterY + meterH, 0, meterY);
+        grad.addColorStop(0, "#7ee8fa");
+        grad.addColorStop(0.6, "#ffd166");
+        grad.addColorStop(1, "#ff4d5e");
+        heatGradRef.current = grad;
+      }
       ctx.globalAlpha = critical ? 0.7 + Math.sin(s.tick * 0.2) * 0.3 : 1;
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -361,34 +518,10 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
       ctx.fillText(word, 380, 312 + i * 12);
     }
 
-    // Evolution ladder along the bottom.
-    for (let i = 0; i < MERGE_DROP_TIERS.length; i++) {
-      const rung = tierAt(i);
-      const x = 21 + i * LADDER_STEP;
-      const r = 3.5 + i * 0.95;
-      const reached = i <= s.best;
-      ctx.globalAlpha = reached ? 1 : 0.28;
-      const g = ctx.createRadialGradient(x - r * 0.3, LADDER_Y - r * 0.3, 0, x, LADDER_Y, r);
-      g.addColorStop(0, rung.light);
-      g.addColorStop(1, reached ? rung.color : rung.shade);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, LADDER_Y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = reached ? "rgba(226, 234, 255, 0.9)" : "rgba(160, 172, 200, 0.7)";
-      ctx.font = "6px system-ui, sans-serif";
-      ctx.fillText(rung.name.toUpperCase(), x, LADDER_Y + 16);
-      ctx.globalAlpha = 1;
-      if (i < MERGE_DROP_TIERS.length - 1) {
-        ctx.strokeStyle = "rgba(140, 156, 200, 0.25)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + r + 3, LADDER_Y);
-        ctx.lineTo(x + LADDER_STEP - (3.5 + (i + 1) * 0.95) - 3, LADDER_Y);
-        ctx.stroke();
-      }
-    }
-  }, []);
+    // Evolution ladder along the bottom — rebuilt only when `best` changes.
+    const ladder = ladderLayer(s.best);
+    if (ladder) ctx.drawImage(ladder, 0, LADDER_TOP, W, LADDER_H);
+  }, [ladderLayer]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
