@@ -601,8 +601,9 @@ picker (chill / normal / fast) and a **level** picker; the header carries a
 reads its options exactly once per run and a mid-run change can never reshape the
 board under the player. Death shows a card with a one-key restart (Space / Enter /
 R). Screen shake is suppressed by the shake toggle **and** by the global
-reduced-motion preference (`isReducedMotion()`), like every other decorative
-motion in the app.
+reduced-motion preference, like every other decorative motion in the app. Both
+canvas renderers subscribe through `useReducedMotion()`,
+so an OS or in-app preference change applies to the active run without a restart.
 
 **Architecture — pure rules, thin renderers, audio-agnostic:**
 
@@ -625,8 +626,7 @@ motion in the app.
   — never `Math.random` — so the feedback is as reproducible as the game. It is
   seeded from the run seed but keeps a *separate* stream, so adding or removing a
   particle burst can never perturb the game's own randomness. `feedback.ts` holds
-  the read-only predicates that decide which cue fires (near miss, new personal
-  best); nothing there is consulted by a reducer.
+  the read-only near-miss predicates; nothing there is consulted by a reducer.
 - **Renderers** are thin React components (`src/ui/arcade/`): one per game, they
   own a canvas/DOM surface, run the module's tick/reduce on a loop, draw the
   returned state, and report score/game-over upward. No game *rules* in a
@@ -646,7 +646,10 @@ motion in the app.
   audio.
 - **High scores** are one REST resource (`/api/v1/arcade/scores`), shapes in
   `@metaverse/shared`. The overlay shows your best + a top-N leaderboard per
-  cabinet. **Scores are client-reported and trusted at this level** — there is
+  cabinet. A submission returns an authoritative `newBest` verdict computed
+  atomically with the score upsert; the client never tries to infer the pre-run
+  best from racing leaderboard requests. **Scores are client-reported and trusted
+  at this level** — there is
   no server-side play validation, so the leaderboard is best treated as
   cosmetic; hardening (server replay/authoritative sim) is out of scope for
   Phase 1.
@@ -657,7 +660,7 @@ exporting `init<Game>(seed) → State`, a per-tick/per-input reducer
 `rngSeed`, plus its `.test.ts` (transition table + a determinism test). Add the
 id to `ARCADE_GAMES` in `@metaverse/shared`. Write a thin renderer in
 `src/ui/arcade/` implementing `ArcadeGameProps` (`seed`, `paused`, `onScore`,
-`onGameOver`) and register it in `ArcadeOverlay`'s `GAMES` map. Place a cabinet
+`shake`, `onScore`, `onGameOver`) and register it in `ArcadeOverlay`'s `GAMES` map. Place a cabinet
 by editing `scripts/gen_campus.py` (a solid `furn(...)` sprite + an
 `interactType="arcade"` interactable carrying a `game` payload) and regenerate
 the map — never hand-edit `campus.json`. Add a cabinet sprite via
@@ -697,14 +700,16 @@ Unlike the arcade cabinets, board tables are **two-player and server-authoritati
   Since issue #163 the move/win cues are **dedicated board foley** (`board_place`,
   `board_win`) rather than borrowed arcade chiptune — these are wooden plaza tables,
   not cabinets, so they belong to the recorded-foley family with the rest of the world.
-- **Piece motion is mount-time CSS, not React state** (issue #163): a filled cell never
-  empties within a match, so the mark element mounts exactly once and its animation runs
-  exactly once — Connect-4 discs fall in from above their landing row (the frame clips
-  them at its top edge), tic-tac-toe X/O strokes draw themselves in (`pathLength="1"` +
-  one dash-offset keyframe), and the winning line pops along its length. The only two
-  *decisions* — how many rows a disc falls (`cellRow`) and a cell's position in the win
-  line (`winLineStep`) — are pure functions in `game/boardTable.ts` with tests. Reduced
-  motion drops the motion and keeps every end state.
+- **Piece motion is transition-gated CSS** (issue #163): the panel remembers the previous
+  snapshot and gives `is-new` only to a 0→filled transition, so historical marks are
+  already settled for a spectator joining mid-match and ordinary re-renders cannot
+  restart the animation. Connect-4 discs fall in from above their landing row (the frame
+  clips them at its top edge), tic-tac-toe X/O strokes draw themselves in
+  (`pathLength="1"` + one dash-offset keyframe), and the winning line pops along its
+  length. The only two geometry decisions — how many rows a disc falls (`cellRow`) and a
+  cell's position in the win line (`winLineStep`) — are pure functions in
+  `game/boardTable.ts` with tests. Reduced motion drops the motion and keeps every end
+  state.
 
 **Test coverage.** Board rules are covered exhaustively by the shared-package unit
 tests (`shared/src/games/*.test.ts`) and the match lifecycle by the backend socket-seam

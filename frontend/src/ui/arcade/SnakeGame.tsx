@@ -28,7 +28,7 @@ import {
   type JuiceState,
 } from "../../game/arcade/juice";
 import { getSettings } from "../settings";
-import { isReducedMotion } from "../reducedMotionBridge";
+import { useReducedMotion } from "../reducedMotionBridge";
 import type { ArcadeGameProps } from "./gameTypes";
 
 /** Render cell size: exactly 2x the 16px sprite tile, so scaling stays crisp. */
@@ -113,10 +113,10 @@ export default function SnakeGame({
     return {
       level: snakeLevelById(s.snakeLevel),
       tickMs: snakeSpeedById(s.snakeSpeed).tickMs,
-      reduced: isReducedMotion(),
     };
   });
-  const shakeEnabled = shakeSetting && !options.reduced;
+  const reduced = useReducedMotion();
+  const shakeEnabled = shakeSetting && !reduced;
 
   const stateRef = useRef<SnakeState>(initSnake(seed, options.level));
   // Juice gets its own PRNG stream seeded from the run seed, so the feedback is
@@ -185,7 +185,7 @@ export default function SnakeGame({
     }
 
     // Food, with a gentle breathing pulse (skipped under reduced motion).
-    const pulse = options.reduced ? 1 : 1 + 0.07 * Math.sin(j.elapsedMs / 180);
+    const pulse = reduced ? 1 : 1 + 0.07 * Math.sin(j.elapsedMs / 180);
     ctx.save();
     ctx.shadowColor = "#e0567a";
     ctx.shadowBlur = 10;
@@ -233,7 +233,7 @@ export default function SnakeGame({
     ctx.strokeStyle = "#1d2740";
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
-  }, [options, shakeEnabled]);
+  }, [reduced, shakeEnabled]);
 
   // Paint the initial frame once mounted, and again when the sheet decodes.
   useEffect(() => {

@@ -3,7 +3,6 @@ import {
   FLAPPY_NEAR_MISS_PX,
   flappyGapClearance,
   flappyNearMiss,
-  isNewBest,
   snakeHeadPressure,
   snakeNearMiss,
 } from "./feedback";
@@ -192,24 +191,4 @@ describe("flappy near miss", () => {
       )
     );
   });
-});
-
-describe("isNewBest", () => {
-  const cases: Array<{ score: number; best: number | null; expected: boolean }> = [
-    { score: 5, best: 3, expected: true },
-    { score: 3, best: 3, expected: false },
-    { score: 2, best: 3, expected: false },
-    // No standing best yet (empty leaderboard, or the fetch failed).
-    { score: 1, best: null, expected: true },
-    // A scoreless run is never a personal best, even on a fresh cabinet.
-    { score: 0, best: null, expected: false },
-    { score: 0, best: 0, expected: false },
-    { score: -1, best: null, expected: false },
-    { score: 1, best: 0, expected: true },
-  ];
-  for (const { score, best, expected } of cases) {
-    it(`score ${score} against best ${best ?? "none"} ⇒ ${expected}`, () => {
-      expect(isNewBest(score, best)).toBe(expected);
-    });
-  }
 });

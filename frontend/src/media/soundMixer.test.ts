@@ -166,7 +166,14 @@ describe("cueForEvent", () => {
       channel: "sfx",
     });
     expect(cueForEvent("arcade-point")).toEqual({ clip: "arcade_point", channel: "arcade" });
+    expect(cueForEvent("arcade-eat")).toEqual({ clip: "arcade_eat", channel: "arcade" });
+    expect(cueForEvent("arcade-near")).toEqual({ clip: "arcade_near", channel: "arcade" });
+    expect(cueForEvent("arcade-flap")).toEqual({ clip: "arcade_flap", channel: "arcade" });
+    expect(cueForEvent("arcade-over")).toEqual({ clip: "arcade_over", channel: "arcade" });
+    expect(cueForEvent("arcade-best")).toEqual({ clip: "arcade_best", channel: "arcade" });
     expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
+    expect(cueForEvent("board-move")).toEqual({ clip: "board_place", channel: "sfx" });
+    expect(cueForEvent("board-win")).toEqual({ clip: "board_win", channel: "sfx" });
     expect(cueForEvent("stage-on-air")).toEqual({ clip: "meeting_join", channel: "sfx" });
     expect(cueForEvent("stage-off-air")).toEqual({ clip: "meeting_leave", channel: "sfx" });
     // Screen share (PRD 23).

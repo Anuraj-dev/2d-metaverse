@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ArcadeLeaderboard } from "@metaverse/shared";
+import type { ArcadeLeaderboard, ArcadeScoreResult } from "@metaverse/shared";
 
 const net = vi.hoisted(() => ({
   fetchLeaderboard: vi.fn(),
@@ -26,10 +26,11 @@ const board: ArcadeLeaderboard = {
   top: [{ username: "ada", score: 42 }],
   best: 17,
 };
+const scoreResult: ArcadeScoreResult = { ...board, newBest: false };
 
 beforeEach(() => {
   net.fetchLeaderboard.mockResolvedValue(board);
-  net.submitScore.mockResolvedValue(board);
+  net.submitScore.mockResolvedValue(scoreResult);
   // jsdom has no canvas backend; renderers guard a null context.
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
@@ -183,8 +184,12 @@ describe("ArcadeOverlay — screen shake toggle", () => {
 describe("ArcadeOverlay — end of run", () => {
   /** A promise whose settlement the test controls explicitly. */
   function deferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (reason?: unknown) => void;
+    let resolve: (value: T) => void = () => {
+      throw new Error("deferred resolve used before initialization");
+    };
+    let reject: (reason?: unknown) => void = () => {
+      throw new Error("deferred reject used before initialization");
+    };
     const promise = new Promise<T>((res, rej) => {
       resolve = res;
       reject = rej;
@@ -230,99 +235,12 @@ describe("ArcadeOverlay — end of run", () => {
     });
   }
 
-  it("celebrates a personal best and emits the domain event for the mixer", async () => {
+  it("celebrates only from the atomic score-submission verdict", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(scoringClock());
     setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
     const lb = deferred<ArcadeLeaderboard>();
-    net.fetchLeaderboard.mockReturnValue(lb.promise);
-    const onBest = vi.fn();
-    const off = bus.on("arcade-best", onBest);
-
-    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    // The pre-run best becomes known before the run ends.
-    await act(async () => {
-      lb.resolve({ game: "snake", top: [], best: null });
-    });
-    endRun();
-    elapseFreeze();
-
-    expect(screen.getByText("Game over")).toBeTruthy();
-    // Both the live scoreline and the game-over card show the scoring total.
-    expect(screen.getAllByText(/Score [1-9]/).length).toBeGreaterThan(0);
-    expect(screen.getByText("New personal best!")).toBeTruthy();
-    expect(onBest).toHaveBeenCalledTimes(1);
-    off();
-  });
-
-  it("does not celebrate a run that fails to beat the standing best", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(scoringClock());
-    setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
-    const lb = deferred<ArcadeLeaderboard>();
-    net.fetchLeaderboard.mockReturnValue(lb.promise);
-    const onBest = vi.fn();
-    const off = bus.on("arcade-best", onBest);
-
-    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    // Standing best far above anything this short run scores.
-    await act(async () => {
-      lb.resolve({ game: "snake", top: [{ username: "ada", score: 42 }], best: 17 });
-    });
-    endRun();
-    elapseFreeze();
-
-    expect(screen.getByText("Game over")).toBeTruthy();
-    expect(screen.queryByText("New personal best!")).toBeNull();
-    expect(onBest).not.toHaveBeenCalled();
-    off();
-  });
-
-  // RACE: the run ends while the leaderboard fetch is still pending. No best
-  // may be announced from unknown data; once the authoritative answer arrives,
-  // the (correct) celebration fires.
-  it("defers the personal-best decision until the leaderboard resolves", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(scoringClock());
-    setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
-    const lb = deferred<ArcadeLeaderboard>();
-    net.fetchLeaderboard.mockReturnValue(lb.promise);
-    // Keep the submit pending too, so the pre-run fetch is unambiguously the
-    // first authoritative data to arrive.
-    const submit = deferred<ArcadeLeaderboard>();
-    net.submitScore.mockReturnValue(submit.promise);
-    const onBest = vi.fn();
-    const off = bus.on("arcade-best", onBest);
-
-    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    endRun();
-    elapseFreeze();
-
-    // Card up, score submitted — but no celebration from a pending fetch.
-    expect(screen.getByText("Game over")).toBeTruthy();
-    expect(net.submitScore).toHaveBeenCalledWith("snake", expect.any(Number));
-    expect(screen.queryByText("New personal best!")).toBeNull();
-    expect(onBest).not.toHaveBeenCalled();
-
-    // The authoritative pre-run best lands: first-ever score → celebrate now.
-    await act(async () => {
-      lb.resolve({ game: "snake", top: [], best: null });
-    });
-    expect(screen.getByText("New personal best!")).toBeTruthy();
-    expect(onBest).toHaveBeenCalledTimes(1);
-    off();
-  });
-
-  // RACE (round 2): the submit POST resolves BEFORE the pre-run GET. The
-  // POST's `best` already includes the just-submitted score, so it must not
-  // settle the deferred decision — the late pre-run fetch still celebrates a
-  // genuine first best.
-  it("still celebrates a genuine best when the submit response wins the race", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(scoringClock());
-    setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
-    const lb = deferred<ArcadeLeaderboard>();
-    const submit = deferred<ArcadeLeaderboard>();
+    const submit = deferred<ArcadeScoreResult>();
     net.fetchLeaderboard.mockReturnValue(lb.promise);
     net.submitScore.mockReturnValue(submit.promise);
     const onBest = vi.fn();
@@ -331,167 +249,109 @@ describe("ArcadeOverlay — end of run", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
     endRun();
     elapseFreeze();
-
-    // POST first: its best (1) includes this run — no decision from it, but
-    // the aside adopts the newest data.
     await act(async () => {
-      submit.resolve({ game: "snake", top: [{ username: "me", score: 1 }], best: 1 });
+      submit.resolve({
+        game: "snake",
+        top: [{ username: "me", score: 1 }],
+        best: 1,
+        newBest: true,
+      });
     });
-    expect(screen.queryByText("New personal best!")).toBeNull();
-    expect(onBest).not.toHaveBeenCalled();
-    expect(screen.getByText("Your best: 1")).toBeTruthy();
 
-    // The pre-run fetch lands late: first-ever score → celebrate correctly,
-    // and its stale data must not clobber the aside either.
+    expect(screen.getByText("New personal best!")).toBeTruthy();
+    expect(onBest).toHaveBeenCalledTimes(1);
+
+    // A slower pre-run GET cannot regress the newer submission result or
+    // influence the already-authoritative verdict.
     await act(async () => {
       lb.resolve({ game: "snake", top: [], best: null });
     });
-    expect(screen.getByText("New personal best!")).toBeTruthy();
-    expect(onBest).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Your best: 1")).toBeTruthy();
+    expect(onBest).toHaveBeenCalledTimes(1);
     off();
   });
 
-  // RACE (round 2): a stale pre-run fetch resolving after the submit POST
-  // must not regress the baseline the NEXT run is judged against.
-  it("a stale pre-run fetch cannot regress the next run's baseline", async () => {
+  it("does not celebrate when the atomic submission verdict is false", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(scoringClock());
     setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
     const lb = deferred<ArcadeLeaderboard>();
-    const submit = deferred<ArcadeLeaderboard>();
+    const submit = deferred<ArcadeScoreResult>();
     net.fetchLeaderboard.mockReturnValue(lb.promise);
     net.submitScore.mockReturnValue(submit.promise);
     const onBest = vi.fn();
     const off = bus.on("arcade-best", onBest);
 
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    endRun(); // run 1 scores exactly 1
-    elapseFreeze();
-
-    // POST lands first: baseline advances to the post-submit best (1)...
-    await act(async () => {
-      submit.resolve({ game: "snake", top: [{ username: "me", score: 1 }], best: 1 });
-    });
-    // ...then the stale pre-run fetch: it settles run 1's deferred decision
-    // (a genuine first best) but must NOT regress the baseline or the aside.
+    // Even a stale GET saying the user had no prior score cannot override the
+    // write's atomic verdict.
     await act(async () => {
       lb.resolve({ game: "snake", top: [], best: null });
     });
-    expect(onBest).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Your best: 1")).toBeTruthy();
-
-    // Run 2 also scores exactly 1 — equal to the true standing best, so no
-    // celebration. A baseline regressed to the stale fetch's `null` would
-    // falsely celebrate it. (Restart seeds with Date.now() + the prior run
-    // id (1), hence scoringClock(1).)
-    vi.setSystemTime(scoringClock(1));
-    act(() => {
-      fireEvent.keyDown(window, { key: " " });
-    });
     endRun();
     elapseFreeze();
+    await act(async () => {
+      submit.resolve({
+        game: "snake",
+        top: [{ username: "me", score: 1 }],
+        best: 1,
+        newBest: false,
+      });
+    });
+
     expect(screen.getByText("Game over")).toBeTruthy();
-    expect(screen.getAllByText(/Score 1$/).length).toBeGreaterThan(0);
     expect(screen.queryByText("New personal best!")).toBeNull();
-    expect(onBest).toHaveBeenCalledTimes(1);
+    expect(onBest).not.toHaveBeenCalled();
     off();
   });
 
-  // RACE (round 3): run 1's GET **and** its submit are still in flight when the
-  // player restarts and run 2 ends. Run 1's submit response is exactly run 2's
-  // pre-run standing, so it — a SUBMIT response — is what must decide run 2.
-  it("decides a restarted run from the previous run's submit response", async () => {
+  it("ignores an older run's celebration after restart", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(scoringClock());
     setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
     const lb = deferred<ArcadeLeaderboard>();
-    const submit1 = deferred<ArcadeLeaderboard>();
-    const submit2 = deferred<ArcadeLeaderboard>();
+    const submit1 = deferred<ArcadeScoreResult>();
+    const submit2 = deferred<ArcadeScoreResult>();
     net.fetchLeaderboard.mockReturnValue(lb.promise);
     net.submitScore.mockReturnValueOnce(submit1.promise).mockReturnValueOnce(submit2.promise);
     const onBest = vi.fn();
     const off = bus.on("arcade-best", onBest);
 
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    endRun(); // run 1 scores exactly 1 — nothing has answered yet
+    endRun();
     elapseFreeze();
-    expect(screen.getByText("Game over")).toBeTruthy();
 
-    // Restart with BOTH of run 1's requests still pending; run 2 scores 2.
     vi.setSystemTime(scoringClock(1, 2));
     act(() => {
       fireEvent.keyDown(window, { key: " " });
     });
     endRun();
     elapseFreeze();
-    expect(screen.getAllByText(/Score 2$/).length).toBeGreaterThan(0);
+
+    // Run 1's true verdict is now stale for presentation: it may refresh the
+    // aside but cannot decorate run 2's card.
+    await act(async () => {
+      submit1.resolve({
+        game: "snake",
+        top: [{ username: "me", score: 1 }],
+        best: 1,
+        newBest: true,
+      });
+    });
     expect(screen.queryByText("New personal best!")).toBeNull();
     expect(onBest).not.toHaveBeenCalled();
 
-    // Run 1's submit answers: best 1 is run 2's true pre-run standing, and
-    // run 2's 2 beats it — a genuine best, settled from a submit response.
+    // Run 2's own verdict is the only one allowed to celebrate its card.
     await act(async () => {
-      submit1.resolve({ game: "snake", top: [{ username: "me", score: 1 }], best: 1 });
+      submit2.resolve({
+        game: "snake",
+        top: [{ username: "me", score: 2 }],
+        best: 2,
+        newBest: true,
+      });
     });
     expect(screen.getByText("New personal best!")).toBeTruthy();
     expect(onBest).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Your best: 1")).toBeTruthy();
-
-    // The pre-run-1 GET finally lands: nothing left to decide, no regression.
-    await act(async () => {
-      lb.resolve({ game: "snake", top: [], best: null });
-    });
-    expect(onBest).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Your best: 1")).toBeTruthy();
-    off();
-  });
-
-  // RACE (round 3): the same interleaving, from the other side. The GET that
-  // predates run 1's submit describes a world where run 1 never happened, so it
-  // must not settle run 2's decision (it would celebrate a score run 1 already
-  // matched) nor regress the baseline.
-  it("a fetch predating the previous run's submit cannot decide the next run", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(scoringClock());
-    setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
-    const lb = deferred<ArcadeLeaderboard>();
-    const submit1 = deferred<ArcadeLeaderboard>();
-    const submit2 = deferred<ArcadeLeaderboard>();
-    net.fetchLeaderboard.mockReturnValue(lb.promise);
-    net.submitScore.mockReturnValueOnce(submit1.promise).mockReturnValueOnce(submit2.promise);
-    const onBest = vi.fn();
-    const off = bus.on("arcade-best", onBest);
-
-    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    endRun(); // run 1 scores exactly 1
-    elapseFreeze();
-
-    // Restart with both of run 1's requests still pending; run 2 also scores 1.
-    vi.setSystemTime(scoringClock(1));
-    act(() => {
-      fireEvent.keyDown(window, { key: " " });
-    });
-    endRun();
-    elapseFreeze();
-    expect(screen.getAllByText(/Score 1$/).length).toBeGreaterThan(0);
-
-    // Run 1's submit answers: run 2 only matched the standing best — no
-    // celebration.
-    await act(async () => {
-      submit1.resolve({ game: "snake", top: [{ username: "me", score: 1 }], best: 1 });
-    });
-    expect(screen.queryByText("New personal best!")).toBeNull();
-    expect(onBest).not.toHaveBeenCalled();
-
-    // The stale pre-run-1 GET lands last: it neither celebrates run 2 against a
-    // world without run 1, nor drags the aside back to that world.
-    await act(async () => {
-      lb.resolve({ game: "snake", top: [], best: null });
-    });
-    expect(screen.queryByText("New personal best!")).toBeNull();
-    expect(onBest).not.toHaveBeenCalled();
-    expect(screen.getByText("Your best: 1")).toBeTruthy();
     off();
   });
 
@@ -502,7 +362,7 @@ describe("ArcadeOverlay — end of run", () => {
     vi.setSystemTime(scoringClock());
     setSettings({ snakeLevel: "open", snakeSpeed: "normal" });
     const lb = deferred<ArcadeLeaderboard>();
-    const submit = deferred<ArcadeLeaderboard>();
+    const submit = deferred<ArcadeScoreResult>();
     net.fetchLeaderboard.mockReturnValue(lb.promise);
     net.submitScore.mockReturnValue(submit.promise);
     const onBest = vi.fn();
@@ -515,7 +375,12 @@ describe("ArcadeOverlay — end of run", () => {
 
     // Both responses settle with the arcade gone: no decision, no sound event.
     await act(async () => {
-      submit.resolve({ game: "snake", top: [{ username: "me", score: 1 }], best: 1 });
+      submit.resolve({
+        game: "snake",
+        top: [{ username: "me", score: 1 }],
+        best: 1,
+        newBest: true,
+      });
       lb.resolve({ game: "snake", top: [], best: null });
     });
     expect(onBest).not.toHaveBeenCalled();

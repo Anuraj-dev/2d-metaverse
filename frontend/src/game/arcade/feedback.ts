@@ -1,8 +1,8 @@
 /**
  * Run-feedback predicates for the arcade games — pure, no DOM/Phaser/net.
  *
- * These decide WHICH feedback beat has just happened (a near miss, a new
- * personal best); the renderers and the overlay only act on the answer. They are
+ * These decide WHICH feedback beat has just happened (a near miss); the
+ * renderers only act on the answer. They are
  * READ-ONLY views over existing state: nothing here changes a rule or is
  * consulted by a reducer, which is also why they live in their own module —
  * Flappy's rule module stays byte-for-byte untouched by issue #163.
@@ -77,15 +77,4 @@ export function flappyNearMiss(state: FlappyState, threshold = FLAPPY_NEAR_MISS_
   if (!state.alive) return false;
   const clearance = flappyGapClearance(state);
   return clearance !== null && clearance >= 0 && clearance < threshold;
-}
-
-/**
- * Did a finished run beat the player's standing best? A scoreless run never
- * counts (a fresh cabinet would otherwise congratulate you for dying instantly),
- * and an unknown previous best — no leaderboard row yet, or the fetch failed —
- * treats any scoring run as a first best.
- */
-export function isNewBest(finalScore: number, previousBest: number | null): boolean {
-  if (finalScore <= 0) return false;
-  return previousBest === null || finalScore > previousBest;
 }

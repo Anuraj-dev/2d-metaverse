@@ -3,7 +3,6 @@ import { Maximize, Volume2, VolumeX, Vibrate, VibrateOff, X } from "lucide-react
 import type { ArcadeGame, ArcadeLeaderboard } from "@metaverse/shared";
 import { toSeed } from "../../game/arcade/prng";
 import type { SnakeLevelId, SnakeSpeedId } from "../../game/arcade/snake";
-import { isNewBest } from "../../game/arcade/feedback";
 import { bus } from "../../game/eventBus";
 import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
@@ -33,32 +32,6 @@ const RESTART_KEYS = new Set([" ", "Enter", "r", "R"]);
  * the terminal tick — closing or restarting during the freeze never loses it.
  */
 const DEATH_FREEZE_MS = 450;
-
-/**
- * The best standing before the current run. Unknown until the leaderboard
- * fetch resolves — a personal best is only ever announced from authoritative
- * data, never from a fetch that has not answered yet.
- */
-type KnownBest = { known: false } | { known: true; best: number | null };
-
-/**
- * A celebration a run left undecided because no authoritative data had arrived
- * yet, together with the request-id window whose responses describe the world
- * as it stood BEFORE that run:
- *
- * - `from` is the previous run's submit. Its response IS this run's pre-run
- *   state, and every higher id was dispatched after that submit went out — so
- *   the window never reaches back into a world where the previous run had not
- *   been played.
- * - `before` is this run's own submit. Its response (and anything dispatched
- *   after it) already contains this run, so deciding from it would compare the
- *   score against itself and swallow a genuine best.
- *
- * Binding the window to the run is what keeps a decision from leaking across a
- * restart: run N+1 gets its own window, and a response that predates run N's
- * submit is simply outside it.
- */
-type PendingBest = { score: number; from: number; before: number };
 
 export interface ArcadeOverlayProps {
   game: ArcadeGame;
@@ -101,6 +74,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const [arcadeShake, setArcadeShake] = useState(() => getSettings().arcadeShake);
   const [snakeSpeed, setSnakeSpeed] = useState<SnakeSpeedId>(() => getSettings().snakeSpeed);
   const [snakeLevel, setSnakeLevel] = useState<SnakeLevelId>(() => getSettings().snakeLevel);
+  const activeRunIdRef = useRef(run.id);
 
   const onScore = useCallback((s: number) => setScore(s), []);
 
@@ -160,19 +134,9 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     onClose();
   }, [onClose]);
 
-  // ── Pre-run best + celebration (event-driven — decided in the game-over and
-  // response callbacks, never derived in effects) ───────────────────────────
-  // The authoritative best standing before the current run; unknown until a
-  // leaderboard response has been absorbed. Refs, because the deciders are
-  // event callbacks, not renders.
-  const knownBestRef = useRef<KnownBest>({ known: false });
-  // Set when a run ends before any authoritative data arrived; cleared as soon
-  // as a response inside its window decides it (or the player restarts).
-  const pendingBestRef = useRef<PendingBest | null>(null);
-
   // True while mounted: a leaderboard response landing after close must be
-  // inert — it would otherwise decide a best and emit a global sound event
-  // with the arcade gone. (Re-armed on mount for StrictMode re-runs.)
+  // inert — it must not update the aside or emit a global sound event with the
+  // arcade gone. (Re-armed on mount for StrictMode re-runs.)
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
@@ -181,46 +145,16 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     };
   }, []);
 
-  // Monotonic request identity, stamped at dispatch time. Baseline and aside
-  // updates are refused from any response older than the newest one already
-  // absorbed, so a stale pre-run fetch resolving after the submit POST can
-  // never regress the post-submit baseline for future runs.
+  // Monotonic request identity prevents an older GET/POST response from
+  // regressing the visible leaderboard after newer data has arrived.
   const reqSeqRef = useRef(0);
   const lastAbsorbedRef = useRef(0);
-  // Request id of the most recent run's submit — the lower bound of the NEXT
-  // run's pre-run window (0 while no run has ended).
-  const lastSubmitRef = useRef(0);
 
-  const decideBest = useCallback((score: number, best: number | null) => {
-    const better = isNewBest(score, best);
-    setNewBest(better);
-    // Audio-agnostic: emit the domain event and let the sound mixer pick a clip.
-    if (better) bus.emit("arcade-best");
+  const absorbBoard = useCallback((b: ArcadeLeaderboard, reqId: number) => {
+    if (!aliveRef.current || reqId < lastAbsorbedRef.current) return;
+    lastAbsorbedRef.current = reqId;
+    setBoard(b);
   }, []);
-
-  // Every leaderboard response funnels through here with the request identity
-  // it was dispatched under. Whether it was a fetch or a submit is irrelevant:
-  // what decides a pending celebration is whether the response falls inside
-  // that run's pre-run window (see PendingBest) — the previous run's submit
-  // response is valid pre-run data for this run, and this run's own submit is
-  // not, however it was obtained. The two checks are independent: a response
-  // can be authoritative for a pending decision yet too old to move the
-  // baseline (a late pre-run fetch that lost the race to the submit POST).
-  const absorbBoard = useCallback(
-    (b: ArcadeLeaderboard, reqId: number) => {
-      if (!aliveRef.current) return;
-      const pending = pendingBestRef.current;
-      if (pending && reqId >= pending.from && reqId < pending.before) {
-        pendingBestRef.current = null;
-        decideBest(pending.score, b.best);
-      }
-      if (reqId < lastAbsorbedRef.current) return; // stale — never regress
-      lastAbsorbedRef.current = reqId;
-      setBoard(b);
-      knownBestRef.current = { known: true, best: b.best };
-    },
-    [decideBest]
-  );
 
   // Load the leaderboard for this cabinet.
   const refresh = useCallback(() => {
@@ -236,28 +170,28 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const onGameOver = useCallback(
     (s: number) => {
       setFinalScore(s);
+      const completedRunId = activeRunIdRef.current;
       // Persistence is decoupled from the death-freeze presentation: submit the
       // moment the run ends, so closing or restarting mid-freeze never loses it.
       const reqId = ++reqSeqRef.current;
       submitScore(game, s)
-        .then((b) => absorbBoard(b, reqId))
+        .then((result) => {
+          if (!aliveRef.current) return;
+          absorbBoard(result, reqId);
+          // A response for an older run may still refresh the aside, but it must
+          // never celebrate over a newer run's surface.
+          if (activeRunIdRef.current !== completedRunId) return;
+          setNewBest(result.newBest);
+          // Audio-agnostic: emit the domain event and let the mixer pick a clip.
+          if (result.newBest) bus.emit("arcade-best");
+        })
         .catch(() => {
-          // A failed submit leaves the server pre-run: re-fetching restores the
-          // aside. The retry is dispatched after this run's submit, so it lands
-          // in the NEXT run's window rather than this one's — this run stays
-          // undecided unless its still-pending pre-run fetch answers, which is
-          // the honest outcome for a score the server never recorded.
+          // A failed submit earns no personal-best celebration; refresh the
+          // aside to show the last score the server did persist.
           if (aliveRef.current) refresh();
         });
-      // Decide the personal best only from authoritative pre-run data:
-      // immediately when known, otherwise from the first response that lands
-      // inside this run's pre-run window.
-      const kb = knownBestRef.current;
-      if (kb.known) decideBest(s, kb.best);
-      else pendingBestRef.current = { score: s, from: lastSubmitRef.current, before: reqId };
-      lastSubmitRef.current = reqId;
     },
-    [game, absorbBoard, refresh, decideBest]
+    [game, absorbBoard, refresh]
   );
 
   // Escape closes instantly (capture so nothing downstream eats it).
@@ -288,14 +222,15 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   }, []);
 
   const restart = useCallback(() => {
-    // The finished run's card is gone, so its undecided celebration goes with
-    // it — never left armed for the next run to inherit.
-    pendingBestRef.current = null;
     setFinalScore(null);
     setCardShown(false);
     setNewBest(false);
     setScore(0);
-    setRun((r) => ({ id: r.id + 1, seed: toSeed(Date.now() + r.id) }));
+    setRun((r) => {
+      const next = { id: r.id + 1, seed: toSeed(Date.now() + r.id) };
+      activeRunIdRef.current = next.id;
+      return next;
+    });
   }, []);
 
   // Hold the game-over card back for the death freeze (loop keeps running so

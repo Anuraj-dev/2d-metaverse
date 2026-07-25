@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { bus } from "../../game/eventBus";
 import {
   initFlappy,
@@ -18,7 +18,7 @@ import {
   stepJuice,
   type JuiceState,
 } from "../../game/arcade/juice";
-import { isReducedMotion } from "../reducedMotionBridge";
+import { useReducedMotion } from "../reducedMotionBridge";
 import type { ArcadeGameProps } from "./gameTypes";
 
 const TICK_MS = 24;
@@ -53,9 +53,9 @@ export default function FlappyGame({
   const overRef = useRef(false);
   const nearRef = useRef(false);
 
-  // Snapshot the reduced-motion preference once per run; screen shake itself is
-  // a LIVE prop so the accessibility toggle applies to the active run.
-  const [reduced] = useState(() => isReducedMotion());
+  // Both inputs are live: an OS or in-app reduced-motion change must suppress
+  // canvas shake immediately, without forcing the player to restart the run.
+  const reduced = useReducedMotion();
   const shakeEnabled = shakeSetting && !reduced;
 
   const draw = useCallback(() => {
