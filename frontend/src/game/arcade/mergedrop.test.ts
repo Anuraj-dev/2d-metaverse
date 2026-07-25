@@ -548,21 +548,45 @@ describe("pressure phases", () => {
     return s;
   }
 
-  it("ends a scripted mediocre run inside the 5-8 minute target window", () => {
-    for (const seed of [11, 4242]) {
-      const s = mediocreRun(seed, 40_000);
-      expect(s.over).toBe(true);
-      // Fair but relentless: never punishingly fast, never a 15-minute stall.
-      expect(s.tick).toBeGreaterThan(4 * TICKS_PER_MINUTE);
-      expect(s.tick).toBeLessThan(8.5 * TICKS_PER_MINUTE);
-    }
-  });
+  /**
+   * A full-ramp simulation costs ~3s locally (per-pass broad-phase
+   * recollection makes ticks pricier) and more on slow CI runners, so each
+   * seed is simulated ONCE and shared across assertions; only the replay test
+   * pays for a deliberate second run. The generous explicit timeouts cover
+   * the full-run simulation cost — the assertions themselves are unchanged.
+   */
+  const mediocreMemo = new Map<number, MergeDropState>();
+  function mediocreRunCached(seed: number): MergeDropState {
+    const cached = mediocreMemo.get(seed);
+    if (cached) return cached;
+    const run = mediocreRun(seed, 40_000);
+    mediocreMemo.set(seed, run);
+    return run;
+  }
 
-  it("replays the pressure ramp byte-identically (auto-drops included)", () => {
-    expect(JSON.stringify(mediocreRun(11, 40_000))).toBe(
-      JSON.stringify(mediocreRun(11, 40_000))
-    );
-  });
+  it(
+    "ends a scripted mediocre run inside the 5-8 minute target window",
+    () => {
+      for (const seed of [11, 4242]) {
+        const s = mediocreRunCached(seed);
+        expect(s.over).toBe(true);
+        // Fair but relentless: never punishingly fast, never a 15-minute stall.
+        expect(s.tick).toBeGreaterThan(4 * TICKS_PER_MINUTE);
+        expect(s.tick).toBeLessThan(8.5 * TICKS_PER_MINUTE);
+      }
+    },
+    30_000 // two full-ramp simulations
+  );
+
+  it(
+    "replays the pressure ramp byte-identically (auto-drops included)",
+    () => {
+      expect(JSON.stringify(mediocreRun(11, 40_000))).toBe(
+        JSON.stringify(mediocreRunCached(11))
+      );
+    },
+    30_000 // one fresh full-ramp simulation against the memoized one
+  );
 
   it("ends even a fully idle run — stalling is not a strategy", () => {
     let s = initMergeDrop(3);
