@@ -212,6 +212,11 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
   // where it falls relative to a tick boundary, taps queue instead of
   // overwriting, and physically held keys always win.
   const latchRef = useRef<TapLatchState>(IDLE_TAP_LATCH);
+  // Physical keys currently holding each direction. ArrowLeft and A are
+  // aliases: the latch must see one press edge when the FIRST alias goes down
+  // and one release edge when the LAST alias comes up — releasing A while
+  // ArrowLeft is still held must not release the direction (round-2 review).
+  const heldKeysRef = useRef({ left: new Set<string>(), right: new Set<string>() });
   const dropRef = useRef(false);
   const aimRef = useRef<number | null>(null);
 
@@ -722,12 +727,16 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {
+    const dirFor = (key: string): -1 | 1 | 0 =>
+      key === "arrowleft" || key === "a" ? -1 : key === "arrowright" || key === "d" ? 1 : 0;
     const onKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      if (key === "arrowleft" || key === "a") {
-        latchRef.current = tapKeyDown(latchRef.current, -1);
-      } else if (key === "arrowright" || key === "d") {
-        latchRef.current = tapKeyDown(latchRef.current, 1);
+      const dir = dirFor(key);
+      if (dir !== 0) {
+        // Press edge only on the 0 -> 1 transition of the alias set.
+        const held = dir === -1 ? heldKeysRef.current.left : heldKeysRef.current.right;
+        if (held.size === 0) latchRef.current = tapKeyDown(latchRef.current, dir);
+        held.add(key);
       } else if (key === " " || key === "arrowdown" || key === "s" || key === "enter") {
         dropRef.current = true;
       } else return;
@@ -735,11 +744,18 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      if (key === "arrowleft" || key === "a") latchRef.current = tapKeyUp(latchRef.current, -1);
-      else if (key === "arrowright" || key === "d") latchRef.current = tapKeyUp(latchRef.current, 1);
+      const dir = dirFor(key);
+      if (dir === 0) return;
+      // Release edge only when the LAST held alias comes up.
+      const held = dir === -1 ? heldKeysRef.current.left : heldKeysRef.current.right;
+      if (held.delete(key) && held.size === 0) {
+        latchRef.current = tapKeyUp(latchRef.current, dir);
+      }
     };
     // Losing focus mid-hold must not leave the aim stuck travelling.
     const onBlur = () => {
+      heldKeysRef.current.left.clear();
+      heldKeysRef.current.right.clear();
       latchRef.current = tapBlur();
     };
     window.addEventListener("keydown", onKeyDown);

@@ -105,6 +105,30 @@ describe("MergeDropGame tap sampling", () => {
     expect(movesSince(afterStart).every((m) => m !== -1)).toBe(true);
   });
 
+  it("releasing an alias key does not release a direction still physically held", () => {
+    // Round-2 P2: ArrowLeft and A collapsed into one boolean, so releasing A
+    // while ArrowLeft was still down marked the direction released (and could
+    // bank a spurious tap remainder). Hold ArrowLeft, tap A mid-hold: the
+    // direction must keep moving without interruption, and the press's
+    // remainder must bank only when the LAST alias comes up.
+    mount();
+    const start = stepSpy.mock.calls.length;
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    ticks(3);
+    fireEvent.keyDown(window, { key: "a" }); // alias joins the same hold
+    ticks(2);
+    fireEvent.keyUp(window, { key: "a" }); // alias leaves — ArrowLeft still down
+    ticks(2);
+    expect(movesSince(start)).toEqual(Array<number>(7).fill(-1));
+    fireEvent.keyUp(window, { key: "ArrowLeft" }); // LAST alias up: release edge
+    ticks(TAP_TICKS);
+    // 7 held ticks + the banked 2-tick remainder = the TAP_TICKS minimum, then rest.
+    expect(movesSince(start)).toEqual([
+      ...Array<number>(TAP_TICKS).fill(-1),
+      ...Array<number>(7).fill(0),
+    ]);
+  });
+
   it("blur clears held keys and queued nudges alike", () => {
     mount();
     fireEvent.keyDown(window, { key: "ArrowLeft" });

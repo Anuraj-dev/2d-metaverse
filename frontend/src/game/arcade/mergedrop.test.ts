@@ -425,20 +425,26 @@ describe("solver equivalence (broad phase vs all-pairs reference)", () => {
     return JSON.stringify(s, (key, value: unknown) => (key === "config" ? undefined : value));
   }
 
-  /** Step both solvers in lockstep and demand byte-identical states every tick. */
-  function expectLockstep(
+  /**
+   * Step both solvers in lockstep, demanding byte-identical states every
+   * tick; returns how many ticks matched so callers can assert coverage.
+   */
+  function lockstepTicks(
     seedState: MergeDropState,
     inputAt: (t: number) => MergeDropInput,
     ticks: number
-  ): void {
+  ): number {
     let fast = seedState;
     let reference = withSlack(seedState, ALL_PAIRS_SLACK);
+    let matched = 0;
     for (let t = 0; t < ticks; t++) {
       const input = inputAt(t);
       fast = stepMergeDrop(fast, input);
       reference = stepMergeDrop(reference, input);
       expect(comparable(fast)).toBe(comparable(reference));
+      matched++;
     }
+    return matched;
   }
 
   it("matches all-pairs on the round-2 counterexample (correction exceeds the base margin)", () => {
@@ -450,7 +456,7 @@ describe("solver equivalence (broad phase vs all-pairs reference)", () => {
       body(2, 0, 101, restY(0)),
       body(3, 0, 124, restY(0)),
     ]);
-    expectLockstep(s, () => IDLE_INPUT, 60);
+    expect(lockstepTicks(s, () => IDLE_INPUT, 60)).toBe(60);
   });
 
   it("matches all-pairs through a deep-overlap shock with near-margin neighbours", () => {
@@ -466,14 +472,14 @@ describe("solver equivalence (broad phase vs all-pairs reference)", () => {
       body(4, 1, 129, y),
       body(5, 2, 40, y - 80),
     ]);
-    expectLockstep(s, () => IDLE_INPUT, 80);
+    expect(lockstepTicks(s, () => IDLE_INPUT, 80)).toBe(80);
   });
 
   it("matches all-pairs across full seeded runs with drops, merges and settling", () => {
     const aims = [30, 205, 95, 235, 60, 150, 115, 180];
     for (const seed of [11, 2024]) {
       let drops = 0;
-      expectLockstep(
+      const matched = lockstepTicks(
         initMergeDrop(seed),
         (t) => {
           if (t % 21 === 0) {
@@ -484,6 +490,7 @@ describe("solver equivalence (broad phase vs all-pairs reference)", () => {
         },
         1_500
       );
+      expect(matched).toBe(1_500);
     }
   });
 });
