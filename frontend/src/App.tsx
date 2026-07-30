@@ -556,17 +556,19 @@ export default function App() {
             />
           </Suspense>
         )}
-        <div
-          className={`presence presence-${connStatus}${isLive(connStatus) ? "" : " pending"}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="presence-dot" aria-hidden="true" />
-          {CONNECTION_LABELS[connStatus]}
-        </div>
-        {/* The single global control bar (mic/cam/settings) — mounted last so it
-            layers above the lazy meeting/arcade overlays (PRD 20). */}
-        <ControlBar />
+        {!arcade && (
+          <div
+            className={`presence presence-${connStatus}${isLive(connStatus) ? "" : " pending"}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="presence-dot" aria-hidden="true" />
+            {CONNECTION_LABELS[connStatus]}
+          </div>
+        )}
+        {/* The global media controls stay above meeting surfaces, but the arcade
+            owns its full viewport and must not inherit world HUD chrome. */}
+        {!arcade && <ControlBar />}
       </div>
     </div>
     </MotionConfig>

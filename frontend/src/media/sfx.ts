@@ -43,6 +43,14 @@ const CLIPS = [
   "arcade_start",
   "arcade_point",
   "arcade_over",
+  "arcade_flap",
+  "arcade_hit",
+  // Owner Snake-game port (see scripts/curate_audio.py → curate_snake_sounds).
+  "arcade_eat",
+  "arcade_bonus",
+  "arcade_snake_over",
+  "arcade_highscore",
+  "arcade_milestone",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */

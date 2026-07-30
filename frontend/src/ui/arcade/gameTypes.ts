@@ -13,4 +13,10 @@ export interface ArcadeGameProps {
   onScore: (score: number) => void;
   /** Fired once when the run ends, with the final score. */
   onGameOver: (finalScore: number) => void;
+  /**
+   * Player's personal best for this cabinet (from the overlay's leaderboard).
+   * Optional so Flappy (and older callers) compile unchanged. Snake uses it for
+   * the highscore sting — only when it is a concrete number (not null/undefined).
+   */
+  bestScore?: number | null;
 }

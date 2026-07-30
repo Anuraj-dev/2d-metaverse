@@ -8,14 +8,82 @@ const net = vi.hoisted(() => ({
 }));
 vi.mock("../../net/arcade", () => net);
 
+/**
+ * Opt-in SnakeGame stub: with `stub` set, the game is a single button that
+ * reports a fixed positive score as game over — the only way to reach the
+ * `over` phase with a known score deterministically. Off by default so every
+ * other test keeps the real game.
+ */
+const snakeCtl = vi.hoisted(() => ({ stub: false, finalScore: 21 }));
+vi.mock("./SnakeGame", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./SnakeGame")>();
+  const Real = actual.default;
+  const SnakeGameSwitch = (props: ArcadeGameProps) =>
+    snakeCtl.stub ? (
+      <button
+        type="button"
+        data-testid="stub-game-over"
+        onClick={() => props.onGameOver(snakeCtl.finalScore)}
+      >
+        end run
+      </button>
+    ) : (
+      <Real {...props} />
+    );
+  return { default: SnakeGameSwitch };
+});
+
 import ArcadeOverlay from "./ArcadeOverlay";
+import { bus } from "../../game/eventBus";
 import { getSettings, setSettings } from "../settings";
+import type { ArcadeGameProps } from "./gameTypes";
 
 const board: ArcadeLeaderboard = {
   game: "snake",
   top: [{ username: "ada", score: 42 }],
   best: 17,
 };
+
+/** Panels stay mounted for their exit animation — openness is an attribute. */
+function panelOpen(name: "pause" | "over" | "auto"): boolean {
+  return document.querySelector(`[data-panel="${name}"]`)?.getAttribute("data-open") === "true";
+}
+
+function menuItem(name: string): HTMLElement {
+  return screen.getByRole("menuitem", { name });
+}
+
+/** Install the Fullscreen API bits jsdom lacks; returns the spies + a setter. */
+function stubFullscreen() {
+  let fsElement: Element | null = null;
+  const request = vi.fn().mockResolvedValue(undefined);
+  const exit = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+    configurable: true,
+    value: request,
+  });
+  Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit });
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fsElement,
+  });
+  return {
+    request,
+    exit,
+    /** Pretend the browser granted (true) or dropped (false) fullscreen. */
+    async set(on: boolean) {
+      fsElement = on ? document.querySelector(".arcade-backdrop") : null;
+      await act(async () => {
+        fireEvent(document, new Event("fullscreenchange"));
+      });
+    },
+    restore() {
+      Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen");
+      Reflect.deleteProperty(document, "exitFullscreen");
+      Reflect.deleteProperty(document, "fullscreenElement");
+    },
+  };
+}
 
 beforeEach(() => {
   net.fetchLeaderboard.mockResolvedValue(board);
@@ -28,23 +96,373 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  snakeCtl.stub = false;
 });
 
-describe("ArcadeOverlay", () => {
-  it("renders the leaderboard best + top-N once loaded", async () => {
+describe("ArcadeOverlay leaderboard", () => {
+  it("shows skeleton rows while loading, then the best + top-N", async () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    expect(await screen.findByText(/Your best: 17/)).toBeTruthy();
-    expect(screen.getByText("ada")).toBeTruthy();
+    expect(document.querySelectorAll(".arcade-skel")).toHaveLength(3);
+
+    expect(await screen.findByText("ada")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
+    expect(screen.getByText("Your best").nextElementSibling?.textContent).toBe("17");
+    expect(document.querySelectorAll(".arcade-skel")).toHaveLength(0);
   });
 
-  it("Escape closes the overlay instantly", () => {
+  it("marks the caller's own row", async () => {
+    net.fetchLeaderboard.mockResolvedValue({
+      game: "snake",
+      top: [
+        { username: "ada", score: 42 },
+        { username: "me", score: 17 },
+      ],
+      best: 17,
+    } satisfies ArcadeLeaderboard);
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    await screen.findByText("ada");
+    expect(document.querySelectorAll(".arcade-row--me")).toHaveLength(1);
+    expect(screen.getByText("you").closest(".arcade-row")?.textContent).toContain("me");
+  });
+
+  it("shows an empty state when nobody has played", async () => {
+    net.fetchLeaderboard.mockResolvedValue({
+      game: "snake",
+      top: [],
+      best: null,
+    } satisfies ArcadeLeaderboard);
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    expect(await screen.findByText(/No scores yet/)).toBeTruthy();
+  });
+
+  it("shows a failure state when the fetch rejects", async () => {
+    net.fetchLeaderboard.mockRejectedValue(new Error("offline"));
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    expect(await screen.findByText("Scores unavailable")).toBeTruthy();
+  });
+});
+
+describe("ArcadeOverlay pause menu", () => {
+  it("Escape pauses with Resume focused; Escape again resumes", () => {
     const onClose = vi.fn();
     render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
+    expect(panelOpen("pause")).toBe(false);
+
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(panelOpen("pause")).toBe(true);
+    expect(document.activeElement).toBe(menuItem("Resume"));
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(panelOpen("pause")).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("arrow to Quit + Enter closes the overlay", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(menuItem("Quit"));
+
+    fireEvent.keyDown(window, { key: "Enter" });
+    // The fade runs before the parent unmounts us.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.querySelector(".arcade-backdrop")?.getAttribute("data-closing")).toBe("true");
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("wraps the selection with ArrowUp", () => {
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(menuItem("Quit"));
+  });
+
+  it("Restart resets the run and leaves the overlay open", () => {
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(menuItem("Restart"));
+    expect(panelOpen("pause")).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.querySelector(".arcade-scorenum")?.textContent).toBe("0");
+  });
+
+  it("the header Quit button opens the menu with Quit selected", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
+    fireEvent.click(screen.getByLabelText("Quit arcade"));
+    expect(panelOpen("pause")).toBe(true);
+    expect(document.activeElement).toBe(menuItem("Quit"));
+
+    fireEvent.click(menuItem("Quit"));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("hover moves the selection", () => {
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.pointerEnter(menuItem("Restart"));
+    expect(document.activeElement).toBe(menuItem("Restart"));
+  });
+});
+
+describe("ArcadeOverlay fullscreen", () => {
+  it("never takes fullscreen on open; the header toggle does, without pausing", async () => {
+    const fs = stubFullscreen();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    expect(fs.request).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Enter fullscreen"));
+    });
+    expect(fs.request).toHaveBeenCalledTimes(1);
+    await fs.set(true);
+    expect(panelOpen("pause")).toBe(false);
+
+    // Toggling it back off is deliberate — it must not pause the run.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Exit fullscreen"));
+    });
+    expect(fs.exit).toHaveBeenCalledTimes(1);
+    await fs.set(false);
+    expect(panelOpen("pause")).toBe(false);
+
+    fs.restore();
+  });
+
+  it("re-enables the toggle when requestFullscreen throws synchronously", async () => {
+    const fs = stubFullscreen();
+    fs.request.mockImplementationOnce(() => {
+      throw new Error("fullscreen denied");
+    });
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+
+    const toggle = screen.getByLabelText("Enter fullscreen");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    if (!(toggle instanceof HTMLButtonElement)) throw new Error("fullscreen toggle missing");
+    expect(toggle.disabled).toBe(false);
+    fs.restore();
+  });
+
+  // In real fullscreen the browser eats the first Escape and the page never
+  // sees the keydown — the resulting fullscreen exit must pause instead.
+  it("pauses when fullscreen is exited behind our back, and Resume takes it back", async () => {
+    const fs = stubFullscreen();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Enter fullscreen"));
+    });
+    await fs.set(true);
+    expect(panelOpen("pause")).toBe(false);
+
+    await fs.set(false);
+    expect(panelOpen("pause")).toBe(true);
+
+    fs.request.mockClear();
+    await act(async () => {
+      fireEvent.click(menuItem("Resume"));
+    });
+    expect(panelOpen("pause")).toBe(false);
+    expect(fs.request).toHaveBeenCalledTimes(1);
+
+    fs.restore();
+  });
+
+  it("Resume after a plain Escape pause does not request fullscreen", async () => {
+    const fs = stubFullscreen();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    await act(async () => {
+      fireEvent.click(menuItem("Resume"));
+    });
+    expect(panelOpen("pause")).toBe(false);
+    expect(fs.request).not.toHaveBeenCalled();
+
+    fs.restore();
+  });
+
+  it("drops fullscreen on quit", async () => {
+    vi.useFakeTimers();
+    const fs = stubFullscreen();
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
+    await fs.set(true);
+
+    fireEvent.click(screen.getByLabelText("Quit arcade"));
+    fireEvent.click(menuItem("Quit"));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(fs.exit).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fs.restore();
+  });
+});
+
+describe("ArcadeOverlay auto-pause", () => {
+  it("blur pauses without a menu, refocus resumes", () => {
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.blur(window);
+    expect(panelOpen("auto")).toBe(true);
+    expect(panelOpen("pause")).toBe(false);
+
+    fireEvent.focus(window);
+    expect(panelOpen("auto")).toBe(false);
+  });
+
+  it("Escape is inert while auto-paused", () => {
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.blur(window);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(panelOpen("pause")).toBe(false);
+    expect(panelOpen("auto")).toBe(true);
+  });
+
+  it("clicking the scrim resumes", () => {
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.blur(window);
+    const scrim = document.querySelector('[data-panel="auto"]');
+    if (!(scrim instanceof HTMLElement)) throw new Error("auto-pause scrim missing");
+    fireEvent.click(scrim);
+    expect(panelOpen("auto")).toBe(false);
+  });
+});
+
+describe("ArcadeOverlay run lifecycle", () => {
+  it("submits the score and shows the game-over card; Play again restarts", async () => {
+    vi.useFakeTimers();
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    // Snake sits in a difficulty menu until started — clicking a difficulty starts the run.
+    fireEvent.click(screen.getByRole("button", { name: /normal/i }));
+    // Heading right on the default board walks into the wall, then the death
+    // animation (~0.83s) settles before the overlay shows Game over.
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(panelOpen("over")).toBe(true);
+    expect(screen.getByText("Game over")).toBeTruthy();
+    expect(net.submitScore).toHaveBeenCalledWith("snake", expect.any(Number));
+
+    const playAgain = screen.getByRole("button", { name: "Play again" });
+    expect(document.activeElement).toBe(playAgain);
+    fireEvent.click(playAgain);
+    expect(panelOpen("over")).toBe(false);
+  });
+
+  it("Escape on the game-over card quits", async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: /normal/i }));
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(panelOpen("over")).toBe(true);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: the header Quit used to replace `over` with the pause menu,
+  // whose Resume then set `playing` on a terminal game — dead screen.
+  it("header Quit on the game-over card closes directly, never the pause menu", () => {
+    vi.useFakeTimers();
+    snakeCtl.stub = true;
+    const onClose = vi.fn();
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={onClose} />);
+    fireEvent.click(screen.getByTestId("stub-game-over"));
+    expect(panelOpen("over")).toBe(true);
+
+    fireEvent.click(screen.getByLabelText("Quit arcade"));
+    expect(panelOpen("pause")).toBe(false);
+    expect(document.querySelector(".arcade-backdrop")?.getAttribute("data-closing")).toBe(
+      "true"
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim a new best while the previous best is unknown (slow GET)", async () => {
+    snakeCtl.stub = true;
+    let resolveBoard: (b: ArcadeLeaderboard) => void = () => {};
+    net.fetchLeaderboard.mockReturnValue(
+      new Promise<ArcadeLeaderboard>((res) => {
+        resolveBoard = res;
+      })
+    );
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    // Game over (score 21) lands before the leaderboard GET has resolved:
+    // with no KNOWN previous best there must be no "New best!" claim.
+    fireEvent.click(screen.getByTestId("stub-game-over"));
+    expect(panelOpen("over")).toBe(true);
+    expect(screen.queryByText("New best!")).toBeNull();
+
+    // The slow GET (best 17 < 21) resolving after game over must not
+    // retro-flag the chip, and neither must the submit-response refresh.
+    await act(async () => {
+      resolveBoard(board);
+    });
+    expect(screen.queryByText("New best!")).toBeNull();
+  });
+
+  it("claims a new best only against a known previous best", async () => {
+    snakeCtl.stub = true;
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+    await screen.findByText("ada"); // board loaded — best is a known 17
+    fireEvent.click(screen.getByTestId("stub-game-over")); // score 21 > 17
+    expect(screen.getByText("New best!")).toBeTruthy();
+  });
+});
+
+describe("ArcadeOverlay paused input gating", () => {
+  it("flap input is ignored while paused (no run mutation or audio behind the scrim)", () => {
+    const flaps: number[] = [];
+    const off = bus.on("arcade-flap", () => flaps.push(1));
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+
+    // Sanity: input reaches the game while playing.
+    fireEvent.keyDown(window, { key: " " });
+    expect(flaps).toHaveLength(1);
+
+    // Auto-pause (blur): the overlay does not swallow game keys here, so only
+    // the game's own paused gate stands between the input and the run.
+    fireEvent.blur(window);
+    fireEvent.keyDown(window, { key: " " });
+    const canvas = document.querySelector(".arcade-canvas--fill");
+    if (!(canvas instanceof HTMLElement)) throw new Error("flappy canvas missing");
+    fireEvent.pointerDown(canvas);
+    expect(flaps).toHaveLength(1);
+
+    // Refocus resumes — input flows again.
+    fireEvent.focus(window);
+    fireEvent.keyDown(window, { key: " " });
+    expect(flaps).toHaveLength(2);
+    off();
+  });
+});
+
+describe("ArcadeOverlay chrome", () => {
   // Regression for the known focus trap: a lingering focused input (e.g. the
   // chat field) must not keep keyboard focus once the arcade opens,
   // or it would swallow the game's keys via the scene's isTyping guard.
@@ -77,44 +495,5 @@ describe("ArcadeOverlay", () => {
     fireEvent.change(slider, { target: { value: "20" } });
     expect(getSettings().arcadeVolume).toBeCloseTo(0.2);
     expect(getSettings().muteArcade).toBe(false);
-  });
-
-  it("requests fullscreen on open and exits it on close", () => {
-    const request = vi.fn().mockResolvedValue(undefined);
-    const exit = vi.fn().mockResolvedValue(undefined);
-    // jsdom lacks the Fullscreen API — stub the minimum the overlay touches.
-    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value: request,
-    });
-    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exit });
-
-    const onClose = vi.fn();
-    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={onClose} />);
-    expect(request).toHaveBeenCalledTimes(1);
-
-    // Pretend the browser granted it, then close via Escape → exitFullscreen runs.
-    Object.defineProperty(document, "fullscreenElement", {
-      configurable: true,
-      get: () => document.querySelector(".arcade-backdrop"),
-    });
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(exit).toHaveBeenCalled();
-
-    Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen");
-    Reflect.deleteProperty(document, "exitFullscreen");
-    Reflect.deleteProperty(document, "fullscreenElement");
-  });
-
-  it("submits the score and shows Game over when a run ends", async () => {
-    vi.useFakeTimers();
-    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    // Snake starts heading right; advancing enough ticks walks it into the wall.
-    act(() => {
-      vi.advanceTimersByTime(3000);
-    });
-    expect(screen.getByText("Game over")).toBeTruthy();
-    expect(net.submitScore).toHaveBeenCalledWith("snake", expect.any(Number));
   });
 });

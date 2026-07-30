@@ -4,150 +4,168 @@ import {
   initFlappy,
   flappyFlap,
   flappyTick,
+  flappyResize,
   DEFAULT_FLAPPY_CONFIG,
+  FLAPPY_STEP,
   type FlappyState,
 } from "../../game/arcade/flappy";
+import { buildClouds, type Cloud } from "./flappy/scenery";
+import { createFx, stepFx, hitFx, emitFlapPuff, type FlappyFx } from "./flappy/fx";
+import { renderFlappy } from "./flappy/render";
 import type { ArcadeGameProps } from "./gameTypes";
 
-const TICK_MS = 24;
-const { width: W, height: H } = DEFAULT_FLAPPY_CONFIG;
-// Internal supersample so the round bird + pipe caps stay smooth; CSS then
-// scales the canvas to fill the stage.
-const S = 2;
-const GROUND_H = 24;
+const {
+  width: BASE_W,
+  height: BASE_H,
+  groundHeight: GROUND_H,
+  minWidth: MIN_W,
+  maxWidth: MAX_W,
+} = DEFAULT_FLAPPY_CONFIG;
+/** Cap the backing store so a huge screen does not cost a huge fill rate. */
+const MAX_DPR = 2;
+/** Never advance more than this much simulated time in one frame. */
+const MAX_FRAME_SECONDS = 0.25;
+const MAX_STEPS_PER_FRAME = 60;
 
 /**
  * Thin canvas renderer for the pure Flappy module. A new run remounts this
  * component (ArcadeOverlay keys it by seed), so the refs init fresh from `seed`.
- * All game rules stay in game/arcade/flappy — this only draws the returned state.
+ * All game rules stay in game/arcade/flappy — this drives the fixed-step loop,
+ * feeds inputs in, draws the returned state (art modules under ./flappy), and
+ * reports score/game-over upward. Sounds are domain events on the bus; the
+ * mixer decides the clip.
+ *
+ * The canvas fills its container edge to edge: the world keeps a fixed design
+ * height and takes its width from the surface's aspect (clamped), so the game
+ * runs true full-screen inside the fullscreen overlay with no letterboxing.
  */
 export default function FlappyGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<FlappyState>(initFlappy(seed));
+  const fxRef = useRef<FlappyFx>(createFx());
   const overRef = useRef(false);
+  const scaleRef = useRef(1);
+  /** Mirrors `paused` for the input handlers (same pattern as SnakeGame). */
+  const pausedRef = useRef(paused);
+  // Seeded from the design size (not stateRef — refs must not be read during
+  // render); `fit` rebuilds them for the real surface on mount.
+  const cloudsRef = useRef<readonly Cloud[]>(buildClouds(BASE_W, BASE_H - GROUND_H));
+
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    const s = stateRef.current;
-    ctx.setTransform(S, 0, 0, S, 0, 0);
-
-    // Sky gradient.
-    const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, "#24314a");
-    sky.addColorStop(1, "#161f33");
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H);
-
-    // Drifting clouds (deterministic from tick — purely cosmetic).
-    ctx.fillStyle = "rgba(180, 200, 230, 0.10)";
-    const period = W + 60;
-    for (let i = 0; i < 3; i++) {
-      const cx = (((i * 110 + 30 - s.tick * 0.35) % period) + period) % period - 30;
-      const cy = 34 + i * 62;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 16, 0, Math.PI * 2);
-      ctx.arc(cx + 18, cy + 4, 12, 0, Math.PI * 2);
-      ctx.arc(cx - 16, cy + 4, 11, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Pipes: gradient body + a lip cap + outline.
-    for (const pipe of s.pipes) {
-      const grad = ctx.createLinearGradient(pipe.x, 0, pipe.x + s.pipeWidth, 0);
-      grad.addColorStop(0, "#6cbf76");
-      grad.addColorStop(0.5, "#5aa469");
-      grad.addColorStop(1, "#3f7c4e");
-      ctx.fillStyle = grad;
-      const botY = pipe.gapY + s.pipeGap;
-      ctx.fillRect(pipe.x, 0, s.pipeWidth, pipe.gapY);
-      ctx.fillRect(pipe.x, botY, s.pipeWidth, H - botY);
-      // caps
-      ctx.fillStyle = "#7fd08a";
-      ctx.fillRect(pipe.x - 3, pipe.gapY - 12, s.pipeWidth + 6, 12);
-      ctx.fillRect(pipe.x - 3, botY, s.pipeWidth + 6, 12);
-      ctx.strokeStyle = "rgba(10, 20, 14, 0.5)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(pipe.x + 0.5, 0.5, s.pipeWidth - 1, pipe.gapY - 0.5);
-      ctx.strokeRect(pipe.x + 0.5, botY + 0.5, s.pipeWidth - 1, H - botY - 1);
-    }
-
-    // Ground strip.
-    ctx.fillStyle = "#3a2f26";
-    ctx.fillRect(0, H - GROUND_H, W, GROUND_H);
-    ctx.fillStyle = "#4a7c3a";
-    ctx.fillRect(0, H - GROUND_H, W, 5);
-
-    // Bird: tilts with vertical velocity; eye, beak, wing.
-    const angle = Math.max(-0.4, Math.min(0.9, s.vy * 0.06));
-    ctx.save();
-    ctx.translate(s.birdX, s.birdY);
-    ctx.rotate(angle);
-    const r = s.birdRadius;
-    ctx.fillStyle = "#f2c14e";
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#e0a53a"; // wing
-    ctx.beginPath();
-    ctx.ellipse(-r * 0.2, r * 0.2, r * 0.6, r * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#f7a23a"; // beak
-    ctx.beginPath();
-    ctx.moveTo(r * 0.7, -2);
-    ctx.lineTo(r + 6, 0);
-    ctx.lineTo(r * 0.7, 3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#10141f"; // eye
-    ctx.beginPath();
-    ctx.arc(r * 0.35, -r * 0.35, r * 0.18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // "Tap to start" hint before the first flap.
-    if (!s.started) {
-      ctx.fillStyle = "rgba(232, 236, 245, 0.85)";
-      ctx.font = "12px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("Tap / Space to fly", W / 2, H * 0.4);
-    }
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+    renderFlappy(ctx, stateRef.current, fxRef.current, cloudsRef.current, scaleRef.current);
   }, []);
 
-  useEffect(draw, [draw]);
+  /** Fit the world (and the backing store) to the canvas's on-screen box. */
+  const fit = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const boxW = canvas.clientWidth;
+    const boxH = canvas.clientHeight;
+    if (boxW < 1 || boxH < 1) return; // not laid out yet (or jsdom)
+
+    const aspect = boxW / boxH;
+    let width = BASE_H * aspect;
+    let height = BASE_H;
+    if (width < MIN_W) {
+      width = MIN_W;
+      height = MIN_W / aspect;
+    } else if (width > MAX_W) {
+      width = MAX_W;
+      height = MAX_W / aspect;
+    }
+
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    canvas.width = Math.round(boxW * dpr);
+    canvas.height = Math.round(boxH * dpr);
+    scaleRef.current = canvas.width / width;
+
+    const next = flappyResize(stateRef.current, width, height);
+    if (next !== stateRef.current) {
+      stateRef.current = next;
+      cloudsRef.current = buildClouds(width, next.groundY);
+    }
+    draw();
+  }, [draw]);
+
+  // Fit on mount and follow the container (overlay resize, fullscreen toggle).
+  useEffect(() => {
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fit);
+    const canvas = canvasRef.current;
+    if (canvas) observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [fit]);
+
+  /** One fixed physics step plus the events that step implies. */
+  const advance = useCallback(() => {
+    const prev = stateRef.current;
+    const next = flappyTick(prev);
+    stateRef.current = next;
+    stepFx(fxRef.current, FLAPPY_STEP, next.phase);
+
+    if (next.score !== prev.score) {
+      onScore(next.score);
+      bus.emit("arcade-point");
+    }
+    // Crash: thud + flash + shake, then the bird tumbles before the run is
+    // reported (the game-over cue lands when it settles, below).
+    if (prev.phase === "play" && next.phase !== "play") {
+      hitFx(fxRef.current);
+      bus.emit("arcade-hit");
+    }
+    if (next.phase === "over" && !overRef.current) {
+      overRef.current = true;
+      bus.emit("arcade-over");
+      onGameOver(next.score);
+    }
+  }, [onScore, onGameOver]);
+
+  useEffect(() => {
+    if (paused) return;
+    let raf = 0;
+    let last = 0;
+    let acc = 0;
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      if (!last) last = now;
+      acc += Math.min(MAX_FRAME_SECONDS, (now - last) / 1000);
+      last = now;
+      let steps = 0;
+      while (acc >= FLAPPY_STEP && steps < MAX_STEPS_PER_FRAME) {
+        advance();
+        acc -= FLAPPY_STEP;
+        steps += 1;
+      }
+      if (steps >= MAX_STEPS_PER_FRAME) acc = 0;
+      draw();
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [paused, draw, advance]);
 
   const flap = useCallback(() => {
-    if (overRef.current) return;
-    stateRef.current = flappyFlap(stateRef.current);
+    // All input is gated on not-paused: a flap behind the pause menu (or during
+    // auto-pause) would mutate the run and emit audio while nothing ticks.
+    if (pausedRef.current) return;
+    const prev = stateRef.current;
+    if (prev.phase !== "ready" && prev.phase !== "play") return;
+    stateRef.current = flappyFlap(prev);
+    emitFlapPuff(fxRef.current, prev.birdX, prev.birdY);
     bus.emit("arcade-flap");
   }, []);
 
   useEffect(() => {
-    if (paused) return;
-    const id = window.setInterval(() => {
-      const prev = stateRef.current;
-      const next = flappyTick(prev);
-      stateRef.current = next;
-      if (next.score !== prev.score) {
-        onScore(next.score);
-        bus.emit("arcade-point");
-      }
-      if (!next.alive && !overRef.current) {
-        overRef.current = true;
-        bus.emit("arcade-over");
-        onGameOver(next.score);
-      }
-      draw();
-    }, TICK_MS);
-    return () => window.clearInterval(id);
-  }, [paused, draw, onScore, onGameOver]);
-
-  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== " " && e.key !== "ArrowUp" && e.key !== "w") return;
+      if (e.key !== " " && e.key !== "ArrowUp" && e.key !== "w" && e.key !== "W") return;
       e.preventDefault();
-      flap();
+      if (!e.repeat) flap();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -156,9 +174,7 @@ export default function FlappyGame({ seed, paused, onScore, onGameOver }: Arcade
   return (
     <canvas
       ref={canvasRef}
-      className="arcade-canvas"
-      width={W * S}
-      height={H * S}
+      className="arcade-canvas arcade-canvas--fill"
       onPointerDown={flap}
     />
   );

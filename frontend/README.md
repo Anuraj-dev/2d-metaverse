@@ -600,11 +600,18 @@ rule (games stay audio-agnostic; the mixer decides the blip).
   returned state, and report score/game-over upward. No game *rules* in a
   renderer or the scene. The overlay (`ArcadeOverlay.tsx`) and its game modules
   are **lazy-loaded** — a separate chunk, so snake/flappy never bloat the
-  entry bundle.
+  entry bundle. A renderer that grows past a screenful of drawing code splits
+  its art into small draw-only modules beside it — Flappy's live in
+  `src/ui/arcade/flappy/` (`scenery`, `pipes`, `bird`, `hud`, `fx`, `render`),
+  procedural canvas art with no assets to ship. `FlappyGame.tsx` itself is just
+  the fixed-step loop (`FLAPPY_STEP` accumulator on rAF), input, and event
+  wiring.
 - **Sound stays out of game logic:** games emit domain events on `eventBus`
-  (`arcade-point`, `arcade-over`, `arcade-flap`); `open-arcade` opens the
-  overlay. The sound mixer's event→clip table decides the blip (see *Sound +
-  polish pipeline*) — the games never touch audio.
+  (`arcade-point`, `arcade-over`, `arcade-flap`, `arcade-hit`); `open-arcade`
+  opens the overlay. The sound mixer's event→clip table decides the blip (see
+  *Sound + polish pipeline*) — the games never touch audio. Every arcade cue
+  plays on the dedicated `arcade` channel, which has its own volume + mute in
+  the overlay header (also toggled with **M**), independent of world sfx.
 - **High scores** are one REST resource (`/api/v1/arcade/scores`), shapes in
   `@metaverse/shared`. The overlay shows your best + a top-N leaderboard per
   cabinet. **Scores are client-reported and trusted at this level** — there is
