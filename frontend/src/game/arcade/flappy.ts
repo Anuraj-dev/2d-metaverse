@@ -187,7 +187,7 @@ function refitPipes(pipes: readonly Pipe[], groundY: number): readonly Pipe[] {
  * Fit the world to a new surface size (the renderer fills its container, so the
  * play area's aspect follows the screen). The ground keeps its thickness, the
  * bird keeps its fraction across the field, and every live pipe shifts by the
- * same delta the bird moved — bird↔pipe distances are preserved exactly, so a
+ * same delta the bird moved — bird-to-pipe distances are preserved exactly, so a
  * resize mid-run nudges the layout without restarting it and can never
  * teleport the bird into (or past) a column. Gaps are never left stranded
  * below the new ground.

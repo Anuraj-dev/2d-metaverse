@@ -75,7 +75,7 @@ function closeFadeMs(): number {
  * Display: the overlay covers the viewport with CSS on its own and NEVER takes
  * browser fullscreen by itself — browser fullscreen swallows the first Escape
  * to leave itself, which visibly shrinks the window before the page sees the
- * key. True fullscreen is an explicit opt-in via the header ⛶ toggle; the
+ * key. True fullscreen is an explicit opt-in via the header fullscreen toggle; the
  * geometry is identical either way.
  *
  * Escape is a pause, not a quit: it raises the pause menu (Resume / Restart /

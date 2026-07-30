@@ -121,7 +121,7 @@ export interface InitSnakeOptions {
   readonly height?: number;
 }
 
-/** Result of one animation-frame of pure scheduling (time ↔ ticks interleaved). */
+/** Result of one animation-frame of pure scheduling (time and ticks interleaved). */
 export interface SnakeFrameResult {
   readonly state: SnakeState;
   /** Accumulator: ms since the last movement tick (0..tickInterval). */
