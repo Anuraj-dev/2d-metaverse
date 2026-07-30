@@ -1,22 +1,22 @@
 # 2D Metaverse — State
-> **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-07-25
+> **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-07-30
 
 ## 🚧 In progress / next
-- **Arcade 2.0 (spec 27) ready to implement.** Spec = GitHub [#162](https://github.com/Anuraj-dev/2d-metaverse/issues/162); tickets #163 (juice+Snake rework) → #164 (merge-drop flagship) → #165 (race mode) → #166 (leaderboard meta), all `ready-for-agent`. Pointer doc: `docs/specs/27-arcade-2.md`. **Next step: dispatch an Opus 5 coder on #163** (fresh agent per ticket, feature branch, PR, never merges).
-- **Opus 5 capability benchmark is live**: Opus 5 implements ALL spec-27 tickets (UI + backend — deliberate override of the Sol-backend routing). Orchestrator logs every dispatch/review round in `docs/benchmark.md` (coders never touch docs).
-- Review protocol for spec-27 PRs: Sol high first pass, Sol medium re-reviews, PLUS `@codex review` cloud-trigger comment right after `gh pr create` (Codex cloud experiment window 2026-07-24→27; log in `~/Anuraj-Dev/CODEX_REVIEW_EXPERIMENT_LOG.md`; never reply `@codex` on its own review comment).
-- Parked: remaining PRD 25 frontier (#107, #117, #108, #118–#121, #124/#125, #127–#132) and the non-blocking review follow-ups on #148/#152/#153/#156 — Raja chose to do the arcade line first.
+- **UNCOMMITTED arcade polish round on `main` awaiting Raja's play-test verdict.** Large working-tree diff (frontend only): Snake rebuilt as a faithful port of Raja's original game (`/home/raja/Anuraj-Dev/Snake-game/`), ArcadeOverlay reworked (Escape = pause menu, no auto-fullscreen, hardened ⛶ via `ui/arcade/fullscreen.ts`), chrome polish (leaderboard/panels/buttons), world HUD (ControlBar + presence pill) hidden while arcade open, renderer-side snake interpolation + near-instant input (forced early tick on legal turn, 60ms glide, instant eye heading), bonus orb capped to its hitbox cell. **NOTHING may be committed/pushed without Raja's explicit word.** Next: Raja plays at `npm run dev` (port 5173); on approval, commit + let CI verify (e2e spec `frontend/e2e/arcade.spec.ts` was updated to the pause-menu model but never run locally).
+- After this lands: resume spec 27 line — tickets #163→#166 (`docs/specs/27-arcade-2.md`, GitHub #162), Opus 5 builds all (benchmark, log in `docs/benchmark.md`).
+- Parked: remaining PRD 25 frontier (#107, #117, #108, #118–#121, #124/#125, #127–#132) and non-blocking review follow-ups on #148/#152/#153/#156.
 
 ## Status
-- PRD 25 batch fully landed (#138–#160); PRD 26 moderator dashboard merged (#161). CI green both pipelines.
-- Prod healthy: `https://api.space.raja-dev.me/health/ready` ok at SHA `7a4186f`; FE auto-deploys via Vercel; `MODERATOR_USER_IDS` live.
-- Arcade today (what spec 27 replaces/extends): Snake+Flappy procedural-canvas cabinets w/ client-trusted REST scores; TTT+Connect-4 board tables (flat CSS, borrowed sounds). 2048 was retired.
+- PRD 25 batch fully landed (#138–#160); PRD 26 moderator dashboard merged (#161). CI green both pipelines at last commit `2b27a86`.
+- Prod healthy: `https://api.space.raja-dev.me/health/ready` ok; FE auto-deploys via Vercel.
+- This session's diff verified locally: 178/178 focused vitest, both tsc projects, scoped eslint — all green (full suites prohibited locally).
+- Wall-break-at-500 snake concept was built then **rejected and fully reverted** (zero stale refs); `arcade_break.ogg` deleted.
 
 ## Architecture map
 - Wire contracts and shared rules -> `shared/src/`
 - Backend API, sockets, moderation, authority FSMs -> `backend/src/`
 - Frontend React/Phaser/media/UI -> `frontend/src/`
-- Arcade reducers -> `frontend/src/game/arcade/`; overlay/renderers -> `frontend/src/ui/arcade/`; board stack -> `shared/src/games/` + `backend/src/boardMatch.ts`/`board-manager.ts` (the pattern spec 27's race manager copies)
+- Arcade reducers -> `frontend/src/game/arcade/`; overlay/renderers -> `frontend/src/ui/arcade/` (snake helpers `ui/arcade/snake/`, flappy `ui/arcade/flappy/`, fullscreen door `ui/arcade/fullscreen.ts`); board stack -> `shared/src/games/` + `backend/src/boardMatch.ts`/`board-manager.ts`
 - Generated campus + geometry -> `frontend/scripts/gen_campus.py` (cabinets/tables placed ONLY here)
 - Deploy and production operations -> `.github/workflows/`, `deploy/`
 
@@ -27,13 +27,14 @@
 
 ## Key decisions (top 3–5)
 - `@metaverse/shared` owns every wire shape; game rules stay pure seeded reducers; managers are side-effect shells (full log: `docs/decisions.md`).
-- Spec 27 (2026-07-25): RACE not duel (first-to-goal, no dead waiting); Flappy kept, Snake reworked; merge-drop = space theme (IP-safe, Tetris-likes rejected); anti-cheat = plausibility checks only; Opus 5 builds everything (benchmark).
+- Arcade UX (2026-07-30, three-model consult): Escape = pause menu (Resume/Restart/Quit), quit-confirm deleted, NO auto browser-fullscreen ever (full-bleed CSS shell, ⛶ opt-in); snake smoothness = renderer interpolation only, reducer untouched; input snap = forced early tick on legal turns.
+- Spec 27 (2026-07-25): RACE not duel; Flappy kept, Snake reworked; merge-drop space theme; Opus 5 builds everything (benchmark).
 - Full local gates are prohibited on Raja's machine; GitHub CI is the verifier.
 - Never delete a stacked base branch until every child is retargeted.
 
 ## Gotchas
 - Entry bundle budget is nearly full (~124.9/130 KB gzip) — all new arcade code must stay in lazy chunks; only tiny registry/settings bits may touch the entry.
+- ControlBar is mounted last in `App.tsx` to layer over meeting overlays, but must stay hidden while `arcade` state is set — don't "fix" the ordering back.
+- Snake reducer (`game/arcade/snake.ts`) bonus re-roll cadence deliberately matches Raja's original game.js (Sol disputed it; locked with a test) — don't "fix" it.
 - Prod compose `x-backend-environment` anchor must explicitly forward any new backend env var — unlisted `.env` values are silently dropped.
 - Generated campus artifacts must be regenerated with `cd frontend && python3 scripts/gen_campus.py`, never hand-merged.
-- Auth limiter is process/IP scoped; integration fixtures use direct `createPlayer` except when REST auth itself is under test.
-- Merge-drop determinism: fixed timestep + seeded spawns, avoid non-deterministic math — race fairness and reducer tests depend on it.
