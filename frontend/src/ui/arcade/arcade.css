@@ -704,10 +704,9 @@
   background: #ffffff;
 }
 .arcade-canvas--snake {
-  /* No max-width/height: the fixed-20px-cell promise means the canvas keeps
-     its exact pixel size even on a stage smaller than the minimum board — the
-     flex-centred, overflow-hidden root letterboxes/crops it instead of the
-     browser downscaling the cells. */
+  /* Sized and positioned by the component's `layout` (whole-pixel offsets,
+     fixed 20px cells, uniform downscale only when the stage is smaller than
+     the board) — never stretched by CSS. */
   width: auto;
   height: auto;
   image-rendering: pixelated;

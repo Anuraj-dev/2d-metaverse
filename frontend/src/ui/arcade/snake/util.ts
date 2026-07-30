@@ -20,6 +20,7 @@ export const SNAKE_COLORS = {
   pupil: "black",
   board: "#ffffff",
   gridDot: "rgba(0, 0, 0, 0.2)",
+  boardEdge: "rgba(0, 0, 0, 0.35)",
 } as const;
 
 /** Cheap deterministic 0..1 noise (stable shake without Math.random). */

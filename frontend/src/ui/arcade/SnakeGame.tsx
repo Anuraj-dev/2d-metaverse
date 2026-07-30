@@ -31,6 +31,12 @@ const CELL_CSS = 20;
 /** Smallest playable board if the stage is tiny. */
 const MIN_COLS = 20;
 const MIN_ROWS = 12;
+/**
+ * Minimum letterbox per side. The stage surface clips with a 10px border
+ * radius; anything closer than ~3px to its edge gets a bite taken out of the
+ * corner cells, which players read as "the end cell is cut off".
+ */
+const EDGE_INSET = 4;
 const DIFFICULTY_KEY = "arcadeSnakeDifficulty";
 const DIFFICULTIES: readonly Difficulty[] = ["easy", "normal", "hard"];
 
@@ -120,6 +126,8 @@ export default function SnakeGame({
   const pausedRef = useRef(paused);
   /** Latest measurement of the stage; only adopted between runs. */
   const measuredRef = useRef<Board>(INITIAL_BOARD);
+  /** Board the canvas backing store is currently sized for (mirror of state). */
+  const sizedRef = useRef<Board>(INITIAL_BOARD);
   const phaseRef = useRef<"menu" | "play">("menu");
   /** Board the canvas is currently sized for (frozen while a run is live). */
   const [board, setBoard] = useState<Board>(INITIAL_BOARD);
@@ -182,26 +190,60 @@ export default function SnakeGame({
   }, [seed, difficulty, board]);
 
   /**
+   * Place the canvas inside the stage box. Two jobs:
+   * - Land it on WHOLE page pixels: flex centring an odd letterbox remainder
+   *   puts the canvas on a half-pixel boundary, which smears every cell border
+   *   (worst at the board edge, where the outermost row/column reads as "half
+   *   a cell") on dpr-1 screens.
+   * - If the box shrank below the live board mid-run (e.g. leaving fullscreen),
+   *   downscale uniformly instead of cropping — hidden edge cells made the
+   *   snake steer blind near walls. Cells are still never scaled UP.
+   */
+  const layout = useCallback(() => {
+    const root = rootRef.current;
+    const canvas = canvasRef.current;
+    if (!root || !canvas) return;
+    const idealW = sizedRef.current.cols * CELL_CSS;
+    const idealH = sizedRef.current.rows * CELL_CSS;
+    const availW = root.clientWidth - 2 * EDGE_INSET;
+    const availH = root.clientHeight - 2 * EDGE_INSET;
+    if (availW < 1 || availH < 1) return;
+    const scale = Math.min(1, availW / idealW, availH / idealH);
+    const w = Math.round(idealW * scale);
+    const h = Math.round(idealH * scale);
+    // Round against the page, not the box: the box's own origin can sit on a
+    // fractional pixel (fr-grid layout), which local rounding would keep.
+    const rect = root.getBoundingClientRect();
+    const left = Math.round(rect.left + (root.clientWidth - w) / 2) - rect.left;
+    const top = Math.round(rect.top + (root.clientHeight - h) / 2) - rect.top;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    canvas.style.left = `${left}px`;
+    canvas.style.top = `${top}px`;
+  }, []);
+
+  /**
    * How many whole FIXED-size cells the stage can show. A mid-run resize only
-   * re-centres what is already on screen (flex centring) — the live board keeps
-   * its dimensions; the next run picks the new ones up.
+   * re-lays-out what is already on screen — the live board keeps its
+   * dimensions; the next run picks the new ones up.
    */
   const measure = useCallback(() => {
     const root = rootRef.current;
     if (!root) return;
-    const boxW = root.clientWidth;
-    const boxH = root.clientHeight;
+    const boxW = root.clientWidth - 2 * EDGE_INSET;
+    const boxH = root.clientHeight - 2 * EDGE_INSET;
     if (boxW < 1 || boxH < 1) return;
     const next: Board = {
       cols: Math.max(MIN_COLS, Math.floor(boxW / CELL_CSS)),
       rows: Math.max(MIN_ROWS, Math.floor(boxH / CELL_CSS)),
     };
     measuredRef.current = next;
+    layout();
     if (phaseRef.current !== "menu") return;
     setBoard((prev) =>
       prev.cols === next.cols && prev.rows === next.rows ? prev : next
     );
-  }, []);
+  }, [layout]);
 
   // Re-measure on container resize (overlay layout, window) and on fullscreen
   // enter/leave, which can change the box without a ResizeObserver-visible
@@ -230,10 +272,10 @@ export default function SnakeGame({
     cellRef.current = CELL_CSS * dpr;
     canvas.width = board.cols * CELL_CSS * dpr;
     canvas.height = board.rows * CELL_CSS * dpr;
-    canvas.style.width = `${board.cols * CELL_CSS}px`;
-    canvas.style.height = `${board.rows * CELL_CSS}px`;
+    sizedRef.current = board;
+    layout();
     draw();
-  }, [board, draw]);
+  }, [board, layout, draw]);
 
   const startRun = useCallback(
     (d: Difficulty) => {
@@ -455,10 +497,17 @@ export default function SnakeGame({
       <canvas
         ref={canvasRef}
         className="arcade-canvas arcade-canvas--snake"
+        // Absolutely positioned: `layout` computes a whole-page-pixel offset
+        // (flex centring would land on half pixels and smear the cell grid).
         // The art is smooth (rounded segments, radial gradients) and the backing
         // store is already dpr-scaled, so nearest-neighbour would only add
         // aliasing — override the shared canvas rule's `pixelated`.
-        style={{ display: "block", background: "#fff", imageRendering: "auto" }}
+        style={{
+          position: "absolute",
+          display: "block",
+          background: "#fff",
+          imageRendering: "auto",
+        }}
       />
       {phase === "menu" && (
         <div

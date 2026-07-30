@@ -25,4 +25,12 @@ export function drawBoard(
       ctx.fill();
     }
   }
+
+  // The board edge kills — draw it. Without a stroke the outermost row/column
+  // reads as letterbox (the edge grid dots are half-clipped by the canvas
+  // bounds), so players misjudged where the wall is.
+  const lw = Math.max(1, Math.round(cell * 0.05));
+  ctx.strokeStyle = SNAKE_COLORS.boardEdge;
+  ctx.lineWidth = lw;
+  ctx.strokeRect(lw / 2, lw / 2, w - lw, h - lw);
 }
