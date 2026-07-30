@@ -2,12 +2,12 @@
 > **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-07-30
 
 ## 🚧 In progress / next
-- **UNCOMMITTED arcade polish round on `main` awaiting Raja's play-test verdict.** Large working-tree diff (frontend only): Snake rebuilt as a faithful port of Raja's original game (`/home/raja/Anuraj-Dev/Snake-game/`), ArcadeOverlay reworked (Escape = pause menu, no auto-fullscreen, hardened ⛶ via `ui/arcade/fullscreen.ts`), chrome polish (leaderboard/panels/buttons), world HUD (ControlBar + presence pill) hidden while arcade open, renderer-side snake interpolation + near-instant input (forced early tick on legal turn, 60ms glide, instant eye heading), bonus orb capped to its hitbox cell. **NOTHING may be committed/pushed without Raja's explicit word.** Next: Raja plays at `npm run dev` (port 5173); on approval, commit + let CI verify (e2e spec `frontend/e2e/arcade.spec.ts` was updated to the pause-menu model but never run locally).
-- After this lands: resume spec 27 line — tickets #163→#166 (`docs/specs/27-arcade-2.md`, GitHub #162), Opus 5 builds all (benchmark, log in `docs/benchmark.md`).
+- **Arcade polish round LANDED on `main`** (Raja approved): `87ec652` faithful Snake port + Escape=pause + chrome polish, `3b69656` emoji-guard fix, `b7558a8` crisp snake board edges (#170). Main CI green (watch confirmed 2026-07-30 ~17:30). Working tree clean.
+- Next: resume spec 27 line — tickets #163→#166 (`docs/specs/27-arcade-2.md`, GitHub #162), Opus 5 builds all (benchmark, log in `docs/benchmark.md`).
 - Parked: remaining PRD 25 frontier (#107, #117, #108, #118–#121, #124/#125, #127–#132) and non-blocking review follow-ups on #148/#152/#153/#156.
 
 ## Status
-- PRD 25 batch fully landed (#138–#160); PRD 26 moderator dashboard merged (#161). CI green both pipelines at last commit `2b27a86`.
+- PRD 25 batch fully landed (#138–#160); PRD 26 moderator dashboard merged (#161); arcade polish round landed through `b7558a8`. Main CI green.
 - Prod healthy: `https://api.space.raja-dev.me/health/ready` ok; FE auto-deploys via Vercel.
 - This session's diff verified locally: 178/178 focused vitest, both tsc projects, scoped eslint — all green (full suites prohibited locally).
 - Wall-break-at-500 snake concept was built then **rejected and fully reverted** (zero stale refs); `arcade_break.ogg` deleted.
