@@ -225,6 +225,19 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     requestFs();
   }, [requestFs]);
 
+  // F toggles browser fullscreen from anywhere in the overlay — a keypress is
+  // still an explicit user gesture, so the no-auto-fullscreen rule holds; the
+  // header toggle stays the discoverable control.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "f" && e.key !== "F") return;
+      e.preventDefault();
+      toggleFullscreen();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleFullscreen]);
+
   // We never take browser fullscreen on our own (see the component doc): we
   // only watch the API so the opt-in header toggle stays in sync and the
   // Escape the browser ate on our behalf still pauses the run.

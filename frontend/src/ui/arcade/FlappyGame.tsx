@@ -112,7 +112,9 @@ export default function FlappyGame({ seed, paused, onScore, onGameOver }: Arcade
 
     if (next.score !== prev.score) {
       onScore(next.score);
-      bus.emit("arcade-point");
+      // Every 100th point is a milestone chime (same cue as Snake's), the
+      // rest are the regular point blip.
+      bus.emit(next.score % 100 === 0 ? "arcade-milestone" : "arcade-point");
     }
     // Crash: thud + flash + shake, then the bird tumbles before the run is
     // reported (the game-over cue lands when it settles, below).
