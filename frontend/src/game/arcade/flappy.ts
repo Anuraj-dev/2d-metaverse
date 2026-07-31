@@ -19,6 +19,13 @@
  * after a hit while the world holds still) → `over`. The renderer reports
  * game-over to the overlay when the phase reaches `over`, so the death tumble
  * plays out before the overlay's panel appears.
+ *
+ * Difficulty is one continuous ramp (Chrome-Dino style, no discrete levels):
+ * a single parameter `t = min(1, score / RAMP_END_SCORE)` lerps every course
+ * knob — scroll speed, gap height, pipe spacing — from a gentle start config
+ * to the end config, then plateaus. Physics (gravity/flap) never change, so
+ * the bird feels identical across the whole run. Each cleared pipe awards
+ * POINTS_PER_PIPE points.
  */
 import { nextFloat } from "./prng";
 
@@ -49,13 +56,16 @@ export interface FlappyState {
   readonly gravity: number;
   readonly flapVelocity: number;
   readonly maxFall: number;
-  /** Pipe scroll speed, units/s. */
-  readonly speed: number;
+  /** Pipe scroll speed at ramp start / end (units/s); lerped by score. */
+  readonly speedStart: number;
+  readonly speedEnd: number;
   readonly pipeWidth: number;
-  /** Horizontal distance between consecutive pipe columns. */
-  readonly pipeSpacing: number;
-  readonly gapBase: number;
-  readonly gapMin: number;
+  /** Distance between consecutive pipe columns at ramp start / end. */
+  readonly spacingStart: number;
+  readonly spacingEnd: number;
+  /** Gap opening height at ramp start / end. */
+  readonly gapStart: number;
+  readonly gapEnd: number;
   readonly birdRadius: number;
   /** Dying below this y (above the top edge) counts as a crash. */
   readonly ceiling: number;
@@ -87,21 +97,26 @@ export const DEFAULT_FLAPPY_CONFIG = {
   gravity: 1980,
   flapVelocity: -612,
   maxFall: 1000,
-  speed: 196,
+  speedStart: 160,
+  speedEnd: 196,
   pipeWidth: 84,
-  pipeSpacing: 272,
-  gapBase: 190,
-  gapMin: 158,
+  spacingStart: 330,
+  spacingEnd: 272,
+  gapStart: 245,
+  gapEnd: 158,
   /** Collision radius. Kept in lockstep with the drawn bird (BIRD_SCALE in
    *  ui/arcade/flappy/bird.ts) so the art never outgrows its hitbox. */
   birdRadius: 17,
   ceiling: -90,
 } as const;
 
+/** Points awarded per cleared pipe. */
+export const POINTS_PER_PIPE = 10;
+/** Score at which the difficulty ramp completes (= 40 pipes cleared). */
+export const RAMP_END_SCORE = 400;
+
 /** Vertical margin kept clear of the top/ground when placing a gap. */
 const GAP_MARGIN = 70;
-/** The gap tightens by this much per point scored, down to `gapMin`. */
-const GAP_SHRINK_PER_POINT = 1.1;
 /** Backdrop keeps drifting on the ready screen, at a fraction of play speed. */
 const READY_SCROLL_FACTOR = 0.55;
 const READY_BOB_RATE = 2.9;
@@ -117,9 +132,28 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+/** Ramp progress for a score: 0 at the start, 1 once the plateau is reached. */
+function rampT(score: number): number {
+  return Math.min(1, score / RAMP_END_SCORE);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** Pipe scroll speed (units/s) at this score. */
+export function flappySpeedForScore(state: FlappyState, score: number): number {
+  return lerp(state.speedStart, state.speedEnd, rampT(score));
+}
+
 /** Height of the gap a pipe spawned at this score gets. */
 function gapForScore(state: FlappyState, score: number): number {
-  return Math.max(state.gapMin, state.gapBase - score * GAP_SHRINK_PER_POINT);
+  return lerp(state.gapStart, state.gapEnd, rampT(score));
+}
+
+/** Column-to-column spacing a pipe spawned at this score gets. */
+function spacingForScore(state: FlappyState, score: number): number {
+  return lerp(state.spacingStart, state.spacingEnd, rampT(score));
 }
 
 function spawnPipe(
@@ -155,11 +189,13 @@ export function initFlappy(
     gravity: config.gravity,
     flapVelocity: config.flapVelocity,
     maxFall: config.maxFall,
-    speed: config.speed,
+    speedStart: config.speedStart,
+    speedEnd: config.speedEnd,
     pipeWidth: config.pipeWidth,
-    pipeSpacing: config.pipeSpacing,
-    gapBase: config.gapBase,
-    gapMin: config.gapMin,
+    spacingStart: config.spacingStart,
+    spacingEnd: config.spacingEnd,
+    gapStart: config.gapStart,
+    gapEnd: config.gapEnd,
     birdRadius: config.birdRadius,
     ceiling: config.ceiling,
     pipes: [],
@@ -220,14 +256,15 @@ export function flappyResize(
   };
 }
 
-/** The pipe field the run starts with: a column every `pipeSpacing`, off-screen. */
+/** The pipe field the run starts with: a column per start-spacing, off-screen. */
 function firstPipes(state: FlappyState): { pipes: Pipe[]; rngSeed: number } {
   const pipes: Pipe[] = [];
   let rngSeed = state.rngSeed;
   const startX = state.width + 60;
-  const count = Math.ceil(state.width / state.pipeSpacing) + 2;
+  const spacing = spacingForScore(state, 0);
+  const count = Math.ceil(state.width / spacing) + 2;
   for (let i = 0; i < count; i++) {
-    const spawned = spawnPipe(state, startX + i * state.pipeSpacing, 0, rngSeed);
+    const spawned = spawnPipe(state, startX + i * spacing, 0, rngSeed);
     pipes.push(spawned.pipe);
     rngSeed = spawned.rngSeed;
   }
@@ -296,23 +333,25 @@ function nextRotation(state: FlappyState, vy: number, dt: number): number {
 function stepPlay(state: FlappyState, dt: number, time: number): FlappyState {
   const vy = Math.min(state.vy + state.gravity * dt, state.maxFall);
   const birdY = state.birdY + vy * dt;
+  const speed = flappySpeedForScore(state, state.score);
 
   // Scroll pipes, score the ones the bird has cleared, drop the ones behind.
   let score = state.score;
   const pipes: Pipe[] = [];
   for (const pipe of state.pipes) {
-    const x = pipe.x - state.speed * dt;
+    const x = pipe.x - speed * dt;
     if (x + state.pipeWidth < -DESPAWN_MARGIN) continue;
     const scored = pipe.scored || x + state.pipeWidth < state.birdX;
-    if (scored && !pipe.scored) score += 1;
+    if (scored && !pipe.scored) score += POINTS_PER_PIPE;
     pipes.push({ x, top: pipe.top, gap: pipe.gap, scored });
   }
 
   // Keep the field topped up ahead of the bird.
   let rngSeed = state.rngSeed;
+  const spacing = spacingForScore(state, score);
   const last = pipes[pipes.length - 1];
-  if (!last || last.x < state.width - state.pipeSpacing) {
-    const x = (last ? last.x : state.width) + state.pipeSpacing;
+  if (!last || last.x < state.width - spacing) {
+    const x = (last ? last.x : state.width) + spacing;
     const spawned = spawnPipe(state, x, score, rngSeed);
     pipes.push(spawned.pipe);
     rngSeed = spawned.rngSeed;
@@ -321,7 +360,7 @@ function stepPlay(state: FlappyState, dt: number, time: number): FlappyState {
   const next: FlappyState = {
     ...state,
     time,
-    scroll: state.scroll + state.speed * dt,
+    scroll: state.scroll + speed * dt,
     vy,
     birdY,
     rot: nextRotation(state, vy, dt),
@@ -377,7 +416,7 @@ export function flappyTick(state: FlappyState, dt: number = FLAPPY_STEP): Flappy
       return {
         ...state,
         time,
-        scroll: state.scroll + state.speed * READY_SCROLL_FACTOR * dt,
+        scroll: state.scroll + state.speedStart * READY_SCROLL_FACTOR * dt,
         birdY:
           state.groundY * 0.46 + Math.sin(time * READY_BOB_RATE) * READY_BOB_AMPLITUDE,
         rot: Math.sin(time * READY_BOB_RATE + Math.PI / 2) * 0.13,
