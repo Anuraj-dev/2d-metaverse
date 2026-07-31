@@ -71,6 +71,9 @@ describe("maps registry", () => {
     expect(keys.length).toBeGreaterThanOrEqual(2);
     expect(keys).toContain("floors_walls");
     expect(keys).toContain("exterior");
+    // LimeZu room-builder floor/rug tiles (hostel room 3 art pass). Registered
+    // here so BootScene preloads it and WorldScene can addTilesetImage it by name.
+    expect(keys).toContain("room_builder");
   });
 
   it("every tileset key maps to a file", () => {

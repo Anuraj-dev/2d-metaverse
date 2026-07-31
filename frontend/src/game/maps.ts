@@ -24,6 +24,8 @@ const CAMPUS_MAP: MapDef = {
   tilesets: [
     { key: "floors_walls", file: "floors_walls.png" },
     { key: "exterior", file: "exterior.png" },
+    // LimeZu "Modern Interiors" room-builder sheet — interior floor/rug tiles.
+    { key: "room_builder", file: "room_builder.png" },
   ],
 };
 

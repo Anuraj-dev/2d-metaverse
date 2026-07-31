@@ -49,6 +49,11 @@ export default class BootScene extends Phaser.Scene {
       "desk_boss", "plant_big", "plant_small", "bookshelf", "bookshelf_tall",
       "sofa", "sofa_small", "water", "vending", "coffee", "clock",
       "arcade_snake", "arcade_flappy",
+      // LimeZu interior props (scripts/gen_limezu_sprites.py) — hostel room 3.
+      "lz_sofa", "lz_side_table", "lz_bookshelf", "lz_shelf_jars",
+      "lz_sideboard", "lz_table", "lz_table_books", "lz_table_cup",
+      "lz_counter", "lz_fridge", "lz_board", "lz_worldmap", "lz_window",
+      "lz_plant", "lz_plant_small", "lz_palm", "lz_lamp",
     ];
     for (const f of furniture) this.load.image(`f_${f}`, `${BASE}/furniture/${f}.png`);
   }
