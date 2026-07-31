@@ -91,7 +91,7 @@ describe("flappyTick — collision", () => {
       phase: "play",
       birdY: 60,
       vy: 0,
-      pipes: [{ x: base.birdX - 10, top: 300, gap: base.gapBase, scored: false }],
+      pipes: [{ x: base.birdX - 10, top: 300, gap: base.gapStart, scored: false }],
     };
     s = flappyTick(s);
     expect(s.phase).toBe("dying");
@@ -109,23 +109,24 @@ describe("flappyTick — collision", () => {
       vy: 0,
       birdY: 400,
       pipes: [
-        { x: base.birdX + 4, top: 400 - base.gapBase / 2, gap: base.gapBase, scored: false },
+        { x: base.birdX + 4, top: 400 - base.gapStart / 2, gap: base.gapStart, scored: false },
       ],
     };
     for (let i = 0; i < 120 && s.phase === "play"; i++) s = flappyTick(s);
     expect(s.phase).toBe("play");
-    expect(s.score).toBe(1);
+    expect(s.score).toBe(10);
   });
 });
 
 describe("flappyTick — pipe field", () => {
-  it("tightens the gap as the score climbs, down to the floor", () => {
+  it("tightens the gap along the ramp, plateauing at the end config", () => {
     const base = initFlappy(1);
     const spawn = (score: number) =>
       flappyTick({ ...base, phase: "play", gravity: 0, score, pipes: [] }).pipes[0];
-    expect(spawn(0)?.gap).toBeCloseTo(base.gapBase);
-    expect(spawn(10)?.gap).toBeCloseTo(base.gapBase - 11);
-    expect(spawn(200)?.gap).toBe(base.gapMin);
+    expect(spawn(0)?.gap).toBeCloseTo(base.gapStart);
+    expect(spawn(200)?.gap).toBeCloseTo((base.gapStart + base.gapEnd) / 2);
+    expect(spawn(400)?.gap).toBeCloseTo(base.gapEnd);
+    expect(spawn(1000)?.gap).toBeCloseTo(base.gapEnd);
   });
 
   it("drops pipes once they scroll off the left edge", () => {
@@ -136,7 +137,7 @@ describe("flappyTick — pipe field", () => {
       gravity: 0,
       vy: 0,
       birdY: 400,
-      pipes: [{ x: -200, top: 300, gap: base.gapBase, scored: true }],
+      pipes: [{ x: -200, top: 300, gap: base.gapStart, scored: true }],
     };
     s = flappyTick(s);
     // The stale column is gone; only the freshly spawned one ahead remains.
@@ -189,7 +190,7 @@ describe("flappyResize", () => {
       birdY: 400,
       pipes: [
         { x: base.birdX + 30, top: 300, gap: 200, scored: false },
-        { x: base.birdX + 30 + base.pipeSpacing, top: 260, gap: 200, scored: false },
+        { x: base.birdX + 30 + base.spacingStart, top: 260, gap: 200, scored: false },
       ],
     };
 
