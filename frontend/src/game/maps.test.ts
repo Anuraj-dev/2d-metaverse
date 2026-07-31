@@ -806,3 +806,41 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
     expect(coworkDesks.length).toBeLessThanOrEqual(10);
   });
 });
+
+// A prop placed in the map but never preloaded by BootScene renders as a green
+// missing-texture box in game — and the offline render harness reads the PNGs
+// directly, so it looks perfectly fine there. Only this guard catches it.
+describe("furniture texture registration", () => {
+  const BOOT = resolve(__dirname, "./scenes/BootScene.ts");
+  const FURN_DIR = resolve(__dirname, "../../public/assets/furniture");
+
+  const preloadedKeys = (): Set<string> => {
+    const src = readFileSync(BOOT, "utf-8");
+    const block = /const furniture[^=]*=\s*\[([\s\S]*?)\];/.exec(src);
+    if (!block?.[1]) throw new Error("BootScene furniture key list not found");
+    return new Set([...block[1].matchAll(/"([a-z0-9_]+)"/g)].map((m) => `f_${m[1] as string}`));
+  };
+
+  const mapKeys = (): string[] => {
+    const json = loadMap(DEFAULT_MAP) as unknown as {
+      layers: { name: string; objects?: { properties?: { name: string; value: unknown }[] }[] }[];
+    };
+    const layer = json.layers.find((l) => l.name === "furniture");
+    return (layer?.objects ?? []).map(
+      (o) => String(o.properties?.find((p) => p.name === "key")?.value ?? "")
+    );
+  };
+
+  it("every furniture key used by the map is preloaded by BootScene", () => {
+    const loaded = preloadedKeys();
+    const missing = [...new Set(mapKeys())].filter((k) => !loaded.has(k));
+    expect(missing, `keys placed but not preloaded: ${missing.join(", ")}`).toHaveLength(0);
+  });
+
+  it("every furniture key preloaded by BootScene has a PNG on disk", () => {
+    const missing = [...preloadedKeys()].filter(
+      (k) => !existsSync(resolve(FURN_DIR, `${k.slice(2)}.png`))
+    );
+    expect(missing, `preloaded with no PNG: ${missing.join(", ")}`).toHaveLength(0);
+  });
+});

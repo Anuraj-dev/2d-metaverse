@@ -12,7 +12,10 @@ Geometry it has to live with (all frozen):
 Walkability (player body 18px > 1 tile — every lane ≥2 tiles):
   · y=12-13 free of solid bodies — corridor under the meeting-room doors
   · columns 49-50 and 58-59 clear y=12..23 — both south-door approaches
-  · columns 36-37 and 63-64 clear at y=12-14 — approach to rooms 4 and 6
+  · columns 36-37 and 63-64 clear y=12..23 — room 4/6 door columns
+    (E2E walkTo is straight-line; whole swept corridor must be clear)
+  · row 22 / y≈360 E-W band (cols 36..59) free of solid bodies —
+    E2E forecourt waypoint at y=360 (body spans y 352..366)
   · no solid on the agenda interactable (55-56, 19-20)
   · solid furniture lines walls or forms desk pods with ≥2-tile aisles
 """
@@ -92,7 +95,9 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_filing", 32, 14, True)
     ctx.furn("f_lz_pc_tower", 34, 14, True)
     ctx.furn("f_lz_boxes", 35, 14, False)
-    ctx.furn("f_lz_crate", 36, 15, True)
+    # Crate west of room-4 door col (36-37): body at col 36 spills into the
+    # E2E vertical approach, so park it at 35,16 under the pc tower.
+    ctx.furn("f_lz_crate", 35, 16, True)
     ctx.furn("f_lz_bookshelf_tall", 32, 17, True)
     ctx.furn("f_lz_bin", 33, 17, False)
     ctx.furn("f_lz_shelf_white", 32, 19, True)
@@ -161,11 +166,12 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_plant", 78, 21, False)
 
     # ── SW breakout lounge (parquet rug) ────────────────────────────────────
-    # Armchair one tile east of console so 32px bodies don't share col 37.
+    # Console + armchair kept west of col 36 and north of the y=360 E2E band
+    # (32px bodies at y=21 reach y=360). Console at 35,20 sits above the sofa.
     ctx.furn("f_lz_painting", 32, 19, False)
     ctx.furn("f_lz_sofa_gray", 33, 21, True)
-    ctx.furn("f_lz_console", 36, 21, True)
-    ctx.furn("f_lz_armchair_gray", 39, 21, True)
+    ctx.furn("f_lz_console", 35, 20, True)
+    ctx.furn("f_lz_armchair_gray", 39, 20, True)
     ctx.furn("f_lz_side_table", 32, 22, False)
     ctx.furn("f_lz_floor_lamp", 31, 23, True)
     ctx.furn("f_lz_plant_small", 39, 23, True)
@@ -178,29 +184,31 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_stool", 44, 20, True)
     ctx.furn("f_lz_books", 43, 18, False)
 
-    # ── Second desk pair east of agenda (fills the x=61-64 void) ────────────
+    # ── Second desk pair east of agenda (fills the x=60-62 void) ────────────
     # Same language as the main pods so it reads "more desks", not a random
-    # lounge chair. Columns 58-59 (entrance) stay clear; 63-64 only need to be
-    # clear at y=12-14 (room-6 approach), so y=18-19 here is fine.
-    # Chairs non-solid (tucked under tables).
-    ctx.furn("f_lz_table", 61, 18, True)
-    ctx.furn("f_lz_computer", 62, 18, True)
-    ctx.furn("f_lz_table_books", 63, 18, True)
-    ctx.furn("f_lz_chair", 61, 19, False)
-    ctx.furn("f_lz_chair", 63, 19, False)
-    ctx.furn("f_lz_plant_small", 64, 18, True)
-    ctx.furn("f_lz_papers", 62, 19, False)
+    # lounge chair. Columns 58-59 (entrance) and 63-64 (room-6 E2E column)
+    # stay clear of solid bodies for the full hall height.
+    # Chairs non-solid (tucked under tables). Plant sits east of the door col.
+    ctx.furn("f_lz_table", 60, 18, True)
+    ctx.furn("f_lz_computer", 61, 18, True)
+    ctx.furn("f_lz_table_books", 62, 18, True)
+    ctx.furn("f_lz_chair", 60, 19, False)
+    ctx.furn("f_lz_chair", 62, 19, False)
+    ctx.furn("f_lz_plant_small", 65, 18, True)
+    ctx.furn("f_lz_papers", 61, 19, False)
 
     # ── Reception desk between the two south entrances ──────────────────────
-    # On the slate pad, south of the agenda. Columns 49-50 and 58-59 clear.
-    # Reception chair non-solid (tucked under the desk computer body).
-    ctx.furn("f_lz_table", 52, 21, True)
-    ctx.furn("f_lz_computer", 53, 21, True)
-    ctx.furn("f_lz_table_cup", 54, 21, True)
-    ctx.furn("f_lz_chair", 53, 22, False)
-    ctx.furn("f_lz_plant_small", 51, 21, True)
-    ctx.furn("f_lz_plant_small", 55, 21, True)
-    ctx.furn("f_lz_papers", 54, 22, False)
+    # One tile north of the slate pad so 32px bodies bottom out at y=344 and
+    # miss the E2E y=360 forecourt band. Columns 49-50 and 58-59 clear.
+    # East plant is non-solid (would hit the agenda prompt if solid at y=20,
+    # and the y=360 band if solid at y=21). Chair non-solid under the desk.
+    ctx.furn("f_lz_table", 52, 20, True)
+    ctx.furn("f_lz_computer", 53, 20, True)
+    ctx.furn("f_lz_table_cup", 54, 20, True)
+    ctx.furn("f_lz_chair", 53, 21, False)
+    ctx.furn("f_lz_plant_small", 51, 20, True)
+    ctx.furn("f_lz_plant_small", 55, 21, False)
+    ctx.furn("f_lz_papers", 54, 21, False)
 
     # ── SE lounge nook (parquet rug, east of entrance 58-59) ────────────────
     # x=70+ leaves a ≥2-tile gap from column 59. Lamp nudged east so palm

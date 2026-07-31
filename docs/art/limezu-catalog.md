@@ -3,10 +3,9 @@
 Source cuts: `frontend/public/assets/furniture/lz_*.png` (102 props), produced by
 `frontend/scripts/gen_limezu_sprites.py` from LimeZu *Modern Interiors* free pack.
 
-**Contact sheet (labelled, 5× nearest-neighbour):**  
-`/tmp/claude-1000/-home-raja-Anuraj-Dev-2D-meteverse/5b765257-837f-4c47-a1ee-2d31396f8322/scratchpad/limezu_contact_sheet.png`  
-Row strips (easier to scan): same dir, `limezu_contact_rows/rXX-YY.png`.  
-Per-prop 8× QA: `final_qa_g0a2/lz_*.png`.
+To look at a prop, render it directly — the PNGs are 16-48 px, so upscale:
+`python3 -c "from PIL import Image; im=Image.open('frontend/public/assets/furniture/lz_sofa_2seat.png'); im.resize((im.width*8, im.height*8), Image.NEAREST).save('/tmp/p.png')"`
+To see one in place on the map, use `frontend/scripts/render_region.py`.
 
 **Map key** = `f_` + filename stem (BootScene loads `furniture/<stem>.png` as texture
 `f_<stem>`). Place with `furn("f_lz_…", tx, ty, solid)`.

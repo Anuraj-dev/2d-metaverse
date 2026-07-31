@@ -22,10 +22,7 @@ def decorate(ctx, phase: str) -> None:
 | `ctx.furn(key, tx, ty, solid)` | Append a furniture object (same id scheme as gen_campus) |
 | `ctx.fill(x0, y0, x1, y1, tile)` | Solid fill on the **ground** layer |
 | `ctx.fill_pattern(x0, y0, x1, y1, block)` | Seamless 3×2 (or any) pattern fill on ground |
-| `ctx.FLOOR_CREAM` / `PARQUET` / `TEAL` / `SLATE` / `BRICK` | LimeZu interior pattern blocks |
-| `ctx.FLOOR` / `FLOOR_ACC` / `FLOOR_HERR` / `FLOOR_MOSS` | Legacy indoor GIDs |
-| `ctx.W`, `ctx.H`, `ctx.TS` | Map size (tiles) and tile size (px) |
-| `ctx.is_wall / is_seat / is_door / is_interactable / is_board_seat / is_solid_prop` | Read-only placement queries `(tx, ty) → bool` |
+| `ctx.FLOOR_CREAM` / `ctx.FLOOR_PARQUET` / `ctx.FLOOR_TEAL` / `ctx.FLOOR_SLATE` | LimeZu interior pattern blocks |
 
 **You may not** touch walls, seats, board_seats, doorZones, roomBounds,
 interactables, stage, signs, or spawn. Those are frozen (see the restyle brief).

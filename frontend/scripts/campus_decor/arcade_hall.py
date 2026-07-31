@@ -29,9 +29,9 @@ AH_X0, AH_Y0, AH_X1, AH_Y1 = 68, 95, 86, 107  # interior, inclusive
 
 def decorate(ctx, phase: str) -> None:
     if phase == "floor":
-        # Shell fill runs after this phase and clobbers it; kept so a future
-        # generator reorder still gets the cream base without a second edit.
-        _paint_floor(ctx)
+        # Nothing: gen_campus builds the arcade shell after this phase and would
+        # overwrite anything painted here. The floor is painted in 'furniture'.
+        pass
     elif phase == "furniture":
         _paint_floor(ctx)  # must re-run — see module docstring
         _furnish(ctx)

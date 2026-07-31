@@ -70,8 +70,8 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_plant_small", 23, 33, True)
     ctx.furn("f_lz_plant", 4, 48, True)
     ctx.furn("f_lz_plant_small", 16, 50, True)
-    # Was (26,42): 32×32 body spilled onto E-W artery y=43 + portal prompt.
-    # Then (26,38): collided with gen_campus's own f_plant_big at (25,38).
+    # Clear of the E-W artery (y=43-45), the portal prompt and the
+    # generator's own f_plant_big at (25,38).
     ctx.furn("f_lz_palm", 23, 36, True)
     ctx.furn("f_lz_plant_small", 10, 14, True)
     ctx.furn("f_lz_plant", 18, 6, True)
@@ -234,7 +234,7 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_bench_gold", 24, 56, True)
     ctx.furn("f_lz_plant_small", 28, 58, True)
     ctx.furn("f_lz_floor_lamp", 32, 56, True)
-    # Was (36,58): plant body claimed artery col x=35. Stay x>=37.
+    # Stay x>=37: a 32px body at x=36 would claim artery col x=35.
     ctx.furn("f_lz_plant", 38, 58, True)
     ctx.furn("f_lz_bench_gold", 44, 58, True)
     ctx.furn("f_lz_plant_small", 48, 56, True)
@@ -271,12 +271,12 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_plant_pot", 90, 54, False)
 
     # ── Place 14: West park–plaza seam rest (x=11-20, south of welcome) ───
-    # Was (15,50): 32×48 plant overlapped plant_small@16,50.
+    # 32x48 body — needs a clear column either side of plant_small@16,50.
     ctx.furn("f_lz_plant", 14, 50, True)
     ctx.furn("f_lz_plant_small", 18, 54, True)
     ctx.furn("f_lz_floor_lamp", 20, 52, True)
     ctx.furn("f_lz_bench_gold", 11, 52, True)
-    # Was (22,56): palm body overlapped bench_gold@24,56 at col 23.
+    # Palm body reaches col 23; bench_gold@24,56 needs that column free.
     ctx.furn("f_lz_palm", 20, 56, True)
     ctx.furn("f_lz_plant_pot", 18, 52, False)
     ctx.furn("f_lz_basket", 12, 54, False)

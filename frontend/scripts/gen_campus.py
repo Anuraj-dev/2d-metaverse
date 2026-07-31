@@ -80,7 +80,6 @@ FLOOR_PARQUET = rb_block(13)   # warm herringbone parquet  (locals 232-234/249-2
 FLOOR_TEAL    = rb_block(9)    # mint patterned floor tile (locals 164-166/181-183)
 FLOOR_CREAM   = rb_block(7)    # pale cross-patterned tile (locals 130-132/147-149)
 FLOOR_SLATE   = rb_block(11)   # soft grey-blue screed     (locals 198-200/215-217)
-FLOOR_BRICK   = rb_block(5)    # terracotta brick          (locals  96- 98/113-115)
 
 # Transparent flower overlays for the ground_decor layer
 FLOWER_RED    = 204  # idx 41 — orange/red diamond flower
@@ -282,21 +281,13 @@ make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
 # grass tile after the scatter desyncs the seed (see campus_decor/README.md).
 # Furniture phase runs later, at the historical furniture-list insertion point.
 _decor_floor_ctx = campus_decor.build_context(
-    W=W, H=H, TS=TS,
-    ground=ground, furniture=[],
-    walls_data=walls_data, seats_objs=seats_objs, door_zones=door_zones,
-    interactables_objs=[], board_seats=[],
+    ground=ground,
     furn=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError(
         "campus_decor: furn() is only valid in the furniture phase")),
-    fill_layer=fill, fill_pattern_layer=fill_pattern,
+    fill_pattern_layer=fill_pattern,
     floor_patterns={
         "FLOOR_CREAM": FLOOR_CREAM, "FLOOR_PARQUET": FLOOR_PARQUET,
         "FLOOR_TEAL": FLOOR_TEAL, "FLOOR_SLATE": FLOOR_SLATE,
-        "FLOOR_BRICK": FLOOR_BRICK,
-    },
-    floor_gids={
-        "FLOOR": FLOOR, "FLOOR_ACC": FLOOR_ACC,
-        "FLOOR_HERR": FLOOR_HERR, "FLOOR_MOSS": FLOOR_MOSS,
     },
 )
 campus_decor.apply_district_floors(_decor_floor_ctx)
@@ -677,19 +668,10 @@ furn("f_sofa_small",  8, 97, True)
 # Same registry as the floor phase above; insertion order here preserves the
 # historical furniture id sequence (20000 + len at append time).
 _decor_furn_ctx = campus_decor.build_context(
-    W=W, H=H, TS=TS,
-    ground=ground, furniture=furniture,
-    walls_data=walls_data, seats_objs=seats_objs, door_zones=door_zones,
-    interactables_objs=interactables_objs, board_seats=[],
-    furn=furn, fill_layer=fill, fill_pattern_layer=fill_pattern,
+    ground=ground, furn=furn, fill_pattern_layer=fill_pattern,
     floor_patterns={
         "FLOOR_CREAM": FLOOR_CREAM, "FLOOR_PARQUET": FLOOR_PARQUET,
         "FLOOR_TEAL": FLOOR_TEAL, "FLOOR_SLATE": FLOOR_SLATE,
-        "FLOOR_BRICK": FLOOR_BRICK,
-    },
-    floor_gids={
-        "FLOOR": FLOOR, "FLOOR_ACC": FLOOR_ACC,
-        "FLOOR_HERR": FLOOR_HERR, "FLOOR_MOSS": FLOOR_MOSS,
     },
 )
 campus_decor.apply_district_furniture(_decor_furn_ctx)

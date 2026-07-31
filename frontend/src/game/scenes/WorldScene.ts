@@ -442,7 +442,13 @@ export default class WorldScene extends Phaser.Scene {
     for (const seats of byRoom.values()) {
       const cx = seats.reduce((a, s) => a + s.cx, 0) / seats.length;
       const cy = seats.reduce((a, s) => a + s.cy, 0) / seats.length;
-      this.addSolid(solids, "f_table_round", cx, cy - 4);
+      // The generic round table is a fallback for a bare room. Once a district
+      // art pass authors its own table on the centroid tile, drawing this one
+      // too stacks a second table over the authored one (and over continuous
+      // desk runs), so let the map win.
+      if (!this.hasAuthoredFurnitureAt(cx, cy - 4)) {
+        this.addSolid(solids, "f_table_round", cx, cy - 4);
+      }
       for (const s of seats) this.addChair(s);
     }
 
@@ -700,6 +706,14 @@ export default class WorldScene extends Phaser.Scene {
       duration: DIM_FADE_MS,
       ease: "Sine.easeInOut",
     });
+  }
+
+  /** True if the map's furniture layer already places a solid on this spot
+   *  (within one tile), meaning an authored prop occupies the space. */
+  private hasAuthoredFurnitureAt(x: number, y: number): boolean {
+    return this.furniture.some(
+      (f) => f.solid && Math.abs(f.x - x) < 16 && Math.abs(f.y - y) < 16
+    );
   }
 
   private addSolid(

@@ -101,6 +101,10 @@ def decorate(ctx, phase: str) -> None:
         # Two wings, centre aisle x=97..100 (door is 98-99), side aisles free.
         # Banks face the stage. Staggered row lengths — not one uniform grid.
         # Leave space around f_plant_big (105,28) and plaza props near y=30-34.
+        #
+        # Chair pitch is 3 tiles (48 px): lz_chair body is 16*0.8=12.8 wide, so
+        # body-to-body gap is 35.2 px (≥26). A 2-tile pitch only left ~19 px and
+        # players scraped every seat row. Sparse hall that walks > dense snag grid.
 
         # Front VIP bank (y=18) — loveseats + armchairs, shorter than the house.
         ctx.furn("f_lz_sofa_2seat", 87, 18, True)
@@ -110,72 +114,55 @@ def decorate(ctx, phase: str) -> None:
         ctx.furn("f_lz_armchair", 106, 18, True)
         ctx.furn("f_lz_sofa_2seat", 110, 18, True)
 
-        # Bank 2 (y=21)
+        # Bank 2 (y=21) — short banks of 3–4 per wing, 3-tile pitch.
         ctx.furn("f_lz_chair", 85, 21, True)
-        ctx.furn("f_lz_chair", 87, 21, True)
-        ctx.furn("f_lz_chair", 89, 21, True)
+        ctx.furn("f_lz_chair", 88, 21, True)
         ctx.furn("f_lz_chair", 91, 21, True)
-        ctx.furn("f_lz_chair", 93, 21, True)
-        ctx.furn("f_lz_chair", 95, 21, True)
-        ctx.furn("f_lz_chair", 102, 21, True)
-        ctx.furn("f_lz_chair", 104, 21, True)
+        ctx.furn("f_lz_chair", 94, 21, True)
+        ctx.furn("f_lz_chair", 103, 21, True)
         ctx.furn("f_lz_chair", 106, 21, True)
-        ctx.furn("f_lz_chair", 108, 21, True)
-        ctx.furn("f_lz_chair", 110, 21, True)
+        ctx.furn("f_lz_chair", 109, 21, True)
         ctx.furn("f_lz_chair", 112, 21, True)
 
         # Bank 3 (y=24)
         ctx.furn("f_lz_chair", 85, 24, True)
-        ctx.furn("f_lz_chair", 87, 24, True)
-        ctx.furn("f_lz_chair", 89, 24, True)
+        ctx.furn("f_lz_chair", 88, 24, True)
         ctx.furn("f_lz_chair", 91, 24, True)
-        ctx.furn("f_lz_chair", 93, 24, True)
-        ctx.furn("f_lz_chair", 95, 24, True)
-        ctx.furn("f_lz_chair", 102, 24, True)
-        ctx.furn("f_lz_chair", 104, 24, True)
+        ctx.furn("f_lz_chair", 94, 24, True)
+        ctx.furn("f_lz_chair", 103, 24, True)
         ctx.furn("f_lz_chair", 106, 24, True)
-        ctx.furn("f_lz_chair", 108, 24, True)
-        ctx.furn("f_lz_chair", 110, 24, True)
+        ctx.furn("f_lz_chair", 109, 24, True)
         ctx.furn("f_lz_chair", 112, 24, True)
 
         # Cross-aisle y=26-27. Bank 4 at y=29 — gap for plant (105,28).
         ctx.furn("f_lz_chair", 85, 29, True)
-        ctx.furn("f_lz_chair", 87, 29, True)
-        ctx.furn("f_lz_chair", 89, 29, True)
+        ctx.furn("f_lz_chair", 88, 29, True)
         ctx.furn("f_lz_chair", 91, 29, True)
-        ctx.furn("f_lz_chair", 93, 29, True)
-        ctx.furn("f_lz_chair", 95, 29, True)
+        ctx.furn("f_lz_chair", 94, 29, True)
         ctx.furn("f_lz_chair", 102, 29, True)
-        # skip 104-106 (plant)
+        # skip 105 plant — right wing as short bank east of it
         ctx.furn("f_lz_chair", 108, 29, True)
-        ctx.furn("f_lz_chair", 110, 29, True)
-        ctx.furn("f_lz_chair", 112, 29, True)
+        ctx.furn("f_lz_chair", 111, 29, True)
         ctx.furn("f_lz_chair", 114, 29, True)
 
         # Bank 5 (y=33) — clear of plaza clutter at y=30-32.
         ctx.furn("f_lz_chair", 85, 33, True)
-        ctx.furn("f_lz_chair", 87, 33, True)
-        ctx.furn("f_lz_chair", 89, 33, True)
+        ctx.furn("f_lz_chair", 88, 33, True)
         ctx.furn("f_lz_chair", 91, 33, True)
-        ctx.furn("f_lz_chair", 93, 33, True)
-        ctx.furn("f_lz_chair", 95, 33, True)
-        ctx.furn("f_lz_chair", 102, 33, True)
-        ctx.furn("f_lz_chair", 104, 33, True)
+        ctx.furn("f_lz_chair", 94, 33, True)
+        ctx.furn("f_lz_chair", 103, 33, True)
         ctx.furn("f_lz_chair", 106, 33, True)
-        ctx.furn("f_lz_chair", 108, 33, True)
-        ctx.furn("f_lz_chair", 110, 33, True)
+        ctx.furn("f_lz_chair", 109, 33, True)
         ctx.furn("f_lz_chair", 112, 33, True)
 
         # Back bank (y=37) — shorter; foyer opens below. Corner stools.
         ctx.furn("f_lz_stool", 85, 37, True)
-        ctx.furn("f_lz_chair", 87, 37, True)
-        ctx.furn("f_lz_chair", 89, 37, True)
+        ctx.furn("f_lz_chair", 88, 37, True)
         ctx.furn("f_lz_chair", 91, 37, True)
-        ctx.furn("f_lz_chair", 93, 37, True)
-        ctx.furn("f_lz_chair", 104, 37, True)
+        ctx.furn("f_lz_chair", 94, 37, True)
+        ctx.furn("f_lz_chair", 103, 37, True)
         ctx.furn("f_lz_chair", 106, 37, True)
-        ctx.furn("f_lz_chair", 108, 37, True)
-        ctx.furn("f_lz_chair", 110, 37, True)
+        ctx.furn("f_lz_chair", 109, 37, True)
         ctx.furn("f_lz_stool", 112, 37, True)
 
         # ── Foyer / south entrance ───────────────────────────────────────────

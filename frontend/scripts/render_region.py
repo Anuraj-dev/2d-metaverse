@@ -262,6 +262,27 @@ def main(argv=None):
             continue
         draws.append((cy, img, cx, cy))
 
+    # WorldScene.buildFurniture also draws a fallback round table at each room's
+    # seat centroid, unless the map already authors a solid there. Replicate it
+    # or the render lies about every meeting room.
+    if not args.no_chairs:
+        solids = [(float(o["x"]), float(o["y"]))
+                  for o in by_name.get("furniture", {}).get("objects", [])
+                  if prop(o, "solid") is True]
+        by_room = {}
+        for o in by_name.get("seats", {}).get("objects", []):
+            by_room.setdefault(prop(o, "roomId"), []).append(
+                (float(o["x"]) + float(o.get("width") or TS) / 2,
+                 float(o["y"]) + float(o.get("height") or TS) / 2))
+        for pts in by_room.values():
+            cx = sum(p[0] for p in pts) / len(pts)
+            cy = sum(p[1] for p in pts) / len(pts) - 4
+            if any(abs(sx - cx) < TS and abs(sy - cy) < TS for sx, sy in solids):
+                continue
+            img = sprite("f_table_round")
+            if img is not None:
+                draws.append((cy, img, cx, cy))
+
     if not args.no_chairs:
         for group in ("seats", "board_seats"):
             for o in by_name.get(group, {}).get("objects", []):
