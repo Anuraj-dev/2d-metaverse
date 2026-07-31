@@ -24,6 +24,8 @@ import json
 import os
 import random
 
+import campus_decor
+
 rng = random.Random(12)  # deterministic scatter — regeneration is reproducible
 
 W, H, TS = 120, 118, 16  # cols × rows × px per tile  →  1920×1888 px
@@ -274,36 +276,30 @@ make_room(2, x0=26, y0=100, x1=40, y1=109, door_x=32,
 make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
           seats=table_seats(10, 100, 26, 110, 12), door_wall="north")
 
-# ── ROOM 3 ART PASS (LimeZu proof-of-concept) ────────────────────────────────
-# One room furnished properly, to answer "does a real art pass fix the dead
-# feeling?" (docs/ux-art-audit-2026-08-01.md F1/F2/F5). Nothing structural moves:
-# the seats, roomBounds, doorZone and every wall tile authored by make_room above
-# are left exactly as they are — this pass only repaints room 3's FLOOR and hangs
-# furniture objects around the frozen geometry.
-#
-# Geometry it has to live with (all frozen):
-#   interior  x=11..25, y=101..109      door gap  x=17-18 on the north wall
-#   seats     y=103 and y=107, at x=13,15,17,19,21,23 (12 of them)
-# Walkability rules the placement below obeys (WorldScene gives a solid sprite a
-# 0.8w × 0.55h body anchored to its bottom edge, and the player body is 18×14, so
-# a lane must be ≥2 tiles wide):
-#   · rows 104 and 108 stay completely free of solid bodies — they are the aisles
-#     players approach the north and south seat rows from;
-#   · the table run (rows 105-106) leaves x=11-12 and x=24-25 clear, so both ends
-#     of the room stay connected around it;
-#   · column 18 stays clear at rows 101-103 — that is the walk down from the door.
-R3_X0, R3_Y0, R3_X1, R3_Y1 = 11, 101, 25, 109   # interior, inclusive
-
-# Floor: warm herringbone parquet wall-to-wall, a mint-tiled "rug" under the
-# meeting table, and a cream-tiled kitchenette bay in the north-east corner.
-# This is what retires FLOOR_MOSS here — the audit measured that "olive checkered
-# carpet" as a flat 2-colour block (125,104,18)/(129,108,23).
-fill_pattern(ground, R3_X0, R3_Y0, R3_X1, R3_Y1, FLOOR_CREAM)
-fill_pattern(ground, 12, 103, 24, 107, FLOOR_PARQUET)       # rug under the table
-fill_pattern(ground, 21, 101, 25, 102, FLOOR_TEAL)          # kitchenette bay
-# The door gap itself sat on bare grass (make_room only floors the interior), so
-# the threshold read as a green hole in the facade. Pave it with the room floor.
-fill_pattern(ground, 17, 100, 18, 100, FLOOR_CREAM)
+# ── DISTRICT ART PASSES (floor phase) ─────────────────────────────────────────
+# Plug-in seam: each district module in scripts/campus_decor/ owns one art pass.
+# Floor phase MUST run before the grass-variety RNG below — painting a former
+# grass tile after the scatter desyncs the seed (see campus_decor/README.md).
+# Furniture phase runs later, at the historical furniture-list insertion point.
+_decor_floor_ctx = campus_decor.build_context(
+    W=W, H=H, TS=TS,
+    ground=ground, furniture=[],
+    walls_data=walls_data, seats_objs=seats_objs, door_zones=door_zones,
+    interactables_objs=[], board_seats=[],
+    furn=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError(
+        "campus_decor: furn() is only valid in the furniture phase")),
+    fill_layer=fill, fill_pattern_layer=fill_pattern,
+    floor_patterns={
+        "FLOOR_CREAM": FLOOR_CREAM, "FLOOR_PARQUET": FLOOR_PARQUET,
+        "FLOOR_TEAL": FLOOR_TEAL, "FLOOR_SLATE": FLOOR_SLATE,
+        "FLOOR_BRICK": FLOOR_BRICK,
+    },
+    floor_gids={
+        "FLOOR": FLOOR, "FLOOR_ACC": FLOOR_ACC,
+        "FLOOR_HERR": FLOOR_HERR, "FLOOR_MOSS": FLOOR_MOSS,
+    },
+)
+campus_decor.apply_district_floors(_decor_floor_ctx)
 
 # ── ARCADE HALL (S, east of the hostel) ──────────────────────────────────────
 # A dedicated, enclosed games hall well south of the plaza and FAR from the
@@ -665,65 +661,10 @@ furn("f_clock", 95, 30, False)
 for tx, ty in [(14, 28), (14, 58), (105, 28), (105, 58)]:
     furn("f_plant_big", tx, ty, True)
 
-# Cafe — round tables + chairs, plus bar items on the west wall. PRD 25.33:
-# thinned from a packed 6×3 grid (18 tables) to 4 wider-pitched columns (12
-# tables) so the terrace reads as a relaxed lounge with walkable aisles instead
-# of a wall-to-wall canteen. Columns stay on the stone terrace (x=5-47) with the
-# side chair at col+1.
-for tx, ty in [(8,65),(8,71),(8,77),
-               (19,65),(19,71),(19,77),
-               (30,65),(30,71),(30,77),
-               (41,65),(41,71),(41,77)]:
-    furn("f_table_small", tx, ty, False)
-    furn("f_chair",       tx, ty + 1, False)
-    furn("f_chair_side",  tx + 1, ty, False)
-furn("f_vending",  2, 65, True)
-furn("f_water",    2, 69, True)
-furn("f_coffee",   2, 73, False)
-furn("f_sofa",     47, 82, True)
-furn("f_sofa_small", 50, 82, True)
-for tx, ty in [(2, 85), (52, 65)]:
-    furn("f_plant_big", tx, ty, True)
-
-# Coworking — desk pods in two rows. PRD 25.33: the SE deck was the flagged
-# "meaningless coworking clutter" (a solid 7+6 wall of identical desks). Thinned
-# to 5+4 pods at a wider pitch so there are real walkable aisles between pods and
-# the open-plan office reads intentional, not packed. Every column stays clear of
-# the x=79-80 arcade approach corridor (the full-height artery players descend
-# from spawn into the Game Arcade passes straight through this deck) — a 32px
-# desk body spans its centre tile ±1, so no desk centre sits on tiles 77-82.
-for tx, ty in [(60,65),(70,65),(84,65),(96,65),(108,65)]:
-    furn("f_desk",  tx, ty, True)
-    furn("f_chair", tx, ty + 1, False)
-for tx, ty in [(66,73),(76,73),(90,73),(102,73)]:
-    furn("f_desk2", tx, ty, True)
-    furn("f_chair", tx, ty + 1, False)
-furn("f_desk_boss",    114, 73, True)
-furn("f_chair_boss",   114, 74, False)
-furn("f_bookshelf_tall", 58, 63, True)
-furn("f_bookshelf_tall", 58, 80, True)
-for tx, ty in [(115, 63), (115, 80)]:
-    furn("f_plant_small", tx, ty, False)
-
-# Auditorium — podium, clock, stage plants, audience rows
-furn("f_table_round", 99, 10, True)
-furn("f_clock",       99,  7, False)
-for tx, ty in [(83, 2), (115, 2), (83, 42), (115, 42)]:
-    furn("f_plant_big", tx, ty, True)
-for ry in (20, 23, 26, 29, 32):
-    for rx in range(84, 116, 3):
-        furn("f_chair", rx, ry, False)
-
-# HQ lobby — welcome desk + plants by entrance. PRD 25.33: nudged one tile west
-# (54→53) so the desk body no longer clips the "Today's Agenda" whiteboard
-# interactable zone (tiles 55-56,19-20), keeping the agenda reachable.
-furn("f_desk",       53, 20, True)
-furn("f_chair",      53, 21, False)
-furn("f_plant_big",  32,  3, True)
-furn("f_plant_big",  77,  3, True)
-furn("f_bookshelf_tall", 32, 10, True)
-furn("f_bookshelf_tall", 77, 10, True)
-
+# Cafe furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# Coworking furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# Auditorium furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# HQ hall furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
 # Hostel forecourt — planters framing the residential facade (kept clear of the
 # door columns 17/32/45 and the central approach path at x=34-35).
 furn("f_plant_big",   11, 94, True)
@@ -732,49 +673,34 @@ furn("f_plant_small", 21, 95, False)
 furn("f_plant_small", 43, 95, False)
 furn("f_sofa_small",  8, 97, True)
 
-# ── ROOM 3 furnishing (LimeZu proof-of-concept; see the floor pass above) ─────
-# A hostel common room / study lounge: the 12-seat table stays the focal point and
-# everything else dresses the walls around it. Sprites are cut from the LimeZu
-# interior sheet by scripts/gen_limezu_sprites.py (source tile coords named there).
-# Placement notes (see the walkability rules above the floor pass):
-#   · wall-hung art is emitted BEFORE the furniture that leans on it — equal
-#     depth (both at row 101) resolves by insertion order, so the sofa correctly
-#     overlaps the board/window behind it;
-#   · solids all sit on row 101 (body → rows 101-102) or row 109 (body → rows
-#     109-110), which keeps the seat-approach aisles at rows 104 and 108 open.
-# North wall, west of the door — the lounge corner.
-furn("f_lz_board",     11, 101, False)  # wall board, above the couch
-furn("f_lz_window",    13, 101, False)  # window, half-hidden behind the couch
-furn("f_lz_sofa",      11, 102, True)   # 3-seat couch facing into the room
-furn("f_lz_bookshelf", 15, 101, True)
-furn("f_lz_side_table", 11, 104, False)  # small round table beside the couch
-# North wall, east of the door — the kitchenette.
-furn("f_lz_worldmap",    20, 101, False)
-furn("f_lz_counter",     22, 101, True)
-furn("f_lz_fridge",      24, 101, True)
-# The long study table between the two seat rows: 1-tile modules butt together
-# into one continuous run from the westmost to the eastmost seat column.
-_R3_TABLE = ["f_lz_table", "f_lz_table_books", "f_lz_table", "f_lz_table_cup"]
-for _i, _tx in enumerate(range(13, 24)):
-    furn(_R3_TABLE[_i % len(_R3_TABLE)], _tx, 105, True)
-# South wall — greenery, a reading lamp and a noticeboard.
-furn("f_lz_lamp",       11, 109, True)
-furn("f_lz_plant",      13, 109, True)
-furn("f_lz_sideboard",  16, 109, True)
-furn("f_lz_palm",       19, 109, True)
-furn("f_lz_shelf_jars", 22, 109, True)
-furn("f_lz_plant_small", 25, 109, True)
+# ── DISTRICT ART PASSES (furniture phase) ─────────────────────────────────────
+# Same registry as the floor phase above; insertion order here preserves the
+# historical furniture id sequence (20000 + len at append time).
+_decor_furn_ctx = campus_decor.build_context(
+    W=W, H=H, TS=TS,
+    ground=ground, furniture=furniture,
+    walls_data=walls_data, seats_objs=seats_objs, door_zones=door_zones,
+    interactables_objs=interactables_objs, board_seats=[],
+    furn=furn, fill_layer=fill, fill_pattern_layer=fill_pattern,
+    floor_patterns={
+        "FLOOR_CREAM": FLOOR_CREAM, "FLOOR_PARQUET": FLOOR_PARQUET,
+        "FLOOR_TEAL": FLOOR_TEAL, "FLOOR_SLATE": FLOOR_SLATE,
+        "FLOOR_BRICK": FLOOR_BRICK,
+    },
+    floor_gids={
+        "FLOOR": FLOOR, "FLOOR_ACC": FLOOR_ACC,
+        "FLOOR_HERR": FLOOR_HERR, "FLOOR_MOSS": FLOOR_MOSS,
+    },
+)
+campus_decor.apply_district_furniture(_decor_furn_ctx)
 
 # Arcade Room (south) — solid cabinets lining the north wall; each pairs with an
 # arcade interactable zone at the same tile (see interactables_objs). Plus a
 # little themed dressing so the hall doesn't read empty.
 furn("f_arcade_snake",  71, 96, True)
 furn("f_arcade_flappy", 76, 96, True)
-furn("f_vending",       68, 96, True)   # snack machine by the entrance wall
-furn("f_plant_big",     68, 107, True)  # corner greenery
-furn("f_plant_big",     86, 107, True)
-furn("f_sofa",          80, 106, True)  # a lounge bench facing the cabinets
-furn("f_sofa_small",    83, 106, True)
+# Arcade dressing: re-authored in scripts/campus_decor/ (LimeZu art pass).
+
 
 # ── Board-game tables (PRD 11 phase 2; relocated into the arcade, PRD 22) ──
 # Two two-seat tables. tableId + game must match the shared BOARD_TABLES
