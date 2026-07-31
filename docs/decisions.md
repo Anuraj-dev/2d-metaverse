@@ -99,3 +99,21 @@
 
 ## 2026-08-01 — Flappy difficulty: one continuous Dino-style ramp, no difficulty menu (PR #171)
 **Why:** Raja's friend found the fixed tuning too hard while Raja scored 14–20 comfortably; a three-tier easy/normal/hard plan (mirroring Snake's) was drafted, then Raja pivoted to Chrome-Dino principles after a scout pulled Chromium's actual constants (single monotonic speed ramp, gap scales with speed, cap = skill plateau, near-failure-proof opening). Result: `t = min(1, score/RAMP_END_SCORE)` lerps speed 160→196, gap 245→158, spacing 330→272; the plateau is exactly the old tuning so prior high scores stay meaningful; physics (gravity/flap) never change so the bird feels identical all run. Scoring is 10/pipe (Dino-style motivation; ramp completes at 400). One leaderboard per game stays valid because everyone plays the same curve — the tier plan's score-comparability problem disappears. Alternatives rejected: discrete tiers (leaderboard ambiguity, menu friction), tuning physics per tier (changes feel, breaks muscle memory).
+
+## 2026-08-01 — Campus art lives in per-district `campus_decor/` modules, not in `gen_campus.py`
+**Why:** furnishing 9 districts meant ~700 new prop placements in a 950-line sequential generator that
+one agent at a time could edit. Splitting each district into its own module behind a tiny two-phase
+`DecorContext` (`furn` + `fill_pattern` + four floor blocks) let 8 agents work concurrently with zero
+shared-file contention, and keeps `gen_campus.py` as the structural author (walls, rooms, seats, doors,
+interactables) so frozen geometry stays in one place. Rejected: editing the generator directly (serial,
+and every agent would conflict), and a data-file format for props (a DSL to build and debug for no gain
+over plain `ctx.furn(...)` calls). The two phases are load-bearing: the floor pass must run before the
+grass-variety RNG scatter or regeneration stops being deterministic.
+
+## 2026-08-01 — Placement legality is checked centrally, never by the agent that places props
+**Why:** in the first wave, 5 of 8 district agents each invented their own approximation of the
+collision-body rule, validated against it, and were confident and wrong in 5 different ways — 79 bad
+props. The fix was not a better brief but an executable oracle: given the exact violation list plus a
+runnable checker, all 5 cleared to zero in one round. Consequence: `DecorContext` deliberately exposes
+no `is_seat`/`is_wall`-style predicates (they also silently returned wrong answers, since the backing
+lists are empty during the floor phase). `frontend/src/game/maps.test.ts` is the single authority.
