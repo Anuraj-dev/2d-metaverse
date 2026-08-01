@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ARCADE_GAMES } from "@metaverse/shared";
 import {
   parseInteractables,
   findNear,
@@ -141,7 +142,7 @@ describe("arcadeOpenPayload (fail-closed scene gate)", () => {
   }
 
   it("returns the open payload for every canonical game id", () => {
-    for (const game of ["snake", "flappy"] as const) {
+    for (const game of ARCADE_GAMES) {
       expect(arcadeOpenPayload(cabinet({ game }))).toEqual({
         game,
         label: "Cabinet",

@@ -15,6 +15,7 @@ import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
+import MergeDropGame from "./MergeDropGame";
 import SnakeOptions from "./SnakeOptions";
 import {
   exitFullscreen,
@@ -29,6 +30,7 @@ import "./arcade.css";
 const GAMES: Record<ArcadeGame, ComponentType<ArcadeGameProps>> = {
   snake: SnakeGame,
   flappy: FlappyGame,
+  "merge-drop": MergeDropGame,
 };
 
 /** Fade-out budget before the parent unmounts us (matches the CSS transition). */

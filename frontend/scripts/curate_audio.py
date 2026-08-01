@@ -152,7 +152,11 @@ def synth_arcade() -> None:
     Every meaningful beat gets its own cue. The common cabinet/score/death,
     near-miss, and best cues use the square-wave family; Flappy's frequently
     repeated wing/crash pair uses the softer sine/noise treatment from the
-    current arcade renderer.
+    current arcade renderer. `arcade_merge` and `arcade_nova` belong to the
+    Stellar Forge merge-drop cabinet: the merge chime is deliberately short and
+    mid-register because the mixer REPITCHES it per tier
+    (soundMixer.mergePitchRate), so one clip covers the whole evolution ladder
+    instead of ten near-identical files.
     """
     def blip(name: str, *segs: tuple[float, int], fade: float, peak: float = -3.0) -> str:
         parts = []
@@ -192,6 +196,13 @@ def synth_arcade() -> None:
     encode(
         blip("arcade_best", (0.08, 659), (0.08, 784), (0.08, 988), (0.20, 1319), fade=0.42),
         "arcade_best",
+    )
+    # Stellar Forge merge chime (repitched per tier by soundMixer.mergePitchRate)
+    # and supernova fanfare.
+    encode(blip("arcade_merge", (0.045, 659), (0.075, 988), fade=0.13), "arcade_merge")
+    encode(
+        blip("arcade_nova", (0.08, 392), (0.07, 523), (0.07, 784), (0.09, 1046), (0.26, 1568), fade=0.62),
+        "arcade_nova",
     )
 
     # Wingbeat: a short downward blip with a breath of air under it. Quiet by

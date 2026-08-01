@@ -3,6 +3,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { initReducedMotion } from "../reducedMotionBridge";
 import { setSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
+import MergeDropGame from "./MergeDropGame";
 import { initFlappy } from "../../game/arcade/flappy";
 import { createFx } from "./flappy/fx";
 import { renderFlappy } from "./flappy/render";
@@ -89,5 +90,85 @@ describe("arcade canvas reduced motion", () => {
     translate.mockClear();
     renderFlappy(ctx, initFlappy(1), fx, [], 1, true);
     expect(translate.mock.calls[0]).not.toEqual([0, 0]);
+  });
+
+  it("suppresses MergeDrop canvas shake live when the shake prop turns off", () => {
+    const ctx = canvasContext();
+    const setTransform = vi.fn();
+    (ctx as unknown as { setTransform: typeof setTransform }).setTransform = setTransform;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
+
+    const { rerender } = render(
+      <MergeDropGame
+        seed={1}
+        paused={false}
+        shake={true}
+        onScore={vi.fn()}
+        onGameOver={vi.fn()}
+      />
+    );
+
+    // Seed residual shake energy via a merge-like pulse: advance a few ticks
+    // with the preference on, then flip it off — the live effect must zero the
+    // offset on the next paint without remounting the cabinet.
+    act(() => {
+      vi.advanceTimersByTime(32);
+    });
+    setTransform.mockClear();
+
+    rerender(
+      <MergeDropGame
+        seed={1}
+        paused={false}
+        shake={false}
+        onScore={vi.fn()}
+        onGameOver={vi.fn()}
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+
+    // Every paint after the toggle must use a zero translation offset.
+    // setTransform(S, 0, 0, S, ox*S, oy*S) — ox/oy must be 0.
+    for (const call of setTransform.mock.calls) {
+      expect(call[4]).toBe(0);
+      expect(call[5]).toBe(0);
+    }
+    expect(setTransform).toHaveBeenCalled();
+  });
+
+  it("suppresses MergeDrop canvas shake live when reduced motion turns on", () => {
+    const ctx = canvasContext();
+    const setTransform = vi.fn();
+    (ctx as unknown as { setTransform: typeof setTransform }).setTransform = setTransform;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
+
+    render(
+      <MergeDropGame
+        seed={1}
+        paused={false}
+        shake={true}
+        onScore={vi.fn()}
+        onGameOver={vi.fn()}
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(32);
+    });
+    setTransform.mockClear();
+
+    act(() => {
+      setSettings({ reducedMotion: "on" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(16);
+    });
+
+    for (const call of setTransform.mock.calls) {
+      expect(call[4]).toBe(0);
+      expect(call[5]).toBe(0);
+    }
+    expect(setTransform).toHaveBeenCalled();
   });
 });

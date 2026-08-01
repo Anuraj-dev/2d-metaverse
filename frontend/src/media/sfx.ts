@@ -53,6 +53,9 @@ const CLIPS = [
   "arcade_snake_over",
   "arcade_highscore",
   "arcade_milestone",
+  // Arcade 2.0 Stellar Forge merge-drop cabinet.
+  "arcade_merge",
+  "arcade_nova",
   "board_place",
   "board_win",
 ] as const;
@@ -85,18 +88,26 @@ export function preloadSfx(): void {
 /**
  * Play a one-shot clip on a channel. `notify` clips obey the `notifySound`
  * toggle; everything else obeys the channel gain (which folds in master mute +
- * per-channel mute). Cloned per call so rapid repeats overlap.
+ * per-channel mute). Cloned per call so rapid repeats overlap. `rate` is an
+ * optional playback rate (the mixer's `cueRate` decides it — e.g. the merge
+ * chime climbs with the tier); the value is clamped by the mixer, not here.
  */
 export function playCue(
   clip: string,
   channel: Channel = "sfx",
-  opts: { notify?: boolean } = {}
+  opts: { notify?: boolean; rate?: number } = {}
 ): void {
   if (opts.notify && !getSettings().notifySound) return;
   const vol = gainFor(channel);
   if (vol <= 0) return;
   const node = el(clip).cloneNode(true) as HTMLAudioElement;
   node.volume = vol;
+  if (opts.rate !== undefined && opts.rate !== 1) {
+    // Browsers default `preservesPitch` to true, which time-stretches instead of
+    // transposing — the opposite of what a tier-pitched cue wants.
+    node.preservesPitch = false;
+    node.playbackRate = opts.rate;
+  }
   void node.play().catch(() => {
     /* autoplay blocked until first gesture — ignore */
   });

@@ -565,3 +565,22 @@ describe("ArcadeOverlay chrome", () => {
     expect(getSettings().muteArcade).toBe(false);
   });
 });
+
+describe("ArcadeOverlay merge-drop registry", () => {
+  // Arcade 2.0: the merge-drop cabinet is registered like any other game — the
+  // overlay resolves it from the shared registry and its renderer mounts on a
+  // canvas, with its own leaderboard fetched for the same REST resource.
+  it("mounts the merge-drop cabinet from the shared registry", async () => {
+    net.fetchLeaderboard.mockResolvedValue({
+      game: "merge-drop",
+      top: [{ username: "ada", score: 42 }],
+      best: 17,
+    });
+    render(<ArcadeOverlay game="merge-drop" label="Stellar Forge" onClose={() => {}} />);
+    expect(await screen.findByText("Your best")).toBeTruthy();
+    expect(screen.getByText("Your best").nextElementSibling?.textContent).toBe("17");
+    expect(net.fetchLeaderboard).toHaveBeenCalledWith("merge-drop");
+    expect(document.querySelector("canvas.arcade-canvas")).toBeTruthy();
+    expect(screen.getByLabelText("Stellar Forge arcade")).toBeTruthy();
+  });
+});
