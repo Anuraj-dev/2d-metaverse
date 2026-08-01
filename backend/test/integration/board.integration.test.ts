@@ -190,19 +190,32 @@ describe("board tables — socket seam", () => {
     await startMatch("c4-1", a, b);
 
     // Seat 0 stacks column 0 four times; seat 1 answers in column 1.
-    const script: [Player, number][] = [
-      [a, 0],
-      [b, 1],
-      [a, 0],
-      [b, 1],
-      [a, 0],
-      [b, 1],
+    // Wait on the disc landing (not merely phase==="active") so a late start-
+    // match snapshot cannot satisfy the waiter before the move is applied.
+    const discsInCol = (board: readonly number[], col: number, player: 1 | 2): number => {
+      let n = 0;
+      for (let row = 0; row < 6; row += 1) {
+        if (board[row * 7 + col] === player) n += 1;
+      }
+      return n;
+    };
+    const script: [Player, number, 1 | 2, number][] = [
+      [a, 0, 1, 1],
+      [b, 1, 2, 1],
+      [a, 0, 1, 2],
+      [b, 1, 2, 2],
+      [a, 0, 1, 3],
+      [b, 1, 2, 3],
     ];
-    for (const [player, col] of script) {
-      const seen = onceMatching<BoardUpdatePayload>(
-        player.socket,
-        "board-update",
-        (u) => u.tableId === "c4-1" && u.phase === "active",
+    for (const [player, col, mark, count] of script) {
+      const seen = board(
+        player,
+        "c4-1",
+        (u) =>
+          u.phase === "active" &&
+          u.state !== null &&
+          u.state !== undefined &&
+          discsInCol(u.state.board, col, mark) === count,
       );
       player.socket.emit("board-move", { tableId: "c4-1", index: col });
       await seen;

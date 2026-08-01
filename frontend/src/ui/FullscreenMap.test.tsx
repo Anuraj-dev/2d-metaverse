@@ -24,6 +24,8 @@ describe("FullscreenMap", () => {
   it("renders a dialog with a close control", () => {
     render(<FullscreenMap info={info} dots={dots} onClose={() => {}} />);
     expect(screen.getByRole("dialog", { name: "Campus map" })).toBeTruthy();
+    expect(screen.getByText("Players")).toBeTruthy();
+    expect(screen.getByText("Explore Hyprverse Campus!")).toBeTruthy();
     expect(screen.getByLabelText("Close map")).toBeTruthy();
   });
 

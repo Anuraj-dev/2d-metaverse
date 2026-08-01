@@ -71,6 +71,9 @@ describe("maps registry", () => {
     expect(keys.length).toBeGreaterThanOrEqual(2);
     expect(keys).toContain("floors_walls");
     expect(keys).toContain("exterior");
+    // LimeZu room-builder floor/rug tiles (hostel room 3 art pass). Registered
+    // here so BootScene preloads it and WorldScene can addTilesetImage it by name.
+    expect(keys).toContain("room_builder");
   });
 
   it("every tileset key maps to a file", () => {
@@ -695,6 +698,49 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
     expect(solids.length).toBeGreaterThan(0);
   });
 
+  it("keeps Cauvery's shared hall open between two mirrored computer banks", () => {
+    const inSharedHall = (o: FurnObject): boolean => {
+      const tx = (o.x ?? 0) / TS;
+      const ty = (o.y ?? 0) / TS;
+      return tx >= 31 && tx <= 78 && ((ty >= 12 && ty <= 23) || (tx >= 72 && ty <= 11));
+    };
+    const shared = objects("furniture").filter(inSharedHall);
+    const centerClutter = shared.filter((o) => {
+      const tx = (o.x ?? 0) / TS;
+      return tx > 35 && tx < 74 && o.name !== "f_lz_whiteboard";
+    });
+    expect(centerClutter.map((o) => `${o.name}@${o.x},${o.y}`)).toHaveLength(0);
+
+    const left = shared.filter((o) => (o.x ?? 0) / TS <= 35);
+    const right = shared.filter((o) => (o.x ?? 0) / TS >= 74);
+    const rightKeys = new Set(
+      right.map((o) => `${(o.x ?? 0) / TS},${(o.y ?? 0) / TS}:${o.name}`),
+    );
+    expect(left).toHaveLength(6);
+    expect(right).toHaveLength(6);
+    for (const o of left) {
+      const tx = (o.x ?? 0) / TS;
+      const ty = (o.y ?? 0) / TS;
+      expect(rightKeys).toContain(`${109 - tx},${ty}:${o.name}`);
+    }
+  });
+
+  it("keeps Cauvery rooms free of auxiliary corner furniture", () => {
+    const removed = new Set([
+      "f_lz_armchair",
+      "f_lz_side_table",
+      "f_lz_floor_lamp",
+      "f_lz_plant_small",
+      "f_lz_filing",
+    ]);
+    const bad = objects("furniture").filter((o) => {
+      const tx = (o.x ?? 0) / TS;
+      const ty = (o.y ?? 0) / TS;
+      return tx >= 31 && tx <= 71 && ty >= 2 && ty <= 11 && removed.has(o.name);
+    });
+    expect(bad.map((o) => `${o.name}@${o.x},${o.y}`)).toHaveLength(0);
+  });
+
   it("no solid furniture body sits on a door threshold", () => {
     const doors = new Set<string>();
     for (const d of objects("doorZones")) for (const t of rectTiles(d)) doors.add(t);
@@ -802,5 +848,107 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
       (o) => /^f_desk/.test(o.name) && (o.x ?? 0) >= 57 * TS && (o.y ?? 0) >= 62 * TS,
     );
     expect(coworkDesks.length).toBeLessThanOrEqual(10);
+  });
+});
+
+describe("auditorium speaker station", () => {
+  interface ObjectDef {
+    name: string;
+    x?: number;
+    y?: number;
+    properties?: { name: string; value: unknown }[];
+  }
+  interface ObjectLayer {
+    name: string;
+    objects?: ObjectDef[];
+  }
+  interface CampusMap {
+    layers: ObjectLayer[];
+  }
+  const objects = (layerName: string): ObjectDef[] => {
+    const map = loadMap("campus") as CampusMap;
+    return map.layers.find((layer) => layer.name === layerName)?.objects ?? [];
+  };
+  const prop = (object: ObjectDef, name: string) =>
+    object.properties?.find((property) => property.name === name)?.value;
+
+  it("keeps the presenter platform prop-free and without an invisible sit target", () => {
+    // No chair/lectern on the platform and no ghost sit that would mid-air snap.
+    const seat = objects("stage").find((object) => prop(object, "zoneType") === "presenterSeat");
+    expect(seat).toBeUndefined();
+
+    const furniture = objects("furniture");
+    const inPresenter = furniture.filter((object) => {
+      if (object.x === undefined || object.y === undefined) return false;
+      const tx = Math.floor(object.x / 16);
+      const ty = Math.floor(object.y / 16);
+      return tx >= 90 && tx <= 110 && ty >= 2 && ty <= 15;
+    });
+    expect(inPresenter, `props inside presenter zone: ${inPresenter.map((o) => o.name).join(", ")}`).toHaveLength(0);
+  });
+});
+
+// A prop placed in the map but never preloaded by BootScene renders as a green
+// missing-texture box in game — and the offline render harness reads the PNGs
+// directly, so it looks perfectly fine there. Only this guard catches it.
+describe("furniture texture registration", () => {
+  const BOOT = resolve(__dirname, "./scenes/BootScene.ts");
+  const FURN_DIR = resolve(__dirname, "../../public/assets/furniture");
+
+  const preloadedKeys = (): Set<string> => {
+    const src = readFileSync(BOOT, "utf-8");
+    const block = /const furniture[^=]*=\s*\[([\s\S]*?)\];/.exec(src);
+    if (!block?.[1]) throw new Error("BootScene furniture key list not found");
+    return new Set([...block[1].matchAll(/"([a-z0-9_-]+)"/g)].map((m) => `f_${m[1] as string}`));
+  };
+
+  interface FurnitureObject {
+    properties?: { name: string; value: unknown }[];
+  }
+  interface FurnitureLayer {
+    name: string;
+    objects?: FurnitureObject[];
+  }
+  interface FurnitureMap {
+    layers: FurnitureLayer[];
+  }
+  const mapKeys = (): string[] => {
+    const json = loadMap(DEFAULT_MAP) as FurnitureMap;
+    const layer = json.layers.find((l) => l.name === "furniture");
+    return (layer?.objects ?? []).map(
+      (o) => String(o.properties?.find((p) => p.name === "key")?.value ?? "")
+    );
+  };
+
+  it("every furniture key used by the map is preloaded by BootScene", () => {
+    const loaded = preloadedKeys();
+    const missing = [...new Set(mapKeys())].filter((k) => !loaded.has(k));
+    expect(missing, `keys placed but not preloaded: ${missing.join(", ")}`).toHaveLength(0);
+  });
+
+  it("every furniture key preloaded by BootScene has a PNG on disk", () => {
+    const missing = [...preloadedKeys()].filter(
+      (k) => !existsSync(resolve(FURN_DIR, `${k.slice(2)}.png`))
+    );
+    expect(missing, `preloaded with no PNG: ${missing.join(", ")}`).toHaveLength(0);
+  });
+
+  // WorldScene draws a few sprites the map never names — the fallback room table
+  // and the seat chairs — so trimming the preload list down to "what the map
+  // places" silently breaks them. Guard the code-side keys too.
+  it("every furniture key WorldScene names directly is preloaded by BootScene", () => {
+    const scene = readFileSync(resolve(__dirname, "./scenes/WorldScene.ts"), "utf-8");
+    const named = new Set([...scene.matchAll(/"(f_[a-z0-9_]+)"/g)].map((m) => m[1] as string));
+    const loaded = preloadedKeys();
+    const missing = [...named].filter((k) => !loaded.has(k));
+    expect(missing, `drawn by WorldScene but not preloaded: ${missing.join(", ")}`).toHaveLength(0);
+  });
+
+  it("renders private-room and board-table seats with the padded LimeZu armchair family", () => {
+    const scene = readFileSync(resolve(__dirname, "./scenes/WorldScene.ts"), "utf-8");
+    expect(scene.match(/this\.addChair\(s, "armchair"\)/g)).toHaveLength(2);
+    expect(scene).not.toContain('this.addChair(s, "legacy")');
+    expect(scene).toContain('family === "armchair" ? "f_lz_armchair" : "f_chair"');
+    expect(scene).toContain('family === "armchair" ? "f_lz_armchair_side" : "f_chair_side"');
   });
 });

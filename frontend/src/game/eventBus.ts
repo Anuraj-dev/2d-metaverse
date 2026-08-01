@@ -48,7 +48,10 @@ class EventBus {
  *  'room-left'{roomId} | 'knock-approved' | 'knock-denied' | 'admin-promoted' |
  *  'world-info'{width,height,rooms,areas,terrain} |
  *  Board tables (PRD 11 p2): 'near-board-seat'{tableId,seat,game,label,occupied} | 'leave-board-seat' |
- *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-move' | 'board-win'
+ *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-invalid' |
+ *  the per-viewer sound cues decided by game/boardSound.ts: 'board-offer' |
+ *  'board-match-start' | 'board-place' | 'board-place-far' | 'board-win' |
+ *  'board-lose' | 'board-draw'
  *  Arcade (see ArcadeBusEvent): 'open-arcade' | 'close-arcade' | 'arcade-point' | 'arcade-over' |
  *  'arcade-flap' | 'arcade-hit' | 'arcade-eat' | 'arcade-bonus' | 'arcade-milestone' |
  *  'arcade-highscore' | 'arcade-snake-over' | 'arcade-drop' | 'arcade-merge' | 'arcade-nova' (sound mixer maps these; games stay audio-agnostic)

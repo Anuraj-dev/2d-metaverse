@@ -1,5 +1,15 @@
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Lock, MessageSquare, ChevronDown, Flag, VolumeX, Volume2, Ban, ShieldOff } from "lucide-react";
+import {
+  Lock,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  Flag,
+  VolumeX,
+  Volume2,
+  Ban,
+  ShieldOff,
+} from "lucide-react";
 import {
   LIMITS,
   SERVER_EVENTS,
@@ -28,6 +38,12 @@ import {
   whisperNameToken,
   type CompletionState,
 } from "../game/whisperComplete";
+import {
+  CHAT_HELP,
+  commandInsertion,
+  commandSuggestions,
+  type ChatCommand,
+} from "../game/chatCommands";
 
 /** A line in the transcript. Whispers and system notices are always shown
  *  regardless of the active channel; world/room chat is filtered by tab. */
@@ -54,16 +70,7 @@ const WHISPER_RE = /^\/(?:w|whisper|msg|tell)\s+(\S+)\s+([\s\S]+)$/i;
 const REPLY_RE = /^\/r(?:eply)?\s+([\s\S]+)$/i;
 const ALL_RE = /^\/all\s+([\s\S]+)$/i;
 const ROOM_RE = /^\/room\s+([\s\S]+)$/i;
-
-const HELP: string[] = [
-  "Commands:",
-  "/w <name> <msg> — whisper a player (Tab completes names)",
-  "/r <msg> — reply to your last whisper",
-  "/all <msg> — send to the whole world",
-  "/room <msg> — send to your private area",
-  "/help — show this list",
-  "Enter or T focuses chat · Esc returns to the game",
-];
+const MUTE_RE = /^\/(mute|unmute)\s+(\S+)$/i;
 
 function isTypingElsewhere(): boolean {
   const el = document.activeElement as HTMLElement | null;
@@ -97,6 +104,8 @@ export default function ChatBox() {
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   // Whether the mute/block management list is open (PRD 25.13).
   const [showMod, setShowMod] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const [commandsDismissed, setCommandsDismissed] = useState(false);
   // Re-render whenever the local mute/block sets change (session store).
   const [modTick, bumpModeration] = useReducer((n: number) => n + 1, 0);
 
@@ -260,7 +269,23 @@ export default function ChatBox() {
 
     if (t.startsWith("/")) {
       if (/^\/help\b/i.test(t)) {
-        for (const line of HELP) push({ kind: "sys", text: line });
+        for (const line of CHAT_HELP) push({ kind: "sys", text: line });
+        return;
+      }
+      if (/^\/map$/i.test(t)) {
+        bus.emit("show-map");
+        return;
+      }
+      const mute = t.match(MUTE_RE);
+      if (mute) {
+        const target = resolvePlayer(mute[2] ?? "");
+        if (!target) {
+          push({ kind: "sys", text: `No player named "${mute[2] ?? ""}" is online.` });
+          return;
+        }
+        const shouldMute = mute[1]?.toLowerCase() === "mute";
+        if (localModeration.isMuted(target.id) !== shouldMute) toggleMute(target.id);
+        else push({ kind: "sys", text: `${target.name} is already ${shouldMute ? "muted" : "unmuted"}.` });
         return;
       }
       const w = t.match(WHISPER_RE);
@@ -299,6 +324,7 @@ export default function ChatBox() {
     handleSend(text);
     setText("");
     completeRef.current = null;
+    setCommandsDismissed(false);
   };
 
   // Tab-completion for whisper targets (cycles through matches). Returns whether
@@ -313,9 +339,45 @@ export default function ChatBox() {
     return true;
   };
 
+  const commands = useMemo(
+    () => (commandsDismissed ? [] : commandSuggestions(text)),
+    [commandsDismissed, text],
+  );
+
+  // Keep the highlight inside the filtered list (e.g. ArrowUp to last, then type).
+  // Derived during render — avoids a setState-in-effect lint violation.
+  const safeCommandIndex =
+    commands.length === 0 ? 0 : Math.min(commandIndex, commands.length - 1);
+
+  const chooseCommand = (command: ChatCommand) => {
+    setText(commandInsertion(command));
+    setCommandsDismissed(true);
+    setCommandIndex(0);
+    completeRef.current = null;
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (commands.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        setCommandIndex((index) => (index + delta + commands.length) % commands.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const command = commands[safeCommandIndex];
+        if (command) chooseCommand(command);
+        return;
+      }
+    }
     if (e.key === "Escape") {
       e.preventDefault();
+      if (commands.length > 0) {
+        setCommandsDismissed(true);
+        return;
+      }
       inputRef.current?.blur(); // hand movement keys back to the game
     } else if (e.key === "Tab") {
       // Only intercept Tab for a real whisper-name completion; otherwise let it
@@ -378,7 +440,7 @@ export default function ChatBox() {
               className="mc-report-btn"
               title={localModeration.isMuted(e.id) ? `Unmute ${e.name}` : `Mute ${e.name} (this session)`}
               aria-label={localModeration.isMuted(e.id) ? `Unmute ${e.name}` : `Mute ${e.name}`}
-              onClick={() => toggleMute(e.id, e.name)}
+              onClick={() => toggleMute(e.id)}
             >
               {localModeration.isMuted(e.id) ? (
                 <Volume2 size={12} aria-hidden="true" />
@@ -415,24 +477,22 @@ export default function ChatBox() {
   // ---- local mute + persistent block (PRD 25.13) ----
   const nameFor = (id: string): string => players.find((p) => p.id === id)?.name ?? id;
 
-  const toggleMute = (id: string, name: string) => {
+  const toggleMute = (id: string) => {
     const nowMuted = localModeration.toggleMute(id);
-    push({
-      kind: "sys",
-      text: nowMuted
-        ? `Muted ${name} for this session — you won't see their chat or hear them.`
-        : `Unmuted ${name}.`,
-    });
+    if (!nowMuted && localModeration.mutedIds().length === 0 && localModeration.blockedIds().length === 0) {
+      setShowMod(false);
+    }
   };
 
   const doBlock = async (id: string, name: string) => {
     // Optimistically mute their media/speaking locally; roll back if the server rejects.
     localModeration.addBlocked(id);
     const result = await blockUser(id);
-    if (result.ok) {
-      push({ kind: "sys", text: `Blocked ${name}. Neither of you will see the other's messages.` });
-    } else {
+    if (!result.ok) {
       localModeration.removeBlocked(id);
+      if (localModeration.mutedIds().length === 0 && localModeration.blockedIds().length === 0) {
+        setShowMod(false);
+      }
       push({ kind: "sys", text: `Couldn't block ${name} — please try again.` });
     }
   };
@@ -441,7 +501,9 @@ export default function ChatBox() {
     const result = await unblockUser(id);
     if (result.ok) {
       localModeration.removeBlocked(id);
-      push({ kind: "sys", text: `Unblocked ${name} — future messages will come through again.` });
+      if (localModeration.mutedIds().length === 0 && localModeration.blockedIds().length === 0) {
+        setShowMod(false);
+      }
     } else {
       push({ kind: "sys", text: `Couldn't unblock ${name} — please try again.` });
     }
@@ -449,6 +511,7 @@ export default function ChatBox() {
 
   const mutedList = useMemo(() => localModeration.mutedIds(), [modTick]);
   const blockedList = useMemo(() => localModeration.blockedIds(), [modTick]);
+  const hasModeratedPlayers = mutedList.length > 0 || blockedList.length > 0;
 
   const sendReport = async (target: ReportTarget, category: ReportCategory, note: string) => {
     const result = await submitReport(target.messageId, category, note || undefined);
@@ -479,13 +542,18 @@ export default function ChatBox() {
   return (
     <div className="mc-chat">
       <div className="mc-tabs">
-        <button
-          type="button"
-          className={panel.tab === "all" ? "active" : ""}
-          onClick={() => selectTab("all")}
-        >
-          All
-        </button>
+        <span className="mc-chat-title">
+          <MessageSquare size={15} aria-hidden="true" /> Chat
+        </span>
+        {panel.roomAvailable && (
+          <button
+            type="button"
+            className={panel.tab === "all" ? "active" : ""}
+            onClick={() => selectTab("all")}
+          >
+            All
+          </button>
+        )}
         {panel.roomAvailable && (
           <button
             type="button"
@@ -496,19 +564,19 @@ export default function ChatBox() {
             <Lock size={12} aria-hidden="true" /> {roomName ?? "Room"}
           </button>
         )}
-        <button
-          type="button"
-          className={`mc-mod-toggle ${showMod ? "active" : ""}`}
-          onClick={() => setShowMod((v) => !v)}
-          aria-pressed={showMod}
-          title="Muted & blocked players"
-          aria-label="Muted and blocked players"
-        >
-          <ShieldOff size={14} aria-hidden="true" />
-          {(mutedList.length > 0 || blockedList.length > 0) && (
+        {hasModeratedPlayers && (
+          <button
+            type="button"
+            className={`mc-mod-toggle ${showMod ? "active" : ""}`}
+            onClick={() => setShowMod((v) => !v)}
+            aria-pressed={showMod}
+            title={showMod ? "Hide muted and blocked players" : "Show muted and blocked players"}
+            aria-label="Muted and blocked players"
+          >
+            <ShieldOff size={14} aria-hidden="true" />
             <span className="mc-mod-count">{mutedList.length + blockedList.length}</span>
-          )}
-        </button>
+          </button>
+        )}
         <button
           type="button"
           className="mc-collapse"
@@ -519,33 +587,45 @@ export default function ChatBox() {
         </button>
       </div>
 
-      {showMod && (
+      {showMod && hasModeratedPlayers && (
         <div className="mc-mod-panel">
-          <div className="mc-mod-section-title">Muted (this session)</div>
-          {mutedList.length === 0 ? (
-            <div className="mc-mod-empty">No one muted.</div>
-          ) : (
-            mutedList.map((id) => (
+          <div className="mc-mod-panel-heading">
+            <span>Muted &amp; blocked</span>
+            <button
+              type="button"
+              className="mc-mod-panel-close"
+              onClick={() => setShowMod(false)}
+              aria-label="Collapse muted and blocked panel"
+              title="Hide"
+            >
+              <ChevronUp size={14} aria-hidden="true" />
+            </button>
+          </div>
+          {mutedList.length > 0 && (
+            <div className="mc-mod-section">
+              <div className="mc-mod-section-title">Muted (this session)</div>
+              {mutedList.map((id) => (
               <div key={`m-${id}`} className="mc-mod-row">
                 <span className="mc-mod-name">{nameFor(id)}</span>
-                <button type="button" className="mc-mod-undo" onClick={() => toggleMute(id, nameFor(id))}>
+                <button type="button" className="mc-mod-undo" onClick={() => toggleMute(id)}>
                   Unmute
                 </button>
               </div>
-            ))
+              ))}
+            </div>
           )}
-          <div className="mc-mod-section-title">Blocked</div>
-          {blockedList.length === 0 ? (
-            <div className="mc-mod-empty">No one blocked.</div>
-          ) : (
-            blockedList.map((id) => (
+          {blockedList.length > 0 && (
+            <div className="mc-mod-section">
+              <div className="mc-mod-section-title">Blocked</div>
+              {blockedList.map((id) => (
               <div key={`b-${id}`} className="mc-mod-row">
                 <span className="mc-mod-name">{nameFor(id)}</span>
                 <button type="button" className="mc-mod-undo" onClick={() => void doUnblock(id, nameFor(id))}>
                   Unblock
                 </button>
               </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -583,6 +663,34 @@ export default function ChatBox() {
         </div>
       )}
 
+      {commands.length > 0 && (
+        <div className="mc-command-tray" id="chat-command-list" role="listbox" aria-label="Chat commands">
+          <div className="mc-command-title">
+            <span>Commands</span>
+            <span>Type to filter</span>
+          </div>
+          {commands.map((command, index) => (
+            <button
+              key={command.name}
+              id={`chat-command-${command.name.slice(1)}`}
+              type="button"
+              role="option"
+              aria-selected={index === safeCommandIndex}
+              className={`mc-command-row ${index === safeCommandIndex ? "active" : ""}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                chooseCommand(command);
+              }}
+              onMouseEnter={() => setCommandIndex(index)}
+            >
+              <span className="mc-command-name">{command.name}</span>
+              <span className="mc-command-description">{command.description}</span>
+            </button>
+          ))}
+          <div className="mc-command-footer">↑↓ choose · Tab or Enter</div>
+        </div>
+      )}
+
       <form className="mc-input" onSubmit={submit}>
         <span className="mc-prompt">
           {panel.tab === "room" ? <Lock size={13} aria-hidden="true" /> : "›"}
@@ -593,10 +701,17 @@ export default function ChatBox() {
           onChange={(e) => {
             setText(e.target.value);
             completeRef.current = null;
+            setCommandsDismissed(false);
+            setCommandIndex(0);
           }}
           onKeyDown={onInputKey}
           maxLength={LIMITS.chatTextMax}
           aria-label="Chat message"
+          aria-expanded={commands.length > 0}
+          aria-controls="chat-command-list"
+          aria-activedescendant={
+            commands.length > 0 ? `chat-command-${commands[safeCommandIndex]?.name.slice(1)}` : undefined
+          }
           placeholder={
             panel.tab === "room" ? "Message this area…" : "Message everyone…"
           }

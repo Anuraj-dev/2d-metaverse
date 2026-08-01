@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleHelp } from "lucide-react";
+import { bus } from "../game/eventBus";
 import Dialog from "./Dialog";
 
 const CONTROLS: [string, string][] = [
@@ -9,7 +9,7 @@ const CONTROLS: [string, string][] = [
   ["Enter a room", "Walk to its door, type the key"],
   ["Fullscreen map", "M (Esc to close)"],
   ["Chat", "Enter or T — / for a command"],
-  ["Find someone", "Open the roster (top-right), click a name"],
+  ["Find someone", "Open Around (top-right), click a name"],
   ["Arcade games", "Arrow keys / WASD — Space to flap"],
   ["Close overlay", "Escape"],
   ["Help", "Press ?"],
@@ -36,20 +36,10 @@ export default function HelpOverlay() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => bus.on("show-controls-help", () => setOpen(true)), []);
+
   return (
     <>
-      {/* Hidden while the modal is open so the floating pill never paints over
-          the card (PRD 23 fix); the modal owns its own close controls. */}
-      {!open && (
-        <button
-          className="icon-btn help-btn"
-          title="Controls (?)"
-          aria-label="Show controls help"
-          onClick={() => setOpen(true)}
-        >
-          <CircleHelp size={18} aria-hidden="true" />
-        </button>
-      )}
       {open && (
         <Dialog
           onClose={() => setOpen(false)}

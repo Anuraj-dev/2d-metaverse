@@ -96,3 +96,33 @@
 
 ## 2026-07-30 — Snake feel: renderer-only interpolation + forced-early-tick input, reducer untouched
 **Why:** The faithful-port snake jumped cell-by-cell (~8fps look). Fix lives entirely in the renderer: per-segment lerp at display refresh rate, with a short fixed glide (60ms, not the full tick — a full-tick glide left the display a tick behind the committed state, which played as input lag and unfair wall deaths), snap on multi-tick/pause/death, eyes turn from `dirQueue` on the next frame. For near-instant response, a legal turn tops up the tick accumulator so the turn commits on the very next frame instead of waiting out the interval (accepted trade: zigzag inputs can slightly speed the snake — self-endangering only, scores are food-based). Alternative rejected: changing tick cadence or rules in the pure reducer (determinism + tests locked, byte-identical to the original game's logic).
+
+## 2026-08-01 — Flappy difficulty: one continuous Dino-style ramp, no difficulty menu (PR #171)
+**Why:** Raja's friend found the fixed tuning too hard while Raja scored 14–20 comfortably; a three-tier easy/normal/hard plan (mirroring Snake's) was drafted, then Raja pivoted to Chrome-Dino principles after a scout pulled Chromium's actual constants (single monotonic speed ramp, gap scales with speed, cap = skill plateau, near-failure-proof opening). Result: `t = min(1, score/RAMP_END_SCORE)` lerps speed 160→196, gap 245→158, spacing 330→272; the plateau is exactly the old tuning so prior high scores stay meaningful; physics (gravity/flap) never change so the bird feels identical all run. Scoring is 10/pipe (Dino-style motivation; ramp completes at 400). One leaderboard per game stays valid because everyone plays the same curve — the tier plan's score-comparability problem disappears. Alternatives rejected: discrete tiers (leaderboard ambiguity, menu friction), tuning physics per tier (changes feel, breaks muscle memory).
+
+## 2026-08-01 — Campus art lives in per-district `campus_decor/` modules, not in `gen_campus.py`
+**Why:** furnishing 9 districts meant ~700 new prop placements in a 950-line sequential generator that
+one agent at a time could edit. Splitting each district into its own module behind a tiny two-phase
+`DecorContext` (`furn` + `fill_pattern` + four floor blocks) let 8 agents work concurrently with zero
+shared-file contention, and keeps `gen_campus.py` as the structural author (walls, rooms, seats, doors,
+interactables) so frozen geometry stays in one place. Rejected: editing the generator directly (serial,
+and every agent would conflict), and a data-file format for props (a DSL to build and debug for no gain
+over plain `ctx.furn(...)` calls). The two phases are load-bearing: the floor pass must run before the
+grass-variety RNG scatter or regeneration stops being deterministic.
+
+## 2026-08-01 — Placement legality is checked centrally, never by the agent that places props
+**Why:** in the first wave, 5 of 8 district agents each invented their own approximation of the
+collision-body rule, validated against it, and were confident and wrong in 5 different ways — 79 bad
+props. The fix was not a better brief but an executable oracle: given the exact violation list plus a
+runnable checker, all 5 cleared to zero in one round. Consequence: `DecorContext` deliberately exposes
+no `is_seat`/`is_wall`-style predicates (they also silently returned wrong answers, since the backing
+lists are empty during the floor phase). `frontend/src/game/maps.test.ts` is the single authority.
+
+## 2026-08-01 — Compact pixel-paper chat is the canonical HUD composition
+**Why:** Raja selected the attached mockup with one integrated bottom-left chat card, a command tray tucked over its lower-right edge, and the media controls in a compact horizontal bottom-centre bar. The earlier numbered-mockup wording was ambiguous, so the selected image itself is now the authority. Rejected: the split Field Notes cards and vertical control rail. Help remains reachable through `?` and Settings instead of becoming another floating button.
+
+## 2026-08-01 — Selected bubble/map concepts and presenter-only broadcast authority
+**Why:** Raja chose bubble concept 1 without its duplicate `You` tab and map concept 2's wooden noticeboard composition; the images, not their earlier ordering, are canonical. The world nameplate already identifies speakers, and a warm pinned roster fits the pixel-paper HUD better than the charcoal modal. Separately, auditorium presence/audio remains the full audience area, but broadcast prompt arming and backend token authorization require the generated `presenter` platform: being an audience member must never imply permission to broadcast. Successful media toggles use their already-visible button state; aria-live status is reserved for denied/unavailable/failed outcomes.
+
+## 2026-08-01 — Stage broadcast is one explicit live session
+**Why:** Separate “Go on air” and “Go Live (video)” paths produced overlapping prompts and two competing transport lifecycles. The presenter now gets one explicit `Go Live` action that enables microphone audio and starts the stage session; the existing global camera control adds or removes video from that same session, and `Stop Live` ends it. User-facing state is `LIVE` / `NOT LIVE`. This supersedes the 2026-07-07 “muted preference wins when going on air” choice: the new explicit Go Live click is itself consent to start audio, while camera consent remains independent.

@@ -3,10 +3,9 @@
  * hardened in PRD 25.25).
  *
  * A publish-capable stage token is issued only when the requester's server-known
- * position falls inside one of the campus's stage/presenter broadcast zones — the
- * `stage` audience floor (where a spontaneous voice performer stands) and the
- * `presenter` podium (the explicit "Go Live" video slot), the two places a
- * performer legitimately broadcasts from.
+ * position falls inside the campus's `presenter` platform. The wider `stage`
+ * rectangle is still used for auditorium presence and audio, but sitting in the
+ * audience must never grant broadcast permission.
  *
  * These rectangles are NOT hand-mirrored here anymore: they come from the
  * generated server geometry manifest (`manifest.stageZones`, emitted by
@@ -25,6 +24,11 @@ export interface Rect {
   height: number;
 }
 
+/** A generated auditorium zone, tagged by its gameplay purpose. */
+export interface StageZone extends Rect {
+  zoneType: "stage" | "presenter";
+}
+
 function inRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 }
@@ -39,10 +43,10 @@ export function isInStageZone(zones: readonly Rect[], x: number, y: number): boo
 }
 
 /**
- * True when a performer at (x, y) may broadcast to the stage, given the manifest
- * stage/presenter zones. The position must be the server's authoritative
+ * True when a performer at (x, y) is on the presenter platform and may broadcast.
+ * The position must be the server's authoritative
  * last-accepted position — never a raw client-reported one.
  */
-export function canPublishFromStage(zones: readonly Rect[], x: number, y: number): boolean {
-  return isInStageZone(zones, x, y);
+export function canPublishFromStage(zones: readonly StageZone[], x: number, y: number): boolean {
+  return zones.some((zone) => zone.zoneType === "presenter" && inRect(zone, x, y));
 }

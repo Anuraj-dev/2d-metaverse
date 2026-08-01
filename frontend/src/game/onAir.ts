@@ -1,20 +1,22 @@
 /**
  * Pure stage on-air state machine (PRD 17). Decides, from position + time alone,
- * when a performer standing on the stage zone is offered the "go on air" confirm
- * prompt, and when they actually go on / off air. No Phaser / net / DOM imports —
+ * when a performer standing on the presenter platform is offered the "go live"
+ * prompt, and when they actually start / stop the broadcast. No Phaser / net / DOM imports —
  * `WorldScene` drives it each frame (a `tick` carrying the local player's stage
  * membership + floored position + clock) and forwards the `confirm`/`decline` the
- * HUD prompt produces; `App` reacts to the emitted effects (media publish, ON-AIR
- * indicator, on/off-air sounds).
+ * HUD prompt produces; `App` reacts to the emitted effects (media publish, LIVE
+ * indicator, start/stop sounds).
  *
  * Rules (mirrors the PRD's transition table):
  *  - crossing the stage (never still) never prompts;
- *  - standing still on stage for `STILL_MS` arms the confirm prompt;
+ *  - standing still on the presenter platform for `STILL_MS` arms the confirm prompt;
  *  - declining stays on stage un-broadcast and does NOT re-prompt until the player
  *    MOVES again, or LEAVES the zone and returns;
- *  - confirming goes on air;
- *  - leaving the stage zone goes off air (or dismisses the prompt) instantly;
- *  - movement while on air never ends the broadcast — only leaving the zone does.
+ *  - confirming goes live;
+ *  - leaving the presenter platform stops the broadcast (or dismisses the prompt) instantly;
+ *  - movement while live never ends the broadcast — only leaving the zone or an
+ *    explicit stop does;
+ *  - a failed publish restores the prompt instead of leaving the UI stuck live.
  */
 export const STILL_MS = 2000;
 
@@ -32,7 +34,9 @@ export interface OnAirState {
 export type OnAirInput =
   | { type: "tick"; onStage: boolean; x: number; y: number; now: number }
   | { type: "confirm" }
-  | { type: "decline" };
+  | { type: "decline" }
+  | { type: "stop" }
+  | { type: "publish-failed" };
 
 export type OnAirEffect =
   | "none"
@@ -61,6 +65,18 @@ export function stepOnAir(
   if (input.type === "decline") {
     if (state.phase === "prompt") {
       return { state: { ...state, phase: "declined" }, effect: "hide-prompt" };
+    }
+    return { state, effect: "none" };
+  }
+  if (input.type === "stop") {
+    if (state.phase === "onair") {
+      return { state: { ...state, phase: "declined" }, effect: "go-off-air" };
+    }
+    return { state, effect: "none" };
+  }
+  if (input.type === "publish-failed") {
+    if (state.phase === "onair") {
+      return { state: { ...state, phase: "prompt" }, effect: "show-prompt" };
     }
     return { state, effect: "none" };
   }

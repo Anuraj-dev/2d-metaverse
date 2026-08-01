@@ -169,6 +169,51 @@ describe("match end", () => {
   });
 });
 
+describe("rematch (accept while over)", () => {
+  /** A finished, won match with both players still seated. */
+  const finished: BoardMatchEvent[] = [
+    ...bothReady,
+    move("a", 0), move("b", 3), move("a", 1), move("b", 4), move("a", 2),
+  ];
+
+  it("one player's play-again re-opens the offer already holding their accept", () => {
+    const { state, effects } = run([...finished, accept("b")]);
+    expect(state.match).toEqual({ phase: "offer", accepted: [false, true] });
+    expect(state.occupants).toEqual(["a", "b"]);
+    expect(effects).toEqual([{ type: "changed" }]);
+  });
+
+  it("the opponent's accept then starts a fresh board (the old result is gone)", () => {
+    const { state, effects } = run([...finished, accept("b"), accept("a")]);
+    const next = activeMatch(state);
+    expect(next.game.board.every((cell) => cell === 0)).toBe(true);
+    expect(next.game.turn).toBe(1);
+    expect(next.game.result.status).toBe("in_progress");
+    expect(effects).toContainEqual({ type: "started" });
+  });
+
+  it("a repeated play-again from the same player is idempotent, not a start", () => {
+    const { state } = run([...finished, accept("b"), accept("b")]);
+    expect(state.match).toEqual({ phase: "offer", accepted: [false, true] });
+  });
+
+  it("rejects a rematch after a forfeit (the other seat is empty) and from a spectator", () => {
+    const forfeited = [...bothReady, move("a", 0), stand("a")];
+    expect(run([...forfeited, accept("b")]).effects).toEqual([
+      { type: "rejected", playerId: "b", reason: "no-match" },
+    ]);
+    expect(run([...finished, accept("z")]).effects).toEqual([
+      { type: "rejected", playerId: "z", reason: "not-seated" },
+    ]);
+  });
+
+  it("a stand during a rematch offer cancels it back to waiting", () => {
+    const { state } = run([...finished, accept("b"), stand("a")]);
+    expect(state.match).toEqual({ phase: "waiting" });
+    expect(state.occupants).toEqual([null, "b"]);
+  });
+});
+
 describe("seatOf helper", () => {
   it("locates a player's seat or returns null", () => {
     expect(seatOf(["a", "b"], "b")).toBe(1);

@@ -45,7 +45,7 @@ const CLIPS = [
   "arcade_over",
   "arcade_flap",
   "arcade_hit",
-  // Issue #163: per-event Snake cues + dedicated board-table foley.
+  // Owner Snake-game port (see scripts/curate_audio.py → curate_snake_sounds).
   "arcade_eat",
   "arcade_near",
   "arcade_best",
@@ -56,8 +56,13 @@ const CLIPS = [
   // Arcade 2.0 Stellar Forge merge-drop cabinet.
   "arcade_merge",
   "arcade_nova",
+  // Board tables: wooden near/far place + win/lose/draw + rejection thud.
   "board_place",
+  "board_place_far",
   "board_win",
+  "board_lose",
+  "board_draw",
+  "board_invalid",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */

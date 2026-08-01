@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { MotionConfig } from "motion/react";
 import { TriangleAlert } from "lucide-react";
-import Roster from "./ui/Roster";
 import Minimap from "./ui/Minimap";
 import ControlBar from "./ui/ControlBar";
 import TouchControls from "./ui/TouchControls";
@@ -20,7 +19,11 @@ import { USE_MOCK } from "./net/auth";
 import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
 import { bus } from "./game/eventBus";
+import { boardSoundEvents } from "./game/boardSound";
 import { worldAudio, roomVideo, stageVideo } from "./media/livekit";
+import { setMic } from "./media/mediaControls";
+import { getMediaPrefs } from "./media/mediaPrefs";
+import { outcomeNeedsAttention } from "./media/publicationState";
 import {
   MEETING_NONE,
   meetingUiReduce,
@@ -213,13 +216,22 @@ export default function App() {
     if (!entered) return;
     const net = sharedNet();
     const prev = new Map<string, BoardUpdatePayload>();
+    // Interest refs (not React state) so the board-update handler always sees
+    // the current table without re-subscribing. Space-scoped snapshots would
+    // otherwise play place/outcome foley on every campus client.
+    const seatedRef = { current: null as string | null };
+    const nearRef = { current: null as string | null };
 
     const offUpdate = net.on(SERVER_EVENTS.boardUpdate, (snap: BoardUpdatePayload) => {
       const before = prev.get(snap.tableId);
       prev.set(snap.tableId, snap);
-      const filled = (s?: BoardUpdatePayload) => s?.state?.board.filter((c) => c !== 0).length ?? 0;
-      if (snap.phase === "active" && filled(snap) > filled(before)) bus.emit("board-move");
-      if (snap.phase === "over" && before?.phase !== "over") bus.emit("board-win");
+      const nearby =
+        seatedRef.current === snap.tableId || nearRef.current === snap.tableId;
+      // Which cues this transition earns is a per-viewer decision (own move vs
+      // opponent's, win vs lose vs draw; campus bystander vs table-side).
+      for (const ev of boardSoundEvents(before, snap, selfId, { nearby })) {
+        bus.emit(ev);
+      }
       setBoardSnapshots((current) => ({ ...current, [snap.tableId]: snap }));
     });
     const offError = net.on(SERVER_EVENTS.boardError, (err: { tableId: string; reason: string }) => {
@@ -231,15 +243,26 @@ export default function App() {
         "no-match": "No match in progress",
       };
       setBoardError(messages[err.reason] ?? "Move rejected");
+      bus.emit("board-invalid");
       window.setTimeout(() => setBoardError(null), 1800);
     });
     const offSat = bus.on<{ tableId: string }>("board-sat", (p) => {
+      seatedRef.current = p.tableId;
       setBoardSeatedTable(p.tableId);
       setBoardError(null);
     });
-    const offStood = bus.on("board-stood", () => setBoardSeatedTable(null));
-    const offNear = bus.on<{ tableId: string }>("near-board-seat", (p) => setBoardNearTable(p.tableId));
-    const offLeaveNear = bus.on("leave-board-seat", () => setBoardNearTable(null));
+    const offStood = bus.on("board-stood", () => {
+      seatedRef.current = null;
+      setBoardSeatedTable(null);
+    });
+    const offNear = bus.on<{ tableId: string }>("near-board-seat", (p) => {
+      nearRef.current = p.tableId;
+      setBoardNearTable(p.tableId);
+    });
+    const offLeaveNear = bus.on("leave-board-seat", () => {
+      nearRef.current = null;
+      setBoardNearTable(null);
+    });
     return () => {
       offUpdate();
       offError();
@@ -248,7 +271,7 @@ export default function App() {
       offNear();
       offLeaveNear();
     };
-  }, [entered]);
+  }, [entered, selfId]);
 
   // Real mode: world proximity audio + per-room video, driven by net + seat events.
   useEffect(() => {
@@ -313,14 +336,30 @@ export default function App() {
       });
       startStageAudience();
     });
-    // On-air lifecycle (PRD 17): the pure on-air machine in WorldScene emits these
-    // once the performer confirms / steps off the stage. Going on air reconnects
-    // the stage room with a position-validated publish token; off air returns to
-    // the audience subscription.
+    // Stage-live lifecycle (PRD 17): one explicit Go Live action enables audio,
+    // reconnects with the position-validated publish token, and applies the
+    // current camera preference. The global camera control can add/remove video
+    // afterward without creating a second stage action.
     const offOnAir = bus.on("stage-on-air", () => {
-      // The confirmed outcome drives StageScreen's LIVE truth via the transport's
-      // publication store (PRD 25.7); the sequencer only needs the settled void.
-      if (selfId) transition(async () => void (await stageVideo.goOnAir(SPACE_ID, selfId)));
+      if (!selfId) return;
+      transition(async () => {
+        // Clicking Go Live is the explicit microphone-enable gesture. Use the
+        // shared fan-out so the control bar and every active publisher stay in sync.
+        // If the mic was already on for world proximity, do not disable it when
+        // a later stage-only failure occurs.
+        const micWasOn = getMediaPrefs().micOn;
+        const mic = await setMic(true);
+        if (outcomeNeedsAttention(mic.status)) {
+          if (!micWasOn) await setMic(false);
+          bus.emit("stage-live-failed");
+          return;
+        }
+        const live = await stageVideo.goLive(SPACE_ID, selfId);
+        if (outcomeNeedsAttention(live.status)) {
+          if (!micWasOn) await setMic(false);
+          bus.emit("stage-live-failed");
+        }
+      });
     });
     const offOffAir = bus.on("stage-off-air", () => {
       if (selfId) transition(async () => void (await stageVideo.goOffAir(SPACE_ID, selfId)));
@@ -493,7 +532,6 @@ export default function App() {
       </Suspense>
       <div className="hud">
         <InteractionHint />
-        <Roster />
         <Suspense fallback={null}>
           <ArrivalPanel />
         </Suspense>

@@ -2,8 +2,8 @@
  * Side-effect shell for the global control bar's mic/cam toggles (PRD 20). It records
  * the desired state in the leaf `mediaPrefs` module and fans it out to every active
  * publisher: proximity voice (`worldAudio`) while walking, the room/meeting video
- * (`roomVideo`) while seated, and the stage broadcast (`stageVideo`) while on air /
- * live (PRD 17). Each transport guards its own inactive state, so applying to an
+ * (`roomVideo`) while seated, and the stage broadcast (`stageVideo`) while live
+ * (PRD 17). Each transport guards its own inactive state, so applying to an
  * inactive one is a safe no-op, and `livekit` re-reads the prefs when a room
  * becomes active — so a single mute follows the player across walk<->meeting<->stage
  * rather than resetting on every transition (the pre-overhaul bug). Mock mode (no
@@ -57,7 +57,7 @@ export async function setCam(on: boolean): Promise<MediaOutcome> {
     return { status: on ? "live" : "off" };
   }
   // Proximity voice is audio-only; cameras publish to the room/meeting video and
-  // the stage "Go Live" broadcast.
+  // the live stage broadcast.
   return worstOutcome(
     await Promise.all([
       resolveOutcome(roomVideo.setCamEnabled(on), on),

@@ -8,8 +8,9 @@
  * per-IP auth-limiter budget. It covers the two unique PRD 17 mechanics end to end:
  *  1. every non-private-room client subscribes to the stage room as audience on join
  *     (server-wide, not proximity-gated);
- *  2. a performer who stands still on the stage is granted a position-validated
- *     publish token and goes on air.
+ *  2. a performer who stands still on the presenter platform is granted a
+ *     position-validated publish token and goes on air (audience floor alone
+ *     is not enough — publish is presenter-only).
  * The private-room detach exception (room-av mode → stage subscription removed) is
  * asserted at the unit level in `src/App.test.tsx` ("entering a private room …
  * detaches room + stage video"), so it is not re-walked here.
@@ -22,7 +23,7 @@
  * corridor at y≈736 (16px below the stage's south wall so steering drift can't clip
  * the SW corner) → east under the wall → north straight through the doorway centre
  * (x=1584) into the interior. Every straight segment re-checked every 3px with the
- * full body box; standing point well inside the stage_zone rect.
+ * full body box; standing point on the presenter_zone (not merely stage_zone).
  */
 import { test, expect } from "@playwright/test";
 import { BACKEND_URL, signUpAndJoin, walkPath } from "./helpers";
@@ -32,6 +33,9 @@ const STAGE_PATH: [number, number][] = [
   [1150, 736], // drop south into the corridor before the stage's west wall (x=1296)
   [1584, 736], // east under the south wall, aligned with the doorway centre
   [1584, 500], // north through the 2-tile doorway (x 1568–1600) into stage_zone
+  // Presenter platform (presenter_zone 1440,32 + 336×224) — only here arms Go Live.
+  [1584, 200],
+  [1608, 144], // platform centre
 ];
 
 test("audience subscribes on join, then standing still on the stage goes on air", async ({
@@ -59,19 +63,20 @@ test("audience subscribes on join, then standing still on the stage goes on air"
     { timeout: 15_000 },
   );
 
-  // (2) Walk onto the stage and hold position — the ~2s stillness arms the prompt.
+  // (2) Walk onto the presenter platform and hold position — the ~2s stillness
+  // arms the prompt (audience floor never does).
   await walkPath(page, STAGE_PATH);
   await page.evaluate(() => window.__testHook?.waitForEvent("stage-prompt-show", undefined, 15_000));
 
-  // Confirm through the same bus seam the HUD "Go on air" button drives.
+  // Confirm through the same bus seam the HUD "Go Live" button drives.
   const onAir = page.evaluate(() =>
     window.__testHook?.waitForEvent("stage-on-air", undefined, 15_000),
   );
   await page.evaluate(() => window.__testHook?.emit("stage-confirm"));
   await onAir;
 
-  // A publish-capable token was requested and the server (validating the on-stage
-  // position it knows) granted it.
+  // A publish-capable token was requested and the server (validating the on-
+  // presenter-platform position it knows) granted it.
   const response = await publishToken;
   expect(response.status()).toBe(200);
   const body = (await response.json()) as { livekitToken: string };

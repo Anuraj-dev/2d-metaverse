@@ -278,21 +278,22 @@ describe("movement envelope (PRD 25.21)", () => {
 // while an honest walk onto the stage floor does. Drives the real socket move
 // handler + the real REST token endpoint against the generated stage geometry.
 describe("stage-publish authorization (PRD 25.25)", () => {
-  // Stage floor is the manifest `stage_zone` rect (1312,256 + 576×448); (1600,480)
-  // is its walkable interior. Spawn (960,704) and (970,704) are off-stage.
-  it("grants a publish token after an honest walk onto the stage floor", async () => {
+  // Presenter platform is the manifest `presenter_zone` rect (1440,32 + 336×224);
+  // (1608,144) is its centre. Publish is presenter-only (not the audience floor).
+  // Spawn (960,704) is off-stage.
+  it("grants a publish token after an honest walk onto the presenter platform", async () => {
     const userA = await createPlayer("saw");
     const a = await joinAs(userA.token);
     const b = await joinAs((await createPlayer("sob")).token);
 
     const anchored = once(b.socket, "player-moved");
-    a.socket.emit("move", { x: 1584, y: 480, dir: "right" }); // re-anchor near the stage
+    a.socket.emit("move", { x: 1592, y: 144, dir: "right" }); // re-anchor on the platform
     await anchored;
     await sleep(60); // clear the moveThrottleMs window
 
     const stepped = once(b.socket, "player-moved");
-    a.socket.emit("move", { x: 1600, y: 480, dir: "right" }); // small honest step onto stage
-    expect(await stepped).toEqual({ id: a.init.selfId, x: 1600, y: 480, dir: "right" });
+    a.socket.emit("move", { x: 1608, y: 144, dir: "right" }); // small honest step on presenter platform
+    expect(await stepped).toEqual({ id: a.init.selfId, x: 1608, y: 144, dir: "right" });
 
     const granted = await api(base, "/api/v1/livekit/token", {
       token: userA.token,

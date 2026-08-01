@@ -252,12 +252,19 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "arcade-drop": { clip: "door_close", channel: "arcade" },
   "arcade-merge": { clip: "arcade_merge", channel: "arcade" },
   "arcade-nova": { clip: "arcade_nova", channel: "arcade" },
-  // Board-game tables use dedicated wooden-table foley rather than borrowing
-  // cabinet chiptune. The game stays audio-agnostic and emits these domain
-  // events; the mixer decides.
+  // Board-game tables (PRD 11 phase 2). Wooden foley + per-viewer outcomes via
+  // pure `game/boardSound.ts`. The game stays audio-agnostic.
   "board-sat": { clip: "sit", channel: "sfx" },
+  // Legacy domain event from older emitters (seat sit still uses board-sat).
   "board-move": { clip: "board_place", channel: "sfx" },
+  "board-place": { clip: "board_place", channel: "sfx" },
+  "board-place-far": { clip: "board_place_far", channel: "sfx" },
   "board-win": { clip: "board_win", channel: "sfx" },
+  "board-lose": { clip: "board_lose", channel: "sfx" },
+  "board-draw": { clip: "board_draw", channel: "sfx" },
+  "board-invalid": { clip: "board_invalid", channel: "sfx" },
+  "board-offer": { clip: "message", channel: "sfx" },
+  "board-match-start": { clip: "join", channel: "sfx" },
   // Room admin / knock (PRD 14): reuse existing clips — components emit these
   // domain events, the mixer decides the blip. The admin's incoming-knock cue is
   // notify-class so it obeys the notification toggle.

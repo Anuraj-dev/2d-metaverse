@@ -12,8 +12,10 @@ Districts (tile coordinates, inclusive):
                                         (north facade + courtyard, PRD 13)
 
 Tilesets (matched to MAPS registry in maps.ts):
-  floors_walls  firstgid=1   (288×144 px, 18 cols, 162 tiles)
-  exterior      firstgid=163 (528×1024 px, 33 cols, 2112 tiles)
+  floors_walls  firstgid=1    (288×144 px,  18 cols,  162 tiles)
+  exterior      firstgid=163  (528×1024 px, 33 cols, 2112 tiles)
+  room_builder  firstgid=2275 (272×368 px,  17 cols,  391 tiles)  — LimeZu interior
+                floors/rugs; see scripts/gen_limezu_sprites.py + ATTRIBUTIONS.md
 
 Run:  python3 scripts/gen_campus.py
 """
@@ -21,6 +23,8 @@ Run:  python3 scripts/gen_campus.py
 import json
 import os
 import random
+
+import campus_decor
 
 rng = random.Random(12)  # deterministic scatter — regeneration is reproducible
 
@@ -58,6 +62,25 @@ ST_SW, ST_S, ST_SE = 1978, 1979, 1980   # idx 1815-1817 bottom corners/edge
 # inverse 2×2 patch: a grass clearing set into stone (plaza texture breaks)
 CLR_NW, CLR_NE, CLR_SW, CLR_SE = 1948, 1949, 1981, 1982  # idx 1785/1786/1818/1819
 
+# room_builder.png (firstgid=2275) — LimeZu "Modern Interiors" room-builder sheet,
+# 17 cols × 23 rows. Interior FLOOR families only (its wall bands are unused: the
+# campus walls layer is frozen, see the room-3 pass below). Each family is a 3×2
+# block of seamless variants, laid by (x % 3, y % 2) so the pattern reads as one
+# continuous surface instead of a repeating single tile.
+RB = 2275
+
+
+def rb_block(local_top_left_row, local_top_left_col=11):
+    """The 3×2 seamless variant block at (col, row) on the room-builder sheet."""
+    return [[RB + (local_top_left_row + dy) * 17 + (local_top_left_col + dx)
+             for dx in range(3)] for dy in range(2)]
+
+
+FLOOR_PARQUET = rb_block(13)   # warm herringbone parquet  (locals 232-234/249-251)
+FLOOR_TEAL    = rb_block(9)    # mint patterned floor tile (locals 164-166/181-183)
+FLOOR_CREAM   = rb_block(7)    # pale cross-patterned tile (locals 130-132/147-149)
+FLOOR_SLATE   = rb_block(11)   # soft grey-blue screed     (locals 198-200/215-217)
+
 # Transparent flower overlays for the ground_decor layer
 FLOWER_RED    = 204  # idx 41 — orange/red diamond flower
 FLOWER_BLUE   = 205  # idx 42 — blue/green flower
@@ -88,6 +111,14 @@ def fill(layer, x0, y0, x1, y1, tile):
     for y in range(y0, y1 + 1):
         for x in range(x0, x1 + 1):
             layer[idx(x, y)] = tile
+
+
+def fill_pattern(layer, x0, y0, x1, y1, block):
+    """Fill a rect from a seamless variant block, indexed by absolute tile coords
+    so adjacent fills of the same family always line up."""
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            layer[idx(x, y)] = block[y % len(block)][x % len(block[0])]
 
 
 def wall_rect(x0, y0, x1, y1):
@@ -244,6 +275,23 @@ make_room(2, x0=26, y0=100, x1=40, y1=109, door_x=32,
 make_room(3, x0=10, y0=100, x1=26, y1=110, door_x=17,
           seats=table_seats(10, 100, 26, 110, 12), door_wall="north")
 
+# ── DISTRICT ART PASSES (floor phase) ─────────────────────────────────────────
+# Plug-in seam: each district module in scripts/campus_decor/ owns one art pass.
+# Floor phase MUST run before the grass-variety RNG below — painting a former
+# grass tile after the scatter desyncs the seed (see campus_decor/README.md).
+# Furniture phase runs later, at the historical furniture-list insertion point.
+_decor_floor_ctx = campus_decor.build_context(
+    ground=ground,
+    furn=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError(
+        "campus_decor: furn() is only valid in the furniture phase")),
+    fill_pattern_layer=fill_pattern,
+    floor_patterns={
+        "FLOOR_CREAM": FLOOR_CREAM, "FLOOR_PARQUET": FLOOR_PARQUET,
+        "FLOOR_TEAL": FLOOR_TEAL, "FLOOR_SLATE": FLOOR_SLATE,
+    },
+)
+campus_decor.apply_district_floors(_decor_floor_ctx)
+
 # ── ARCADE HALL (S, east of the hostel) ──────────────────────────────────────
 # A dedicated, enclosed games hall well south of the plaza and FAR from the
 # auditorium (NE). It is a PUBLIC walk-in building — walls + a wide open doorway,
@@ -338,7 +386,7 @@ for y in range(H):
 # 2) Grass clearings set into the plaza stone (2×2 inverse patches) — breaks
 #    up the large stone expanse. Kept off the arteries and the spawn area.
 for cx, cy in [(20, 30), (38, 33), (48, 55), (70, 52), (88, 32), (100, 56),
-               (16, 50), (30, 57), (96, 48), (10, 68), (24, 74), (40, 70)]:
+               (16, 50), (30, 57), (96, 48)]:
     if all(ground[idx(cx + dx, cy + dy)] == STONE for dx in (0, 1) for dy in (0, 1)):
         ground[idx(cx, cy)] = CLR_NW
         ground[idx(cx + 1, cy)] = CLR_NE
@@ -528,6 +576,7 @@ interactables_objs = [
 # stage_zone   — audience area (tiles 82-117, y=16-43)
 # presenter_zone — podium area (tiles 90-110, y=2-15)
 # screen        — point marking the broadcast screen (tile 99, 5)
+# presenter_seat — local, public sit target behind the lectern (tile 99, 8)
 stage_objs = [
     {
         "id": 50001, "name": "stage_zone",
@@ -594,109 +643,48 @@ def furn(key, tx, ty, solid):
     })
 
 
-# Park — the tile trees above carry the canopy now; sprinkle swaying shrubs
-# between them (skipping any spot a tree footprint occupies).
-# NB: the old (18, 38) shrub was dropped (PRD 25.33) — it sat directly on the
-# plaza "Campus Map" info board (interactable at tile 18,38) and the welcome-desk
-# body, blocking the prompt and reading as clutter over the sign. The row keeps
-# its (8, 38)/(25, 38) shrubs so the park edge still reads planted.
-for tx, ty in [(8, 8), (16, 8), (24, 9), (11, 18), (22, 18),
-               (5, 23), (15, 23), (20, 28), (25, 23),
-               (8, 38), (25, 38), (10, 47), (24, 47)]:
-    if (tx, ty) not in tree_cells:
-        furn("f_plant_big", tx, ty, True)
-for tx, ty in [(6,6),(14,11),(21,6),(9,20),(18,24),
-               (6,30),(14,35),(22,30),(7,40),(20,42),
-               (5,50),(12,52),(19,50)]:
-    if (tx, ty) not in tree_cells:
-        furn("f_plant_small", tx, ty, False)
+# Park — the authored tile trees already carry the planting scheme. Potted
+# indoor shrubs scattered between them made the lawn read like a showroom and
+# created inconsistent collision, so the open grass needs no furniture pass.
 
-# Plaza — welcome desk, water cooler, landmark plants, clock
+# Plaza — one functional welcome point and one wall-mounted auditorium clock.
+# Open paving is the social surface; the former cooler and corner planters had
+# no relationship to a door, path junction, or usable cluster.
 furn("f_desk",  16, 38, True)
 furn("f_chair", 16, 39, False)
-furn("f_water", 65, 33, True)
-furn("f_clock", 95, 30, False)
-for tx, ty in [(14, 28), (14, 58), (105, 28), (105, 58)]:
-    furn("f_plant_big", tx, ty, True)
+furn("f_clock", 117, 28, False)
 
-# Cafe — round tables + chairs, plus bar items on the west wall. PRD 25.33:
-# thinned from a packed 6×3 grid (18 tables) to 4 wider-pitched columns (12
-# tables) so the terrace reads as a relaxed lounge with walkable aisles instead
-# of a wall-to-wall canteen. Columns stay on the stone terrace (x=5-47) with the
-# side chair at col+1.
-for tx, ty in [(8,65),(8,71),(8,77),
-               (19,65),(19,71),(19,77),
-               (30,65),(30,71),(30,77),
-               (41,65),(41,71),(41,77)]:
-    furn("f_table_small", tx, ty, False)
-    furn("f_chair",       tx, ty + 1, False)
-    furn("f_chair_side",  tx + 1, ty, False)
-furn("f_vending",  2, 65, True)
-furn("f_water",    2, 69, True)
-furn("f_coffee",   2, 73, False)
-furn("f_sofa",     47, 82, True)
-furn("f_sofa_small", 50, 82, True)
-for tx, ty in [(2, 85), (52, 65)]:
-    furn("f_plant_big", tx, ty, True)
-
-# Coworking — desk pods in two rows. PRD 25.33: the SE deck was the flagged
-# "meaningless coworking clutter" (a solid 7+6 wall of identical desks). Thinned
-# to 5+4 pods at a wider pitch so there are real walkable aisles between pods and
-# the open-plan office reads intentional, not packed. Every column stays clear of
-# the x=79-80 arcade approach corridor (the full-height artery players descend
-# from spawn into the Game Arcade passes straight through this deck) — a 32px
-# desk body spans its centre tile ±1, so no desk centre sits on tiles 77-82.
-for tx, ty in [(60,65),(70,65),(84,65),(96,65),(108,65)]:
-    furn("f_desk",  tx, ty, True)
-    furn("f_chair", tx, ty + 1, False)
-for tx, ty in [(66,73),(76,73),(90,73),(102,73)]:
-    furn("f_desk2", tx, ty, True)
-    furn("f_chair", tx, ty + 1, False)
-furn("f_desk_boss",    114, 73, True)
-furn("f_chair_boss",   114, 74, False)
-furn("f_bookshelf_tall", 58, 63, True)
-furn("f_bookshelf_tall", 58, 80, True)
-for tx, ty in [(115, 63), (115, 80)]:
-    furn("f_plant_small", tx, ty, False)
-
-# Auditorium — podium, clock, stage plants, audience rows
-furn("f_table_round", 99, 10, True)
-furn("f_clock",       99,  7, False)
-for tx, ty in [(83, 2), (115, 2), (83, 42), (115, 42)]:
-    furn("f_plant_big", tx, ty, True)
-for ry in (20, 23, 26, 29, 32):
-    for rx in range(84, 116, 3):
-        furn("f_chair", rx, ry, False)
-
-# HQ lobby — welcome desk + plants by entrance. PRD 25.33: nudged one tile west
-# (54→53) so the desk body no longer clips the "Today's Agenda" whiteboard
-# interactable zone (tiles 55-56,19-20), keeping the agenda reachable.
-furn("f_desk",       53, 20, True)
-furn("f_chair",      53, 21, False)
-furn("f_plant_big",  32,  3, True)
-furn("f_plant_big",  77,  3, True)
-furn("f_bookshelf_tall", 32, 10, True)
-furn("f_bookshelf_tall", 77, 10, True)
-
-# Hostel forecourt — planters framing the residential facade (kept clear of the
-# door columns 17/32/45 and the central approach path at x=34-35).
+# Cafe furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# Coworking furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# Auditorium furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# HQ hall furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
+# Hostel forecourt — one matched planter at each end of the residential facade,
+# clear of door columns 17/32/45 and the central approach at x=34-35.
 furn("f_plant_big",   11, 94, True)
 furn("f_plant_big",   51, 94, True)
-furn("f_plant_small", 21, 95, False)
-furn("f_plant_small", 43, 95, False)
-furn("f_sofa_small",  8, 97, True)
+
+# ── DISTRICT ART PASSES (furniture phase) ─────────────────────────────────────
+# Same registry as the floor phase above; insertion order here preserves the
+# historical furniture id sequence (20000 + len at append time).
+_decor_furn_ctx = campus_decor.build_context(
+    ground=ground, furn=furn, fill_pattern_layer=fill_pattern,
+    floor_patterns={
+        "FLOOR_CREAM": FLOOR_CREAM, "FLOOR_PARQUET": FLOOR_PARQUET,
+        "FLOOR_TEAL": FLOOR_TEAL, "FLOOR_SLATE": FLOOR_SLATE,
+    },
+)
+campus_decor.apply_district_furniture(_decor_furn_ctx)
 
 # Arcade Room (south) — solid cabinets lining the north wall; each pairs with an
 # arcade interactable zone at the same tile (see interactables_objs). Plus a
 # little themed dressing so the hall doesn't read empty.
 furn("f_arcade_snake",      71, 96, True)
 furn("f_arcade_flappy",     76, 96, True)
-furn("f_arcade_merge-drop", 82, 96, True)  # east of the doorway (Arcade 2.0)
-furn("f_vending",       68, 96, True)   # snack machine by the entrance wall
-furn("f_plant_big",     68, 107, True)  # corner greenery
-furn("f_plant_big",     86, 107, True)
-furn("f_sofa",          80, 106, True)  # a lounge bench facing the cabinets
-furn("f_sofa_small",    83, 106, True)
+# Stellar Forge — east of the doorway (cols 78-81 free), west of the snack
+# corner dressing in campus_decor/arcade_hall.py. Same wall run as its neighbours.
+furn("f_arcade_merge-drop", 82, 96, True)
+# Arcade dressing: re-authored in scripts/campus_decor/ (LimeZu art pass).
+
 
 # ── Board-game tables (PRD 11 phase 2; relocated into the arcade, PRD 22) ──
 # Two two-seat tables. tableId + game must match the shared BOARD_TABLES
@@ -828,6 +816,14 @@ tilemap = {
             "imagewidth": 528, "imageheight": 1024,
             "tilewidth": 16, "tileheight": 16,
             "tilecount": 2112, "columns": 33,
+            "margin": 0, "spacing": 0,
+        },
+        {
+            "firstgid": 2275, "name": "room_builder",
+            "image": "../tilesets/room_builder.png",
+            "imagewidth": 272, "imageheight": 368,
+            "tilewidth": 16, "tileheight": 16,
+            "tilecount": 391, "columns": 17,
             "margin": 0, "spacing": 0,
         },
     ],
