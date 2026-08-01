@@ -216,13 +216,22 @@ export default function App() {
     if (!entered) return;
     const net = sharedNet();
     const prev = new Map<string, BoardUpdatePayload>();
+    // Interest refs (not React state) so the board-update handler always sees
+    // the current table without re-subscribing. Space-scoped snapshots would
+    // otherwise play place/outcome foley on every campus client.
+    const seatedRef = { current: null as string | null };
+    const nearRef = { current: null as string | null };
 
     const offUpdate = net.on(SERVER_EVENTS.boardUpdate, (snap: BoardUpdatePayload) => {
       const before = prev.get(snap.tableId);
       prev.set(snap.tableId, snap);
+      const nearby =
+        seatedRef.current === snap.tableId || nearRef.current === snap.tableId;
       // Which cues this transition earns is a per-viewer decision (own move vs
-      // opponent's, win vs lose vs draw) — it lives in the pure boardSound module.
-      for (const ev of boardSoundEvents(before, snap, selfId)) bus.emit(ev);
+      // opponent's, win vs lose vs draw; campus bystander vs table-side).
+      for (const ev of boardSoundEvents(before, snap, selfId, { nearby })) {
+        bus.emit(ev);
+      }
       setBoardSnapshots((current) => ({ ...current, [snap.tableId]: snap }));
     });
     const offError = net.on(SERVER_EVENTS.boardError, (err: { tableId: string; reason: string }) => {
@@ -238,12 +247,22 @@ export default function App() {
       window.setTimeout(() => setBoardError(null), 1800);
     });
     const offSat = bus.on<{ tableId: string }>("board-sat", (p) => {
+      seatedRef.current = p.tableId;
       setBoardSeatedTable(p.tableId);
       setBoardError(null);
     });
-    const offStood = bus.on("board-stood", () => setBoardSeatedTable(null));
-    const offNear = bus.on<{ tableId: string }>("near-board-seat", (p) => setBoardNearTable(p.tableId));
-    const offLeaveNear = bus.on("leave-board-seat", () => setBoardNearTable(null));
+    const offStood = bus.on("board-stood", () => {
+      seatedRef.current = null;
+      setBoardSeatedTable(null);
+    });
+    const offNear = bus.on<{ tableId: string }>("near-board-seat", (p) => {
+      nearRef.current = p.tableId;
+      setBoardNearTable(p.tableId);
+    });
+    const offLeaveNear = bus.on("leave-board-seat", () => {
+      nearRef.current = null;
+      setBoardNearTable(null);
+    });
     return () => {
       offUpdate();
       offError();

@@ -47,10 +47,19 @@ describe("boardSoundEvents — placement, near vs far", () => {
     expect(boardSoundEvents(before, after, "b")).toEqual(["board-place-far"]);
   });
 
-  it("plays the far cue for a spectator — no move is ever 'theirs'", () => {
+  it("plays the far cue for a nearby spectator — no move is ever 'theirs'", () => {
     const before = active(1, board());
     const after = active(2, board({ 4: 1 }));
-    expect(boardSoundEvents(before, after, "watcher")).toEqual(["board-place-far"]);
+    expect(boardSoundEvents(before, after, "watcher", { nearby: true })).toEqual([
+      "board-place-far",
+    ]);
+  });
+
+  it("stays silent for a campus bystander nowhere near the table", () => {
+    const before = active(1, board());
+    const after = active(2, board({ 4: 1 }));
+    expect(boardSoundEvents(before, after, "campus")).toEqual([]);
+    expect(boardSoundEvents(before, after, "campus", { nearby: false })).toEqual([]);
   });
 
   it("reads the mover from the PREVIOUS turn, since a winning move does not flip it", () => {
@@ -79,7 +88,7 @@ describe("boardSoundEvents — placement, near vs far", () => {
     // Walking up to a game that started minutes ago: there is no previous
     // snapshot, so nothing was just placed and nothing just started.
     const after = active(2, board({ 0: 1, 4: 2, 8: 1 }));
-    expect(boardSoundEvents(undefined, after, "watcher")).toEqual([]);
+    expect(boardSoundEvents(undefined, after, "watcher", { nearby: true })).toEqual([]);
   });
 
   it("stays silent on the first snapshot of an already-FINISHED match", () => {
@@ -93,7 +102,7 @@ describe("boardSoundEvents — placement, near vs far", () => {
         result: { status: "won", winner: 1, line: [0, 1, 2] },
       },
     });
-    expect(boardSoundEvents(undefined, over, "watcher")).toEqual([]);
+    expect(boardSoundEvents(undefined, over, "watcher", { nearby: true })).toEqual([]);
   });
 });
 
@@ -117,21 +126,26 @@ describe("boardSoundEvents — outcomes are per viewer", () => {
     expect(boardSoundEvents(before, finished(2), "b")).toEqual(["board-win"]);
   });
 
-  it("a draw is its own cue for everyone — never the loss sting", () => {
+  it("a draw is its own cue for seated players and nearby spectators", () => {
     const before = snap({ phase: "active", seats: [alice, bob], state: null });
     const drawn = snap({
       phase: "over",
       seats: [alice, bob],
       state: { board: board(), turn: 1, result: { status: "draw" } },
     });
-    for (const viewer of ["a", "b", "watcher"]) {
+    for (const viewer of ["a", "b"]) {
       expect(boardSoundEvents(before, drawn, viewer)).toEqual(["board-draw"]);
     }
+    expect(boardSoundEvents(before, drawn, "watcher", { nearby: true })).toEqual(["board-draw"]);
+    expect(boardSoundEvents(before, drawn, "campus")).toEqual([]);
   });
 
-  it("a spectator hears the win cue — someone won, nobody lost from their seat", () => {
+  it("a nearby spectator hears the win cue — someone won, nobody lost from their seat", () => {
     const before = snap({ phase: "active", seats: [alice, bob], state: null });
-    expect(boardSoundEvents(before, finished(1), "watcher")).toEqual(["board-win"]);
+    expect(boardSoundEvents(before, finished(1), "watcher", { nearby: true })).toEqual([
+      "board-win",
+    ]);
+    expect(boardSoundEvents(before, finished(1), "campus")).toEqual([]);
   });
 
   it("fires the outcome once, not on every repeat of the over snapshot", () => {
@@ -154,9 +168,12 @@ describe("boardSoundEvents — forfeits", () => {
     expect(boardSoundEvents(beforeForfeit, after, "b")).toEqual(["board-lose"]);
   });
 
-  it("a spectator hears the win cue for a forfeit", () => {
+  it("a nearby spectator hears the win cue for a forfeit", () => {
     const after = snap({ phase: "over", seats: [alice, null], reason: "forfeit" });
-    expect(boardSoundEvents(beforeForfeit, after, "watcher")).toEqual(["board-win"]);
+    expect(boardSoundEvents(beforeForfeit, after, "watcher", { nearby: true })).toEqual([
+      "board-win",
+    ]);
+    expect(boardSoundEvents(beforeForfeit, after, "campus")).toEqual([]);
   });
 });
 
@@ -199,7 +216,8 @@ describe("boardSoundEvents — match lifecycle", () => {
     const before = snap({ phase: "offer", seats: [alice, bob] });
     const after = active(1, board());
     expect(boardSoundEvents(before, after, "a")).toEqual(["board-match-start"]);
-    expect(boardSoundEvents(before, after, "watcher")).toEqual([]);
+    expect(boardSoundEvents(before, after, "watcher", { nearby: true })).toEqual([]);
+    expect(boardSoundEvents(before, after, "campus")).toEqual([]);
   });
 
   it("does not announce the start again on every later active snapshot", () => {

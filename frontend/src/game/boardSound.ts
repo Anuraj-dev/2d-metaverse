@@ -41,6 +41,17 @@ function seatOf(snap: BoardUpdatePayload, selfId: string): 0 | 1 | null {
 }
 
 /**
+ * Caller context the pure module cannot see. `nearby` is true when this client
+ * is at (or just walked up to) the table — seated, or within the board-seat
+ * proximity / panel interest. Space-scoped `board-update` reaches the whole
+ * campus; without this flag every wooden place and win flourish would play on
+ * every remote client.
+ */
+export type BoardSoundOptions = {
+  nearby?: boolean;
+};
+
+/**
  * The cues for one snapshot transition, in the order they should be emitted.
  *
  * A move is only recognised when the PREVIOUS snapshot already had a live game
@@ -53,14 +64,24 @@ function seatOf(snap: BoardUpdatePayload, selfId: string): 0 | 1 | null {
  *
  * A terminal move emits both its placement and the outcome — the piece lands,
  * then the result reads over its tail.
+ *
+ * Interest: cues only fire for seated players (including a just-forfeited
+ * leaver who held a seat on `before`), or for nearby table-side spectators
+ * (`options.nearby`). Unrelated campus clients get silence.
  */
 export function boardSoundEvents(
   before: BoardUpdatePayload | undefined,
   after: BoardUpdatePayload,
   selfId: string,
+  options: BoardSoundOptions = {},
 ): BoardSoundEvent[] {
-  const events: BoardSoundEvent[] = [];
   const mySeat = seatOf(after, selfId);
+  const wasSeated = before !== undefined && seatOf(before, selfId) !== null;
+  const nearby = options.nearby === true;
+  // Campus-wide board-update must not play foley for people nowhere near a table.
+  if (mySeat === null && !wasSeated && !nearby) return [];
+
+  const events: BoardSoundEvent[] = [];
 
   // A match offer that needs THIS viewer's acceptance — spectators get nothing,
   // and the rematch requester (already accepted) should not hear the ping.
@@ -79,8 +100,8 @@ export function boardSoundEvents(
   // as a fresh start is a lie. (The offer prompt above deliberately does NOT
   // take this guard: if the first snapshot you ever see is an offer waiting on
   // you, you still need telling.)
-  // Only seated players hear the start — space-wide board-update would otherwise
-  // ding every client on campus whenever any table begins.
+  // Only seated players hear the start — nearby spectators and the rest of
+  // campus stay quiet when any table begins.
   if (
     before !== undefined &&
     before.phase !== "active" &&
