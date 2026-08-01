@@ -865,18 +865,20 @@ describe("auditorium speaker station", () => {
   const prop = (object: ObjectDef, name: string) =>
     object.properties?.find((property) => property.name === name)?.value;
 
-  it("pairs the lectern with one centered padded chair and a local sit target", () => {
-    const furniture = objects("furniture");
-    const lectern = furniture.find((object) => object.name === "f_lz_lectern");
-    const chair = furniture.find(
-      (object) => object.name === "f_lz_armchair" && object.x === 99 * 16 + 8 && object.y === 8 * 16 + 8,
-    );
+  it("keeps a local presenter sit target on a prop-free platform", () => {
     const seat = objects("stage").find((object) => prop(object, "zoneType") === "presenterSeat");
-
-    expect(lectern).toMatchObject({ x: 99 * 16 + 8, y: 10 * 16 + 8 });
-    expect(chair).toBeDefined();
+    if (!seat) throw new Error("missing presenterSeat on stage layer");
     expect(seat).toMatchObject({ x: 99 * 16, y: 8 * 16 });
-    expect(prop(seat!, "facing")).toBe("down");
+    expect(prop(seat, "facing")).toBe("down");
+
+    // Presenter zone (90-110 × 2-15) must stay clear of decorative furniture.
+    const furniture = objects("furniture");
+    const inPresenter = furniture.filter((object) => {
+      const tx = Math.floor(object.x / 16);
+      const ty = Math.floor(object.y / 16);
+      return tx >= 90 && tx <= 110 && ty >= 2 && ty <= 15;
+    });
+    expect(inPresenter, `props inside presenter zone: ${inPresenter.map((o) => o.name).join(", ")}`).toHaveLength(0);
   });
 });
 

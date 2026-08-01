@@ -42,22 +42,12 @@ def decorate(ctx, phase: str) -> None:
         ctx.fill_pattern(89, 2, 111, 15, ctx.FLOOR_SLATE)
         ctx.fill_pattern(98, 44, 99, 44, ctx.FLOOR_CREAM)  # door threshold
     elif phase == "furniture":
-        # ── Stage backdrop and speaking focal point ──────────────────────────
-        # Two 32px boards butt into one 4-tile screen strip on the north wall,
-        # centred over the screen anchor at (99, 5). Non-solid and flush to the
-        # wall — the entire presenter zone stays walkable.
-        ctx.furn("f_lz_board", 98, 2, False)
-        ctx.furn("f_lz_board", 100, 2, False)
-
-        # Wall-flush drapes bracket the platform without spending floor space.
+        # ── Stage backdrop ───────────────────────────────────────────────────
+        # The presenter platform (tiles 90-110 × 2-15) stays completely clear of
+        # props so a presenter can stand anywhere. Drapes sit on the side walls
+        # just outside that rectangle (x=88 / x=112).
         ctx.furn("f_lz_window_curtains", 88, 2, False)
         ctx.furn("f_lz_window_curtains", 112, 2, False)
-
-        # A centered speaker station: padded chair behind a wide reading desk.
-        # Both are non-solid so the presenter can approach from either side;
-        # gen_campus authors a local E-to-sit target on the chair tile.
-        ctx.furn("f_lz_armchair", 99, 8, False)
-        ctx.furn("f_lz_lectern", 99, 10, False)
 
         # ── South entrance: notice boards ────────────────────────────────────
         # Flanking the door gap (x=98-99) on the last interior row, so arrivals

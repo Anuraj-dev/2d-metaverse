@@ -28,6 +28,7 @@ import {
   type DimArea,
 } from "../areaDim";
 import { seatTransition } from "../seatDoor";
+import { buildPresenterSeat, canPresenterSit, presenterSit, presenterStandFrom } from "../presenterSeat";
 import { doorPassable, shouldAnnounceKnock, type RoomOpenState } from "../roomAccess";
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
@@ -429,14 +430,7 @@ export default class WorldScene extends Phaser.Scene {
       else if (zoneType === "presenter") this.presenterZone = rectOf(o);
       else if (zoneType === "presenterSeat") {
         const rect = rectOf(o, 16, 16);
-        this.presenterSeat = {
-          roomId: "stage",
-          seatId: 0,
-          facing: (prop(o, "facing") as Dir) ?? "down",
-          rect,
-          cx: rect.centerX,
-          cy: rect.centerY,
-        };
+        this.presenterSeat = buildPresenterSeat(rect, prop(o, "facing"));
       }
       else if (zoneType === "arcade") this.arcadeZone = rectOf(o);
     }
@@ -1463,9 +1457,21 @@ export default class WorldScene extends Phaser.Scene {
    * meeting room and therefore has no room/seat row in the backend. */
   private tryPresenterSit() {
     const seat = this.presenterSeat;
-    if (!seat || this.seated || this.boardSeated || this.presenterSeated || !this.nearPresenterSeat) return;
-    this.presenterSeated = true;
-    this.nearPresenterSeat = false;
+    if (
+      !canPresenterSit({
+        hasSeat: seat !== null,
+        seated: this.seated,
+        boardSeated: this.boardSeated,
+        presenterSeated: this.presenterSeated,
+        nearPresenterSeat: this.nearPresenterSeat,
+      }) ||
+      !seat
+    ) {
+      return;
+    }
+    const next = presenterSit();
+    this.presenterSeated = next.presenterSeated;
+    this.nearPresenterSeat = next.nearPresenterSeat;
     this.player.setPosition(seat.cx, seat.cy);
     this.player.setVelocity(0, 0);
     this.dir = seat.facing;
@@ -1475,8 +1481,9 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   private presenterStand() {
-    if (!this.presenterSeated) return;
-    this.presenterSeated = false;
+    const next = presenterStandFrom(this.presenterSeated);
+    if (!next) return;
+    this.presenterSeated = next.presenterSeated;
     this.player.y += 18;
     bus.emit("stood");
   }

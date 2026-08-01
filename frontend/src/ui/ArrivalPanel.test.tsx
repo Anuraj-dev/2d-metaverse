@@ -135,6 +135,13 @@ describe("ArrivalPanel truthful actions + analytics", () => {
   it("emits a bounded, identity-free arrival-viewed event once", () => {
     render(<ArrivalPanel />);
     receive(snapshot({ activeSpaces: [{ kind: "board", id: "ttt-1", label: "Tic-Tac-Toe", count: 2 }] }));
+    // Collapsed strip is not exposure — only the first open counts.
+    expect(
+      analyticsMock.emitAnalytics.mock.calls.filter(
+        ([e]) => (e as { name: string }).name === "social-arrival-viewed",
+      ),
+    ).toHaveLength(0);
+    openPanel();
     receive(snapshot({ activeSpaces: [{ kind: "board", id: "ttt-1", label: "Tic-Tac-Toe", count: 2 }] }));
     const viewedCalls = analyticsMock.emitAnalytics.mock.calls.filter(
       ([e]) => (e as { name: string }).name === "social-arrival-viewed",

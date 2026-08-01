@@ -641,7 +641,16 @@ class StageVideo {
       if (wanted.micOn) {
         await room.localParticipant.setMicrophoneEnabled(true);
       }
-      if (opts.video && wanted.camOn) await this.applyCam(true);
+      // Camera is optional on Go Live. A sticky cam-on pref that the browser
+      // denies must not tear down the performer room or mute the mic — the
+      // global cam control can retry later on this same session.
+      if (opts.video && wanted.camOn) {
+        try {
+          await this.applyCam(true);
+        } catch (camErr) {
+          console.warn("Stage camera unavailable on go-live:", camErr);
+        }
+      }
       this.dispatch({ type: "published" });
       return { status: "live" };
     } catch (e) {

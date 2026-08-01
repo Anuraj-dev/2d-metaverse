@@ -41,9 +41,11 @@ export default function ArrivalPanel() {
 
   const view = useMemo(() => socialArrivalView({ status, snapshot, selfId }), [status, snapshot, selfId]);
 
-  // Emit "arrival viewed" once, when the surface first shows real content.
+  // Emit "arrival viewed" once, only when the panel is actually opened with
+  // real content — a collapsed strip must not count as exposure.
   useEffect(() => {
     if (viewedRef.current) return;
+    if (!open) return;
     if (view.kind !== "active" && view.kind !== "empty") return;
     viewedRef.current = true;
     emitAnalytics({
@@ -54,7 +56,7 @@ export default function ArrivalPanel() {
         hasSchedule: view.kind === "active" && view.nextScheduled !== null,
       },
     });
-  }, [view]);
+  }, [open, view]);
 
   const locatePerson = (person: PresencePerson) => {
     emitAnalytics({ name: "presence-locate", properties: { targetKind: person.activity } });

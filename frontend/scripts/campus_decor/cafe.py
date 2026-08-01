@@ -1,18 +1,18 @@
 """Cafe / lounge terrace (SW) — outdoor LimeZu art pass.
 
 District bounds: x=1..55, y=62..88. Stone terrace: x=5..47, y=63..80.
-An OUTDOOR paved terrace (no walls): a short service counter on its west edge,
-two table settings well clear of each other, and open stone everywhere else.
+An OUTDOOR paved terrace (no walls): gold benches and planters on the west
+service bay and two seating clusters, with open stone everywhere else.
 The middle of the terrace is deliberately empty — it is where players walk and
-gather.
+gather. Indoor furniture is never used here.
 
 Frozen path arteries that cut the terrace (solid bodies must not land on them):
   park path x=29–30, hostel spur x=34–35 (see maps.test.ts PRD 25.33).
 
 Layout (named clusters only):
-  · service counter — west edge x=5..9 on the slate service bay, stools tucked in
-  · table settings  — NW (15,66), SE (41,75)
-  · park-path gate  — a planter either side of the x=29–30 mouth
+  · service bay    — west edge benches + bin/lamp on the slate strip
+  · seating        — NW (15,66), SE (41,75) benches with planters
+  · park-path gate — a planter either side of the x=29–30 mouth
 """
 
 # Inclusive district / terrace bounds (documentation only — gen_campus owns floors).
@@ -36,23 +36,25 @@ def _paint_floor(ctx) -> None:
 
 
 def _furnish(ctx) -> None:
-    # ── Cluster: service counter (west terrace edge, on the slate bay) ───────
-    # A compact serving point at x=6 (solids claim cols 5–7), customer stools
-    # at x=8, and queueing space from x=10 east.
-    ctx.furn("f_lz_counter", 6, 67, True)
-    ctx.furn("f_lz_display_cab", 6, 71, True)
-    ctx.furn("f_lz_stool_wood", 8, 68, True)
-    ctx.furn("f_lz_stool_wood", 8, 71, True)
+    # Outdoor vocabulary only: benches, planters, a bin, and a lamp post.
+    # Indoor counters/chairs/tables never ship on the open terrace.
 
-    # ── Cluster: table setting NW ───────────────────────────────────────────
-    ctx.furn("f_lz_table_cafe", 15, 66, True)
-    ctx.furn("f_lz_chair_side", 13, 66, True)
-    ctx.furn("f_lz_chair_wood", 17, 66, True)
+    # ── Cluster: west service bay (slate strip) ─────────────────────────────
+    ctx.furn("f_lz_bench_gold", 6, 68, True)
+    ctx.furn("f_lz_bench_gold", 6, 71, True)
+    ctx.furn("f_lz_bin", 8, 67, True)
+    ctx.furn("f_lz_floor_lamp", 8, 72, True)
 
-    # ── Cluster: table setting SE ───────────────────────────────────────────
-    ctx.furn("f_lz_table_food", 41, 75, True)
-    ctx.furn("f_lz_chair_side", 39, 75, True)
-    ctx.furn("f_lz_chair_wood", 43, 75, True)
+    # ── Cluster: NW seating ─────────────────────────────────────────────────
+    ctx.furn("f_lz_bench_gold", 15, 66, True)
+    ctx.furn("f_lz_plant_small", 12, 64, True)
+    ctx.furn("f_lz_plant_small", 18, 64, True)
+
+    # ── Cluster: SE seating ─────────────────────────────────────────────────
+    ctx.furn("f_lz_bench_gold", 41, 75, True)
+    # Planters two tiles clear of the bench solid (bottom-anchored body).
+    ctx.furn("f_lz_plant", 38, 73, True)
+    ctx.furn("f_lz_plant", 44, 73, True)
 
     # ── Landmark: park-path gateway into the terrace (path mouth x=29–30) ───
     ctx.furn("f_lz_plant_small", 28, 64, True)

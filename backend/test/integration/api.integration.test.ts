@@ -466,11 +466,11 @@ describe("livekit token", () => {
     const { token, username } = await createUser(base, "lk8");
     const userId = (jwt.decode(token) as jwt.JwtPayload).sub!;
 
-    // Stage floor centre (stage_zone 1312,256 + 576×448).
+    // Presenter platform centre (presenter_zone 1440,32 + 336×224).
     await redis.hSet(
       "presence:1",
       userId,
-      JSON.stringify({ id: userId, name: username, x: 1600, y: 480, dir: "down", connectionId: "test" })
+      JSON.stringify({ id: userId, name: username, x: 1608, y: 144, dir: "down", connectionId: "test" })
     );
     try {
       const granted = await api(base, "/api/v1/livekit/token", {

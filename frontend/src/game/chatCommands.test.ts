@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_COMMANDS, commandInsertion, commandSuggestions } from "./chatCommands";
 
+function commandByName(name: string) {
+  const command = CHAT_COMMANDS.find((entry) => entry.name === name);
+  if (!command) throw new Error(`missing chat command ${name}`);
+  return command;
+}
+
 describe("chat command discovery", () => {
   it("shows every command for a bare slash", () => {
     expect(commandSuggestions("/")).toEqual(CHAT_COMMANDS);
@@ -20,7 +26,7 @@ describe("chat command discovery", () => {
   });
 
   it("adds a writing space only when a command accepts arguments", () => {
-    expect(commandInsertion(CHAT_COMMANDS.find((command) => command.name === "/msg")!)).toBe("/msg ");
-    expect(commandInsertion(CHAT_COMMANDS.find((command) => command.name === "/map")!)).toBe("/map");
+    expect(commandInsertion(commandByName("/msg"))).toBe("/msg ");
+    expect(commandInsertion(commandByName("/map"))).toBe("/map");
   });
 });

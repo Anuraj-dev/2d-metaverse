@@ -81,6 +81,35 @@ export const TERRAIN_COLORS: Readonly<Record<number, string>> = {
   92: "#96693f", // herringbone (auditorium)
   39: "#7c8050", // olive checker (meeting-room carpet)
   69: "#67403a", // brick wall
+  // room_builder.png family (firstgid 2275) — LimeZu interior floors
+  // FLOOR_CREAM (locals 130-132 / 147-149)
+  2405: "#c9b896",
+  2406: "#c9b896",
+  2407: "#c9b896",
+  2422: "#c9b896",
+  2423: "#c9b896",
+  2424: "#c9b896",
+  // FLOOR_TEAL (locals 164-166 / 181-183)
+  2439: "#5f8f7c",
+  2440: "#5f8f7c",
+  2441: "#5f8f7c",
+  2456: "#5f8f7c",
+  2457: "#5f8f7c",
+  2458: "#5f8f7c",
+  // FLOOR_SLATE (locals 198-200 / 215-217)
+  2473: "#7a8490",
+  2474: "#7a8490",
+  2475: "#7a8490",
+  2490: "#7a8490",
+  2491: "#7a8490",
+  2492: "#7a8490",
+  // FLOOR_PARQUET (locals 232-234 / 249-251)
+  2507: "#96693f",
+  2508: "#96693f",
+  2509: "#96693f",
+  2524: "#96693f",
+  2525: "#96693f",
+  2526: "#96693f",
 };
 
 /** Fallback family color when a GID has no explicit entry (legacy maps). */
