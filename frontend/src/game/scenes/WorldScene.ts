@@ -28,7 +28,7 @@ import {
   type DimArea,
 } from "../areaDim";
 import { seatTransition } from "../seatDoor";
-import { buildPresenterSeat, canPresenterSit, presenterSit, presenterStandFrom } from "../presenterSeat";
+import { buildPresenterSeat, canPresenterSit, presenterSit, presenterStandFrom, type PresenterSeatSpec } from "../presenterSeat";
 import { doorPassable, shouldAnnounceKnock, type RoomOpenState } from "../roomAccess";
 import { CINEMATIC_IDLE, cancelPortal, runPortalCinematic } from "../portalCinematic";
 import { interpolateStep } from "../interpolation";
@@ -140,7 +140,7 @@ export default class WorldScene extends Phaser.Scene {
   private stageZone: Phaser.Geom.Rectangle | null = null;
   private arcadeZone: Phaser.Geom.Rectangle | null = null;
   private presenterZone: Phaser.Geom.Rectangle | null = null;
-  private presenterSeat: Seat | null = null;
+  private presenterSeat: PresenterSeatSpec | null = null;
   private nearPresenterSeat = false;
   private presenterSeated = false;
   private inStage = false;

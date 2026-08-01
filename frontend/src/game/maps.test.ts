@@ -874,6 +874,7 @@ describe("auditorium speaker station", () => {
     // Presenter zone (90-110 × 2-15) must stay clear of decorative furniture.
     const furniture = objects("furniture");
     const inPresenter = furniture.filter((object) => {
+      if (object.x === undefined || object.y === undefined) return false;
       const tx = Math.floor(object.x / 16);
       const ty = Math.floor(object.y / 16);
       return tx >= 90 && tx <= 110 && ty >= 2 && ty <= 15;
