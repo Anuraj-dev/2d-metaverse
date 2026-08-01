@@ -16,7 +16,8 @@ export function renderFlappy(
   state: FlappyState,
   fx: FlappyFx,
   clouds: readonly Cloud[],
-  scale: number
+  scale: number,
+  shakeEnabled = true
 ): void {
   const { width, height } = state;
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
@@ -27,7 +28,7 @@ export function renderFlappy(
 
   let shakeX = 0;
   let shakeY = 0;
-  if (fx.shake > 0.2) {
+  if (shakeEnabled && fx.shake > 0.2) {
     shakeX = (hash(state.time * 997) - 0.5) * fx.shake;
     shakeY = (hash(state.time * 613 + 7) - 0.5) * fx.shake;
   }

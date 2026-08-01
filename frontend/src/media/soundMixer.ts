@@ -229,25 +229,29 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   // players get an independent volume/mute (surfaced in the arcade overlay)
   // without affecting world sfx. The flap/hit pair came with the flappy port —
   // the wingbeat clip is deliberately mixed far quieter than the rest since it
-  // fires several times a second.
+  // fires several times a second. Issue #163 adds near-miss and authoritative
+  // personal-best cues plus dedicated board-table foley.
   "open-arcade": { clip: "arcade_start", channel: "arcade" },
   "arcade-point": { clip: "arcade_point", channel: "arcade" },
-  "arcade-over": { clip: "arcade_over", channel: "arcade" },
+  "arcade-eat": { clip: "arcade_eat", channel: "arcade" },
+  "arcade-near": { clip: "arcade_near", channel: "arcade" },
   "arcade-flap": { clip: "arcade_flap", channel: "arcade" },
+  "arcade-over": { clip: "arcade_over", channel: "arcade" },
   "arcade-hit": { clip: "arcade_hit", channel: "arcade" },
+  "arcade-best": { clip: "arcade_best", channel: "arcade" },
   // Snake port (owner's standalone game clips): games stay audio-agnostic and
   // emit these domain events. Snake death uses its own event so flappy's
   // arcade-over mapping stays intact.
-  "arcade-eat": { clip: "arcade_eat", channel: "arcade" },
   "arcade-bonus": { clip: "arcade_bonus", channel: "arcade" },
   "arcade-milestone": { clip: "arcade_milestone", channel: "arcade" },
   "arcade-highscore": { clip: "arcade_highscore", channel: "arcade" },
   "arcade-snake-over": { clip: "arcade_snake_over", channel: "arcade" },
-  // Board-game tables (PRD 11 phase 2): reuse the existing sit/arcade cues — the
+  // Board-game tables use dedicated wooden-table foley rather than borrowing
+  // cabinet chiptune.
   // game stays audio-agnostic and emits these domain events; the mixer decides.
   "board-sat": { clip: "sit", channel: "sfx" },
-  "board-move": { clip: "arcade_point", channel: "sfx" },
-  "board-win": { clip: "arcade_over", channel: "sfx" },
+  "board-move": { clip: "board_place", channel: "sfx" },
+  "board-win": { clip: "board_win", channel: "sfx" },
   // Room admin / knock (PRD 14): reuse existing clips — components emit these
   // domain events, the mixer decides the blip. The admin's incoming-knock cue is
   // notify-class so it obeys the notification toggle.

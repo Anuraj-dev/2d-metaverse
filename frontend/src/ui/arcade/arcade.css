@@ -845,3 +845,72 @@
     transition-delay: 0ms !important;
   }
 }
+
+/* ── Per-game options + run feedback (issue #163) ──────────────────────────── */
+
+.arcade-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  flex: 0 0 auto;
+}
+.arcade-optgroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #10141f;
+  border: 1px solid #26304a;
+  border-radius: 8px;
+  padding: 3px 6px;
+}
+.arcade-optlabel {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7c88a6;
+  margin-right: 2px;
+}
+.arcade-opt {
+  background: transparent;
+  color: #aeb8d0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.arcade-opt:hover {
+  background: #24304a;
+  color: #e8ecf5;
+}
+.arcade-opt.is-on {
+  background: #7fd1b9;
+  border-color: #7fd1b9;
+  color: #10141f;
+  font-weight: 600;
+}
+.arcade-levelhint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #7c88a6;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.arcade-newbest {
+  color: #7fd1b9;
+  font-weight: 700;
+  font-size: 1.05rem !important;
+  letter-spacing: 0.02em;
+}
+.arcade-restart-hint {
+  color: #7c88a6;
+  font-size: 0.82rem !important;
+}
+
+@media (max-width: 720px) {
+  .arcade-levelhint {
+    display: none;
+  }
+}

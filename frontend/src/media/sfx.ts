@@ -45,12 +45,16 @@ const CLIPS = [
   "arcade_over",
   "arcade_flap",
   "arcade_hit",
-  // Owner Snake-game port (see scripts/curate_audio.py → curate_snake_sounds).
+  // Issue #163: per-event Snake cues + dedicated board-table foley.
   "arcade_eat",
+  "arcade_near",
+  "arcade_best",
   "arcade_bonus",
   "arcade_snake_over",
   "arcade_highscore",
   "arcade_milestone",
+  "board_place",
+  "board_win",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */

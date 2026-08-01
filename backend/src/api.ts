@@ -14,6 +14,7 @@ import {
   reportCreateSchema,
   type ArcadeGame,
   type ArcadeLeaderboard,
+  type ArcadeScoreResult,
   type BlockAck,
   type BlockList,
   type ReportAck,
@@ -237,9 +238,9 @@ api.post("/arcade/scores", arcadeScoreLimiter, requireAuth, async (request, resp
     return;
   }
   const user = (request as AuthenticatedRequest).user;
-  const best = await submitArcadeScore(user.id, parsed.data.game, parsed.data.score);
+  const { best, newBest } = await submitArcadeScore(user.id, parsed.data.game, parsed.data.score);
   const top = await getArcadeLeaderboard(parsed.data.game, LIMITS.arcadeLeaderboardMax);
-  const payload: ArcadeLeaderboard = { game: parsed.data.game, top, best };
+  const payload: ArcadeScoreResult = { game: parsed.data.game, top, best, newBest };
   response.json(payload);
 });
 

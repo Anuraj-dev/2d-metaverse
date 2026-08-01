@@ -77,24 +77,58 @@ export async function getSeatIds(roomId: string): Promise<number[]> {
 
 /**
  * Record a score for a user on a game, keeping only their best (a lower score
- * is ignored). Returns the user's best after the write. Client-reported scores
- * are trusted at this level — see README's arcade high-scores caveat.
+ * is ignored). The row lock makes the improvement verdict atomic with the
+ * write, including concurrent submissions for the same user/game.
+ * Client-reported scores are trusted at this level — see README's arcade
+ * high-scores caveat.
  */
 export async function submitArcadeScore(
   userId: string,
   game: string,
   score: number
-): Promise<number> {
-  const result = await pool.query<{ score: number }>(
-    `INSERT INTO arcade_scores (user_id, game, score, updated_at)
-     VALUES ($1, $2, $3, now())
-     ON CONFLICT (user_id, game) DO UPDATE
-       SET score = GREATEST(arcade_scores.score, EXCLUDED.score),
-           updated_at = now()
-     RETURNING score`,
-    [userId, game, score]
-  );
-  return result.rows[0]?.score ?? score;
+): Promise<{ best: number; newBest: boolean }> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const inserted = await client.query<{ score: number }>(
+      `INSERT INTO arcade_scores (user_id, game, score, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (user_id, game) DO NOTHING
+       RETURNING score`,
+      [userId, game, score]
+    );
+    const fresh = inserted.rows[0];
+    if (fresh) {
+      await client.query("COMMIT");
+      return { best: fresh.score, newBest: fresh.score > 0 };
+    }
+
+    const existing = await client.query<{ score: number }>(
+      `SELECT score
+       FROM arcade_scores
+       WHERE user_id = $1 AND game = $2
+       FOR UPDATE`,
+      [userId, game]
+    );
+    const previous = existing.rows[0];
+    if (!previous) throw new Error("arcade score disappeared during submission");
+
+    const newBest = score > previous.score;
+    const best = Math.max(previous.score, score);
+    await client.query(
+      `UPDATE arcade_scores
+       SET score = $3, updated_at = now()
+       WHERE user_id = $1 AND game = $2`,
+      [userId, game, best]
+    );
+    await client.query("COMMIT");
+    return { best, newBest };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** The top-N best scores for a game, joined to usernames, highest first. */
