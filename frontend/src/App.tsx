@@ -223,7 +223,8 @@ export default function App() {
     const nearRef = { current: null as string | null };
     // Clear any in-flight error toast on a new rejection or effect teardown so
     // a second error is not dismissed by the first timer.
-    let boardErrorTimer: ReturnType<typeof window.setTimeout> | null = null;
+    // DOM timer id is a number under the browser lib (same pattern as ControlBar).
+    let boardErrorTimer: number | null = null;
 
     const offUpdate = net.on(SERVER_EVENTS.boardUpdate, (snap: BoardUpdatePayload) => {
       const before = prev.get(snap.tableId);
