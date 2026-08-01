@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { bus } from "../game/eventBus";
 import type { ReportResult } from "../net/reports";
+import { localModeration } from "../media/localModeration";
 
 /**
  * Persistent chat-panel test: the net layer is a tiny driveable emitter, so we
@@ -29,12 +30,27 @@ const reportMock = vi.hoisted(() => ({
 }));
 vi.mock("../net/reports", () => ({ submitReport: reportMock.submitReport }));
 
+const blocksMock = vi.hoisted(() => ({
+  blockUser: vi.fn(),
+  unblockUser: vi.fn(),
+  fetchBlockedIds: vi.fn(),
+}));
+vi.mock("../net/blocks", () => blocksMock);
+
 import ChatBox from "./ChatBox";
 
 beforeEach(() => {
   netMock.net.chat.mockClear();
   reportMock.submitReport.mockReset();
   reportMock.submitReport.mockResolvedValue({ ok: true, status: "created" });
+  blocksMock.blockUser.mockReset();
+  blocksMock.blockUser.mockResolvedValue({ ok: true, status: "blocked" });
+  blocksMock.unblockUser.mockReset();
+  blocksMock.unblockUser.mockResolvedValue({ ok: true, status: "unblocked" });
+  blocksMock.fetchBlockedIds.mockReset();
+  blocksMock.fetchBlockedIds.mockResolvedValue([]);
+  for (const id of localModeration.mutedIds()) localModeration.toggleMute(id);
+  for (const id of localModeration.blockedIds()) localModeration.removeBlocked(id);
   for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
 });
 afterEach(cleanup);
@@ -59,11 +75,12 @@ function submitChat(value: string) {
 }
 
 describe("ChatBox persistent panel", () => {
-  it("is always visible with an input, defaulting to the All tab", () => {
+  it("is always visible with a compact header and input", () => {
     const { container } = render(<ChatBox />);
     expect(container.querySelector(".mc-chat")).toBeTruthy();
     expect(screen.getByLabelText("Chat message")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "All" }).className).toContain("active");
+    expect(screen.getByText("Chat")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "All" })).toBeNull();
   });
 
   it("sends a plain message on the world channel", () => {
@@ -99,6 +116,7 @@ describe("ChatBox persistent panel", () => {
     render(<ChatBox />);
     expect(screen.queryByRole("button", { name: /Room/ })).toBeNull();
     enterRoom();
+    expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
     // Room "1" resolves to its hostel display name via AREA_NAMES (PRD 22).
     const tab = screen.getByRole("button", { name: "Mandakini Hostel · Room 1" });
     expect(tab.className).toContain("active");
@@ -146,6 +164,38 @@ describe("ChatBox persistent panel", () => {
     expect((input as HTMLInputElement).value).toBe("hello there");
   });
 
+  it("shows every real command for a bare slash and filters as the user types", () => {
+    render(<ChatBox />);
+    const input = screen.getByLabelText("Chat message");
+    fireEvent.change(input, { target: { value: "/" } });
+    expect(screen.getAllByRole("option")).toHaveLength(9);
+    fireEvent.change(input, { target: { value: "/m" } });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "/mapOpen the campus map",
+      "/msgWhisper to a player",
+      "/muteMute a player this session",
+    ]);
+  });
+
+  it("uses arrow keys and Enter to choose a command without sending it", () => {
+    render(<ChatBox />);
+    const input = screen.getByLabelText("Chat message") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "/m" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+    expect(input.value).toBe("/msg ");
+    expect(screen.queryByRole("listbox", { name: "Chat commands" })).toBeNull();
+  });
+
+  it("opens the map through the slash command", () => {
+    render(<ChatBox />);
+    const showMap = vi.fn();
+    const off = bus.on("show-map", showMap);
+    submitChat("/map");
+    expect(showMap).toHaveBeenCalledTimes(1);
+    off();
+  });
+
   it("lets Tab leave chat on a whisper prefix that matches no one", () => {
     render(<ChatBox />);
     joinPlayers();
@@ -165,6 +215,61 @@ describe("ChatBox persistent panel", () => {
     render(<ChatBox />);
     act(() => netMock.net.emit("chat-cooldown", { scope: "whisper", retryAfterMs: 2500 }));
     expect(screen.getByText("You're sending messages too fast — wait 3s.")).toBeTruthy();
+  });
+
+  it("shows only populated moderation sections and closes after the final unmute", async () => {
+    render(<ChatBox />);
+    joinPlayers();
+    receiveChat("p2", "bob", "their line");
+
+    fireEvent.click(screen.getByRole("button", { name: "Mute bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "Muted and blocked players" }));
+
+    expect(screen.getByText("Muted (this session)")).toBeTruthy();
+    expect(screen.queryByText("Blocked")).toBeNull();
+    expect(screen.queryByText(/Muted bob for this session/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Muted (this session)")).toBeNull();
+      expect(screen.queryByRole("button", { name: /muted and blocked players/i })).toBeNull();
+    });
+  });
+
+  it("lets the moderation panel collapse independently from chat", () => {
+    render(<ChatBox />);
+    joinPlayers();
+    receiveChat("p2", "bob", "their line");
+    fireEvent.click(screen.getByRole("button", { name: "Mute bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "Muted and blocked players" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse muted and blocked panel" }));
+
+    expect(screen.queryByText("Muted (this session)")).toBeNull();
+    expect(screen.getByLabelText("Chat message")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Muted and blocked players" })).toBeTruthy();
+  });
+
+  it("hides the management panel after the final blocked player is restored", async () => {
+    render(<ChatBox />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    joinPlayers();
+    receiveChat("p2", "bob", "their line");
+
+    fireEvent.click(screen.getByRole("button", { name: "Block bob" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Muted and blocked players" }));
+
+    expect(screen.getByText("Blocked")).toBeTruthy();
+    expect(screen.queryByText("Muted (this session)")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Unblock" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Blocked")).toBeNull();
+      expect(screen.queryByRole("button", { name: /muted and blocked players/i })).toBeNull();
+    });
+    expect(blocksMock.unblockUser).toHaveBeenCalledWith("p2");
   });
 
   it("ignores a meeting-scoped cooldown (the meeting panel owns that surface)", () => {

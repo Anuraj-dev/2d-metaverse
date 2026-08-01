@@ -285,23 +285,26 @@ def main(argv=None):
 
     if not args.no_chairs:
         for group in ("seats", "board_seats"):
+            private_room = group == "seats"
+            front_key = "f_lz_armchair" if private_room else "f_chair"
+            side_key = "f_lz_armchair_side" if private_room else "f_chair_side"
             for o in by_name.get(group, {}).get("objects", []):
                 # Seats are tile-aligned rects; centre matches WorldScene seat.cx/cy.
                 cx = float(o["x"]) + float(o.get("width") or TS) / 2
                 cy = float(o["y"]) + float(o.get("height") or TS) / 2
                 facing = prop(o, "facing") or "down"
                 if facing == "right":
-                    img = sprite("f_chair_side")
+                    img = sprite(side_key)
                     if img is not None:
                         img = img.transpose(Image.FLIP_LEFT_RIGHT)
                 elif facing == "left":
-                    img = sprite("f_chair_side")
+                    img = sprite(side_key)
                 elif facing == "up":
-                    img = sprite("f_chair")
+                    img = sprite(front_key)
                     if img is not None:
                         img = img.transpose(Image.ROTATE_180)
                 else:
-                    img = sprite("f_chair")
+                    img = sprite(front_key)
                 if img is None:
                     continue
                 half_w, half_h = img.width / 2, img.height / 2

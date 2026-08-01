@@ -492,13 +492,13 @@ function localAudioTrackOf(room: LKRoom | null): MediaStreamTrack | null {
 
 /* ----------------------------- Stage broadcast ----------------------------- */
 /**
- * The stage LiveKit room (`stage:<spaceId>`), used for BOTH the server-wide voice
- * broadcast (PRD 17) and the explicit "Go Live" video. One connection per client
+ * The stage LiveKit room (`stage:<spaceId>`), used for the server-wide live
+ * broadcast (PRD 17). One connection per client
  * (a participant can't join the same room twice), so this holds a single `mode`:
  *  - "audience": subscribe-only. Every non-private-room client is here; remote
  *    performers attach at the FIXED `STAGE_VOLUME` ("stage-audience" routing).
  *  - "performer": reconnected with a position-validated publish token; publishes
- *    mic (voice) and optionally cam ("Go Live"). Still subscribes to co-performers.
+ *    mic (voice) and optionally cam. Still subscribes to co-performers.
  * Going on/off air reconnects with the appropriate token. Both connections feed
  * the shared speaking-state seam so a broadcasting performer ducks listeners' beds.
  */
@@ -691,28 +691,15 @@ class StageVideo {
   }
 
   /**
-   * Voice broadcast: reconnect with a publish token and go live on mic. Returns
-   * the confirmed outcome (PRD 25.7) — the caller only shows ON AIR on `live`.
-   */
-  async goOnAir(spaceId: string, selfId: string): Promise<MediaOutcome> {
-    if (this.mode === "performer") return { status: "live" };
-    await this.leave();
-    const outcome = await this.open(spaceId, selfId, { publish: true, video: false });
-    if (outcome.status === "live") this.mode = "performer";
-    return outcome;
-  }
-
-  /**
-   * Explicit keyless "Go Live" video: publish cam + mic (adds cam if already on
-   * air). The sticky cam pref wins (PRD 20 one-surface contract): going live with
-   * the bar's camera off comes up video-muted until the bar turns it on. Returns
-   * the confirmed outcome so the stage HUD only flips to LIVE on `live`.
+   * The single Go Live path: publish mic and apply the sticky camera preference.
+   * A camera-off start is audio-only; turning the global camera control on later
+   * adds video to this same performer connection. Returns the confirmed outcome
+   * so the stage HUD only flips to LIVE on `live`.
    */
   async goLive(spaceId: string, selfId: string): Promise<MediaOutcome> {
     if (this.mode === "performer" && this.room) {
-      // Already broadcasting (voice on air): "Go Live" just applies the cam per
-      // the sticky pref. A pref-off cam is a muted-but-live slot (`off`), NOT a
-      // failure — so keep reporting `live`; only a real capture denial surfaces.
+      // Already broadcasting: re-apply the current camera preference. A pref-off
+      // cam is an audio-only live slot, not a failure.
       const cam = await this.applyCamOutcome(getMediaPrefs().camOn);
       return outcomeNeedsAttention(cam.status) ? cam : { status: "live" };
     }
@@ -723,7 +710,7 @@ class StageVideo {
   }
 
   /**
-   * Global control-bar fan-out (PRD 20). Only a performer publishes — audience
+   * Global control-bar fan-out (PRD 20). Only a live performer publishes — audience
    * tokens can't publish, so applying a toggle there stays a no-op (`inactive`)
    * rather than trigger a doomed publish attempt. Awaits the confirmed outcome
    * (PRD 25.7) so a denied unmute surfaces instead of being swallowed.

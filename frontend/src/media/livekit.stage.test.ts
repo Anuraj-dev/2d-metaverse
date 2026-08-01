@@ -75,26 +75,26 @@ describe("stage publish replays the sticky media prefs (never comes up hot)", ()
   it("requests no device when stage publish starts in a consent-safe session", async () => {
     setMediaPrefs({ micOn: false, camOn: false });
 
-    await stageVideo.goOnAir("1", "self");
+    await stageVideo.goLive("1", "self");
 
     expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
     expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
   });
 
-  it("replays an explicit microphone enable when going on air", async () => {
-    setMediaPrefs({ micOn: true });
-    await stageVideo.goOnAir("1", "self");
+  it("replays an explicit microphone enable for an audio-only live start", async () => {
+    setMediaPrefs({ micOn: true, camOn: false });
+    await stageVideo.goLive("1", "self");
     expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(true);
-    // Voice broadcast never touches the camera.
+    // Camera stays absent because its global control is off.
     expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
   });
 
-  it("re-going on air after an off-air interlude still respects a mute set meanwhile", async () => {
-    await stageVideo.goOnAir("1", "self");
+  it("starting live again after a stopped interlude respects a mute set meanwhile", async () => {
+    await stageVideo.goLive("1", "self");
     setMediaPrefs({ micOn: false });
     await stageVideo.goOffAir("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
-    await stageVideo.goOnAir("1", "self");
+    await stageVideo.goLive("1", "self");
     expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
   });
 
@@ -116,8 +116,8 @@ describe("stage publish replays the sticky media prefs (never comes up hot)", ()
 });
 
 describe("global control-bar fan-out reaches the stage publisher", () => {
-  it("setMicEnabled drives the on-air mic", async () => {
-    await stageVideo.goOnAir("1", "self");
+  it("setMicEnabled drives the live microphone", async () => {
+    await stageVideo.goLive("1", "self");
     lk.localParticipant.setMicrophoneEnabled.mockClear();
     await stageVideo.setMicEnabled(false);
     expect(lk.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(false);
@@ -177,27 +177,27 @@ describe("global control-bar fan-out reaches the stage publisher", () => {
  * even though a connection was attempted.
  */
 describe("stage publication state is confirmed, never optimistic", () => {
-  it("a confirmed voice publish settles to live", async () => {
-    const outcome = await stageVideo.goOnAir("1", "self");
+  it("a confirmed publish settles to live", async () => {
+    const outcome = await stageVideo.goLive("1", "self");
     expect(outcome).toEqual({ status: "live" });
     expect(stageVideo.getPublicationStatus()).toBe("live");
   });
 
-  it("going on air while muted is still a confirmed live (muted) broadcast", async () => {
+  it("a direct transport start while muted still claims a confirmed live slot", async () => {
     setMediaPrefs({ micOn: false, camOn: false });
-    const outcome = await stageVideo.goOnAir("1", "self");
+    const outcome = await stageVideo.goLive("1", "self");
     expect(outcome).toEqual({ status: "live" });
     expect(stageVideo.getPublicationStatus()).toBe("live");
     // ...but nothing was captured.
     expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
   });
 
-  it("a denied mic capture never reads as live (goOnAir)", async () => {
+  it("a denied mic capture never reads as live", async () => {
     setMediaPrefs({ micOn: true });
     const denied = Object.assign(new Error("denied"), { name: "NotAllowedError" });
     lk.localParticipant.setMicrophoneEnabled.mockRejectedValueOnce(denied);
 
-    const outcome = await stageVideo.goOnAir("1", "self");
+    const outcome = await stageVideo.goLive("1", "self");
 
     expect(outcome).toEqual({ status: "denied" });
     expect(stageVideo.getPublicationStatus()).toBe("denied");
@@ -216,21 +216,21 @@ describe("stage publication state is confirmed, never optimistic", () => {
   it("notifies publication-status subscribers on change", async () => {
     const seen: string[] = [];
     const off = stageVideo.onPublicationStatus(() => seen.push(stageVideo.getPublicationStatus()));
-    await stageVideo.goOnAir("1", "self");
+    await stageVideo.goLive("1", "self");
     expect(seen).toContain("live");
     off();
   });
 
-  it("goLive while already on air with cam-off pref stays live, not a false failure", async () => {
+  it("repeating Go Live with the camera off stays live, not a false failure", async () => {
     setMediaPrefs({ micOn: true, camOn: false });
-    await stageVideo.goOnAir("1", "self"); // voice on air, no video
+    await stageVideo.goLive("1", "self"); // audio-only while the camera pref is off
     const outcome = await stageVideo.goLive("1", "self");
     expect(outcome).toEqual({ status: "live" });
     expect(stageVideo.getPublicationStatus()).toBe("live");
   });
 
-  it("going off air rests the publication status back to off", async () => {
-    await stageVideo.goOnAir("1", "self");
+  it("stopping live rests the publication status back to off", async () => {
+    await stageVideo.goLive("1", "self");
     expect(stageVideo.getPublicationStatus()).toBe("live");
     await stageVideo.goOffAir("1", "self");
     expect(stageVideo.getPublicationStatus()).toBe("off");

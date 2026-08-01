@@ -1,26 +1,25 @@
 """Auditorium / stage hall (NE) — LimeZu art pass.
 
-A lecture hall, not a lounge: a bare walkable stage at the north end, a block of
-identical audience chairs facing it, and almost nothing else. The room's whole
-job is that a presenter can stand anywhere on the stage and an audience can sit
-and walk between the banks without snagging on furniture.
+A lecture hall, not a lounge: a broad walkable stage at the north end, a block
+of identical audience chairs facing it, and almost nothing else. The room's
+whole job is that a presenter can move freely around one speaking focal point
+and an audience can sit and walk between the banks without snagging on props.
 
 Geometry it has to live with (all frozen):
   interior     x=82..117, y=2..43     door gap  x=98-99 on the south wall (y=44)
   presenter    x=90..110, y=2..15     (broadcast podium)
   stage zone   x=82..117, y=16..43    (audience floor — broadcast-eligible too)
   screen point tile (99, 5)           (visual anchor only)
-  no seats / doorZones / roomBounds   (public walk-in hall)
+  one local presenter seat, no doorZones / roomBounds (public walk-in hall)
 
 Also lives with (not ours — do not touch / do not stack solids on):
   gen_campus   f_clock @ (117, 28) on the east wall
   plaza_park   assorted props around y=30-34 and y=40 (shared checkout)
 
 The stage (x=90..110, y=2..15) carries NO solid props at all — a presenter walks
-the full pad and the apron in front of it. It reads as a stage entirely from its
-edges: the slate floor pad, the projector screen hung flush on the north wall,
-and a proscenium leg (drape, planter, stage light) standing in each wing at
-x=88 / x=112, just outside the rect. Nothing goes back inside it.
+the full platform and the apron in front of it. It reads as a stage through the
+broad slate surface, the projector screen and drapes hung flush on the north
+wall, and one centred, non-solid lectern. Nothing blocks movement inside it.
 
 Walkability (player body 18px > 16px tile → lanes must be ≥2 tiles):
   · centre aisle  x=97..100  clear from the south door up through the house
@@ -35,43 +34,30 @@ AUD_X0, AUD_Y0, AUD_X1, AUD_Y1 = 82, 2, 117, 43
 
 def decorate(ctx, phase: str) -> None:
     if phase == "floor":
-        # Cream house floor wall-to-wall. The stage reads as a stage through the
-        # slate pad, not through props — a small pad under the screen, not the
-        # whole presenter zone.
+        # Cream house floor wall-to-wall. The slate platform covers the full
+        # presenter rectangle and meets the backdrop instead of floating as a
+        # small rug in the middle of the room. One extra column on each side
+        # visually joins it to the proscenium drapes.
         ctx.fill_pattern(AUD_X0, AUD_Y0, AUD_X1, AUD_Y1, ctx.FLOOR_CREAM)
-        ctx.fill_pattern(94, 8, 104, 13, ctx.FLOOR_SLATE)  # presenter pad
+        ctx.fill_pattern(89, 2, 111, 15, ctx.FLOOR_SLATE)
         ctx.fill_pattern(98, 44, 99, 44, ctx.FLOOR_CREAM)  # door threshold
     elif phase == "furniture":
-        # ── Stage backdrop: projector screen ─────────────────────────────────
+        # ── Stage backdrop and speaking focal point ──────────────────────────
         # Two 32px boards butt into one 4-tile screen strip on the north wall,
         # centred over the screen anchor at (99, 5). Non-solid and flush to the
         # wall — the entire presenter zone stays walkable.
         ctx.furn("f_lz_board", 98, 2, False)
         ctx.furn("f_lz_board", 100, 2, False)
 
-        # ── Proscenium legs (x=88 / x=112) ───────────────────────────────────
-        # The stage reads as a stage from its edges, never from its middle. Each
-        # leg is a drape on the north wall, a tall planter mid-wing and a stage
-        # light at the downstage corner, stacked on one column so the pair
-        # brackets the presenter zone like a proscenium arch.
-        #
-        # x=88 / x=112 are the last columns whose 32/48px bodies stay clear of
-        # the presenter rect: a 32px body claims tx-1..tx+1, so 88 spans 87..89
-        # and 112 spans 111..113. Do not move these inward.
+        # Wall-flush drapes bracket the platform without spending floor space.
         ctx.furn("f_lz_window_curtains", 88, 2, False)
         ctx.furn("f_lz_window_curtains", 112, 2, False)
-        ctx.furn("f_lz_plant", 88, 9, True)
-        ctx.furn("f_lz_plant", 112, 9, True)
-        ctx.furn("f_lz_floor_lamp", 88, 13, True)
-        ctx.furn("f_lz_floor_lamp_blue", 112, 13, True)
 
-        # ── Side-wall glazing ────────────────────────────────────────────────
-        # Two windows per side wall along the audience run, on the wall column
-        # (82 / 117). The side walls carry nothing else.
-        ctx.furn("f_lz_window", 82, 22, False)
-        ctx.furn("f_lz_window", 82, 34, False)
-        ctx.furn("f_lz_window", 117, 22, False)
-        ctx.furn("f_lz_window", 117, 34, False)
+        # A centered speaker station: padded chair behind a wide reading desk.
+        # Both are non-solid so the presenter can approach from either side;
+        # gen_campus authors a local E-to-sit target on the chair tile.
+        ctx.furn("f_lz_armchair", 99, 8, False)
+        ctx.furn("f_lz_lectern", 99, 10, False)
 
         # ── South entrance: notice boards ────────────────────────────────────
         # Flanking the door gap (x=98-99) on the last interior row, so arrivals

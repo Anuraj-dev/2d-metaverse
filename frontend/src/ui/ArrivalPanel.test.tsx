@@ -44,22 +44,32 @@ const snapshot = (over: Partial<PresenceSnapshot> = {}): PresenceSnapshot => ({
 });
 
 const receive = (snap: PresenceSnapshot) => act(() => netMock.net.emit("presence-snapshot", snap));
+const openPanel = () => fireEvent.click(screen.getByText(/^Around/));
 
 describe("ArrivalPanel arrival states", () => {
+  it("starts collapsed so presence details do not cover the world", () => {
+    render(<ArrivalPanel />);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "Who's around" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("shows loading before any snapshot arrives", () => {
     render(<ArrivalPanel />);
+    openPanel();
     expect(screen.getByRole("status").textContent).toMatch(/finding who's around/i);
   });
 
   it("shows a distinct empty state when only the viewer is online", () => {
     render(<ArrivalPanel />);
     receive(snapshot());
+    openPanel();
     expect(screen.getByRole("status").textContent).toMatch(/nobody else is around/i);
   });
 
   it("shows a distinct failed state on a connection error", () => {
     render(<ArrivalPanel />);
     act(() => netMock.net.emit("connect_error", { message: "down" }));
+    openPanel();
     expect(screen.getByRole("status").textContent).toMatch(/couldn't load/i);
   });
 
@@ -74,6 +84,7 @@ describe("ArrivalPanel arrival states", () => {
         activeSpaces: [{ kind: "meeting", id: "r1", label: "Commons", count: 1 }],
       }),
     );
+    openPanel();
     expect(screen.getByText("bob")).toBeTruthy();
     // "Commons" appears as the active-space label (and as bob's place meta).
     expect(screen.getAllByText("Commons").length).toBeGreaterThanOrEqual(1);
@@ -96,6 +107,7 @@ describe("ArrivalPanel truthful actions + analytics", () => {
         ],
       }),
     );
+    openPanel();
     fireEvent.click(screen.getByText("bob"));
     off();
     expect(located).toEqual([{ id: "b" }]);
@@ -110,6 +122,7 @@ describe("ArrivalPanel truthful actions + analytics", () => {
     const off = bus.on("map-open", () => opened.push("map-open"));
     render(<ArrivalPanel />);
     receive(snapshot({ activeSpaces: [{ kind: "board", id: "ttt-1", label: "Tic-Tac-Toe", count: 2 }] }));
+    openPanel();
     fireEvent.click(screen.getByText("Tic-Tac-Toe"));
     off();
     expect(opened).toEqual(["map-open"]);

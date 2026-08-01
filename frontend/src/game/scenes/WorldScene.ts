@@ -139,6 +139,9 @@ export default class WorldScene extends Phaser.Scene {
   private stageZone: Phaser.Geom.Rectangle | null = null;
   private arcadeZone: Phaser.Geom.Rectangle | null = null;
   private presenterZone: Phaser.Geom.Rectangle | null = null;
+  private presenterSeat: Seat | null = null;
+  private nearPresenterSeat = false;
+  private presenterSeated = false;
   private inStage = false;
   private inPresenterSlot = false;
   // Stage broadcast on-air machine (PRD 17): pure rules in game/onAir.ts.
@@ -424,6 +427,17 @@ export default class WorldScene extends Phaser.Scene {
       const zoneType = prop(o, "zoneType");
       if (zoneType === "stage") this.stageZone = rectOf(o);
       else if (zoneType === "presenter") this.presenterZone = rectOf(o);
+      else if (zoneType === "presenterSeat") {
+        const rect = rectOf(o, 16, 16);
+        this.presenterSeat = {
+          roomId: "stage",
+          seatId: 0,
+          facing: (prop(o, "facing") as Dir) ?? "down",
+          rect,
+          cx: rect.centerX,
+          cy: rect.centerY,
+        };
+      }
       else if (zoneType === "arcade") this.arcadeZone = rectOf(o);
     }
   }
@@ -449,12 +463,12 @@ export default class WorldScene extends Phaser.Scene {
       if (!this.hasAuthoredFurnitureAt(cx, cy - 4)) {
         this.addSolid(solids, "f_table_round", cx, cy - 4);
       }
-      for (const s of seats) this.addChair(s);
+      for (const s of seats) this.addChair(s, "armchair");
     }
 
     // Board-table chairs (the solid table itself is authored in the map's
-    // furniture layer). Same chair sprites/orientation as room seats.
-    for (const s of this.boardSeats) this.addChair(s);
+    // furniture layer) use the same padded LimeZu family as the hostel rooms.
+    for (const s of this.boardSeats) this.addChair(s, "armchair");
 
     // zone decor authored in the map's `furniture` object layer (data-driven)
     for (const f of this.furniture) {
@@ -476,7 +490,7 @@ export default class WorldScene extends Phaser.Scene {
    * map's `signs` object layer, both drawn BELOW players/furniture (walkable):
    *  - `groundLabel` — directional text + arrow glyph painted FLAT on the paving
    *    at junctions;
-   *  - `floorName` — the area's name painted large + bold on the floor inside the
+   *  - `floorName` — the area's name painted compactly + bold on the floor inside the
    *    area, faded out while the local player stands in that same area.
    * The label text comes from the shared AREA_NAMES registry (`area` id →
    * `areaNameForId`), with a literal `text` fallback for non-area sub-labels,
@@ -517,7 +531,7 @@ export default class WorldScene extends Phaser.Scene {
       .setDepth(SIGN_GROUND_DEPTH);
   }
 
-  /** The area's name painted large + bold directly on the floor, with a light
+  /** The area's name painted clearly but compactly on the floor, with a light
    *  halo so it reads on any floor tile. Drawn at a low depth so players and
    *  furniture (depth = y) always walk OVER it — it never occludes anyone. Kept
    *  in `this.floorNames` so `updateAreaDim` can fade it out while the player is
@@ -526,13 +540,13 @@ export default class WorldScene extends Phaser.Scene {
     const text = this.add
       .text(x, y, label, {
         fontFamily: CANVAS_FONT_FAMILY,
-        fontSize: "22px",
+        fontSize: "16px",
         fontStyle: "bold",
         color: "#37322a",
         align: "center",
         resolution: 2,
       })
-      .setStroke("#f5eeda", 6)
+      .setStroke("#f5eeda", 3)
       .setOrigin(0.5, 0.5)
       .setDepth(SIGN_GROUND_DEPTH);
     this.floorNames.push({ areaId, text });
@@ -734,19 +748,25 @@ export default class WorldScene extends Phaser.Scene {
     img.refreshBody();
   }
 
-  private addChair(seat: { facing: Dir; cx: number; cy: number }) {
-    // Use the front-view chair for up/down seats and the side-view chair for
-    // left/right, each oriented so the seat opens toward the table.
+  private addChair(
+    seat: { facing: Dir; cx: number; cy: number },
+    family: "legacy" | "armchair"
+  ) {
+    // Private rooms use the padded LimeZu armchair family; public board tables
+    // retain the compact legacy chairs. Both are visual-only and therefore
+    // remain passable. Both side-profile source images face left.
     const depth = seat.cy - 2;
+    const frontKey = family === "armchair" ? "f_lz_armchair" : "f_chair";
+    const sideKey = family === "armchair" ? "f_lz_armchair_side" : "f_chair_side";
     let chair: Phaser.GameObjects.Image;
     if (seat.facing === "left") {
-      chair = this.add.image(seat.cx, seat.cy, "f_chair_side"); // faces left
+      chair = this.add.image(seat.cx, seat.cy, sideKey);
     } else if (seat.facing === "right") {
-      chair = this.add.image(seat.cx, seat.cy, "f_chair_side").setFlipX(true);
+      chair = this.add.image(seat.cx, seat.cy, sideKey).setFlipX(true);
     } else if (seat.facing === "up") {
-      chair = this.add.image(seat.cx, seat.cy, "f_chair").setAngle(180);
+      chair = this.add.image(seat.cx, seat.cy, frontKey).setAngle(180);
     } else {
-      chair = this.add.image(seat.cx, seat.cy, "f_chair"); // down
+      chair = this.add.image(seat.cx, seat.cy, frontKey);
     }
     chair.setDepth(depth);
   }
@@ -859,13 +879,16 @@ export default class WorldScene extends Phaser.Scene {
     );
     this.listeners.own(
       bus.on("do-sit", () => {
-        if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
+        if (this.presenterSeated) this.presenterStand();
+        else if (!this.seated && this.currentBoardSeat) this.tryBoardSit();
+        else if (!this.seated && this.nearPresenterSeat) this.tryPresenterSit();
         else this.trySit();
       }),
     );
     this.listeners.own(
       bus.on("do-stand", () => {
-        if (this.boardSeated) this.boardStand();
+        if (this.presenterSeated) this.presenterStand();
+        else if (this.boardSeated) this.boardStand();
         else this.stand();
       }),
     );
@@ -885,9 +908,14 @@ export default class WorldScene extends Phaser.Scene {
     // Fullscreen map (PRD 20): capture movement while it is open.
     this.listeners.own(bus.on("map-open", () => (this.mapOpen = true)));
     this.listeners.own(bus.on("map-close", () => (this.mapOpen = false)));
-    // Stage on-air confirm prompt (PRD 17): the HUD returns the player's choice.
+    // Stage live prompt (PRD 17): the HUD returns the player's choice, while a
+    // transport failure re-opens the single prompt instead of leaving it stuck.
     this.listeners.own(bus.on("stage-confirm", () => this.applyOnAir({ type: "confirm" })));
     this.listeners.own(bus.on("stage-decline", () => this.applyOnAir({ type: "decline" })));
+    this.listeners.own(bus.on("stage-stop", () => this.applyOnAir({ type: "stop" })));
+    this.listeners.own(
+      bus.on("stage-live-failed", () => this.applyOnAir({ type: "publish-failed" })),
+    );
     // Arcade overlay closed → wake the world scene it slept under.
     this.listeners.own(
       bus.on("close-arcade", () => {
@@ -1015,7 +1043,7 @@ export default class WorldScene extends Phaser.Scene {
     );
   }
 
-  /** Gather-style speech bubble floating above whoever spoke. Pure visual. */
+  /** Compact pixel-paper speech bubble floating above whoever spoke. Pure visual. */
   private showChatBubble(id: string, text: string) {
     const sprite =
       id === this.net.selfId ? this.player : this.remotes.get(id)?.sprite;
@@ -1026,25 +1054,36 @@ export default class WorldScene extends Phaser.Scene {
     const txt = this.add
       .text(0, 0, text, {
         fontFamily: CANVAS_FONT_FAMILY,
-        fontSize: "9px",
-        color: "#10131a",
+        fontSize: "10px",
+        fontStyle: "bold",
+        color: "#4c2e1e",
         align: "center",
-        wordWrap: { width: 120 },
+        wordWrap: { width: 116 },
       })
       .setOrigin(0.5, 0.5);
-    const padX = 6,
-      padY = 4;
+    const padX = 8,
+      padY = 5;
     const w = txt.width + padX * 2;
     const h = txt.height + padY * 2;
     const g = this.add.graphics();
-    g.fillStyle(0xffffff, 0.96);
-    g.lineStyle(1, 0x2a2f3d, 1);
-    g.fillRoundedRect(-w / 2, -h / 2, w, h, 6);
-    g.strokeRoundedRect(-w / 2, -h / 2, w, h, 6);
-    g.fillStyle(0xffffff, 0.96);
-    g.fillTriangle(-4, h / 2, 4, h / 2, 0, h / 2 + 5);
+    const left = -w / 2;
+    const top = -h / 2;
+    // A crisp hard shadow and nested brown/gold paper edges mirror the selected
+    // HUD concept. There is deliberately no speaker tab: the in-world nameplate
+    // below already identifies the speaker without repeating "You".
+    g.fillStyle(0x4c2e1e, 1);
+    g.fillRoundedRect(left + 3, top + 3, w, h, 3);
+    g.fillTriangle(-4 + 3, h / 2 + 3, 5 + 3, h / 2 + 3, 1 + 3, h / 2 + 9);
+    g.fillStyle(0x754525, 1);
+    g.fillRoundedRect(left, top, w, h, 3);
+    g.fillTriangle(-5, h / 2 - 1, 5, h / 2 - 1, 0, h / 2 + 7);
+    g.fillStyle(0xffefbd, 1);
+    g.fillRoundedRect(left + 2, top + 2, w - 4, h - 4, 2);
+    g.fillTriangle(-3, h / 2 - 2, 3, h / 2 - 2, 0, h / 2 + 4);
+    g.lineStyle(1, 0xe0a43b, 1);
+    g.strokeRoundedRect(left + 3, top + 3, w - 6, h - 6, 2);
 
-    const offsetY = h / 2 + 5 + 34; // tail tip clears the gold nameplate above the head
+    const offsetY = h / 2 + 9 + 34; // tail tip clears the gold nameplate above the head
     const container = this.add
       .container(sprite.x, sprite.y - offsetY, [g, txt])
       .setDepth(10000);
@@ -1136,9 +1175,9 @@ export default class WorldScene extends Phaser.Scene {
 
   private handleMovement(time: number) {
     const body = this.player;
-    if (this.seated || this.boardSeated || this.mapOpen || isTyping()) {
+    if (this.seated || this.boardSeated || this.presenterSeated || this.mapOpen || isTyping()) {
       body.setVelocity(0, 0);
-      if (!this.seated && !this.boardSeated) {
+      if (!this.seated && !this.boardSeated && !this.presenterSeated) {
         this.player.anims.stop();
         this.player.setFrame(idleFrame(this.dir));
       }
@@ -1248,26 +1287,34 @@ export default class WorldScene extends Phaser.Scene {
       if (nowInStage) bus.emit("near-stage");
       else bus.emit("leave-stage");
     }
-    // Drive the on-air machine every frame: standing still on the stage arms the
-    // confirm prompt; the emitted effects flow to the HUD + media layer.
+    // The audience floor still drives auditorium presence/audio, but only the
+    // dedicated presenter platform may arm a broadcast prompt.
+    const nowInPresenter = inZone(this.presenterZone, fx, fy);
     this.applyOnAir({
       type: "tick",
-      onStage: nowInStage,
+      onStage: nowInPresenter,
       x: Math.floor(this.player.x),
       y: Math.floor(this.player.y),
       now: this.time.now,
     });
 
     // presenter zone (podium — emit regardless of seated state)
-    const nowInPresenter = inZone(this.presenterZone, fx, fy);
     if (nowInPresenter !== this.inPresenterSlot) {
       this.inPresenterSlot = nowInPresenter;
       if (nowInPresenter) bus.emit("near-presenter-slot");
       else bus.emit("leave-presenter-slot");
     }
 
+    const nearPresenterSeat =
+      !this.seated && !this.boardSeated && !this.presenterSeated &&
+      this.presenterSeat !== null && rectContains(this.presenterSeat.rect, fx, fy);
+    if (nearPresenterSeat !== this.nearPresenterSeat) {
+      this.nearPresenterSeat = nearPresenterSeat;
+      bus.emit(nearPresenterSeat ? "near-seat" : "leave-seat");
+    }
+
     // board-table seats (public plaza; ungated by room entry)
-    if (!this.boardSeated && !this.seated) {
+    if (!this.boardSeated && !this.seated && !this.presenterSeated) {
       let inBoard: BoardSeat | null = null;
       for (const s of this.boardSeats) if (rectContains(s.rect, fx, fy)) inBoard = s;
       if (inBoard !== this.currentBoardSeat) {
@@ -1278,7 +1325,7 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     // seats (only matter once room entered)
-    if (this.seated || this.boardSeated) return;
+    if (this.seated || this.boardSeated || this.presenterSeated || this.nearPresenterSeat) return;
     const inSeat = findSeat(this.seats, this.enteredRooms, fx, fy);
     if (inSeat !== this.currentSeat) {
       this.currentSeat = inSeat;
@@ -1372,6 +1419,14 @@ export default class WorldScene extends Phaser.Scene {
         this.boardStand();
         return;
       }
+      if (this.presenterSeated) {
+        this.presenterStand();
+        return;
+      }
+      if (!this.seated && this.nearPresenterSeat && !this.currentInteractable) {
+        this.tryPresenterSit();
+        return;
+      }
       if (!this.seated && this.currentBoardSeat && !this.currentInteractable) {
         this.tryBoardSit();
         return;
@@ -1402,6 +1457,28 @@ export default class WorldScene extends Phaser.Scene {
     this.player.setFrame(idleFrame(s.facing));
     this.net.boardSit(s.tableId, s.seat);
     bus.emit("board-sat", { tableId: s.tableId, seat: s.seat, game: s.game, label: s.label });
+  }
+
+  /** Public auditorium seat: local-only, because the stage is not a private
+   * meeting room and therefore has no room/seat row in the backend. */
+  private tryPresenterSit() {
+    const seat = this.presenterSeat;
+    if (!seat || this.seated || this.boardSeated || this.presenterSeated || !this.nearPresenterSeat) return;
+    this.presenterSeated = true;
+    this.nearPresenterSeat = false;
+    this.player.setPosition(seat.cx, seat.cy);
+    this.player.setVelocity(0, 0);
+    this.dir = seat.facing;
+    this.player.anims.stop();
+    this.player.setFrame(idleFrame(seat.facing));
+    bus.emit("sat", { roomId: "stage", seatId: 0 });
+  }
+
+  private presenterStand() {
+    if (!this.presenterSeated) return;
+    this.presenterSeated = false;
+    this.player.y += 18;
+    bus.emit("stood");
   }
 
   private boardStand() {
@@ -1619,7 +1696,7 @@ export default class WorldScene extends Phaser.Scene {
         ...toScreen(r.sprite.x, r.sprite.y),
       })),
     ];
-    bus.emit("positions", { players, seated: this.seated });
+    bus.emit("positions", { players, seated: this.seated || this.presenterSeated });
   }
 }
 

@@ -21,7 +21,7 @@ export default function ArrivalPanel() {
   const [snapshot, setSnapshot] = useState<PresenceSnapshot | null>(null);
   const [status, setStatus] = useState<ArrivalStatus>("loading");
   const [selfId, setSelfId] = useState(() => sharedNet().selfId);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const viewedRef = useRef(false);
 
   useEffect(() => {

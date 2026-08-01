@@ -157,6 +157,29 @@ describe("stepOnAir — going off air", () => {
     expect(r.phase).toBe("onair");
   });
 
+  it("an explicit stop ends live and stays dismissed while still", () => {
+    const r = run([
+      tick(true, 0, 0, 0),
+      tick(true, 0, 0, STILL_MS),
+      { type: "confirm" },
+      { type: "stop" },
+      tick(true, 0, 0, STILL_MS + 500),
+    ]);
+    expect(r.effects).toEqual(["show-prompt", "go-on-air", "go-off-air"]);
+    expect(r.phase).toBe("declined");
+  });
+
+  it("a publish failure restores the same prompt for retry", () => {
+    const r = run([
+      tick(true, 0, 0, 0),
+      tick(true, 0, 0, STILL_MS),
+      { type: "confirm" },
+      { type: "publish-failed" },
+    ]);
+    expect(r.effects).toEqual(["show-prompt", "go-on-air", "show-prompt"]);
+    expect(r.phase).toBe("prompt");
+  });
+
   it("leaving while merely prompting hides the prompt (no off-air)", () => {
     const r = run([
       tick(true, 0, 0, 0),

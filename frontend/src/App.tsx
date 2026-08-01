@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { MotionConfig } from "motion/react";
 import { TriangleAlert } from "lucide-react";
-import Roster from "./ui/Roster";
 import Minimap from "./ui/Minimap";
 import ControlBar from "./ui/ControlBar";
 import TouchControls from "./ui/TouchControls";
@@ -21,6 +20,8 @@ import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
 import { bus } from "./game/eventBus";
 import { worldAudio, roomVideo, stageVideo } from "./media/livekit";
+import { setMic } from "./media/mediaControls";
+import { outcomeNeedsAttention } from "./media/publicationState";
 import {
   MEETING_NONE,
   meetingUiReduce,
@@ -313,14 +314,27 @@ export default function App() {
       });
       startStageAudience();
     });
-    // On-air lifecycle (PRD 17): the pure on-air machine in WorldScene emits these
-    // once the performer confirms / steps off the stage. Going on air reconnects
-    // the stage room with a position-validated publish token; off air returns to
-    // the audience subscription.
+    // Stage-live lifecycle (PRD 17): one explicit Go Live action enables audio,
+    // reconnects with the position-validated publish token, and applies the
+    // current camera preference. The global camera control can add/remove video
+    // afterward without creating a second stage action.
     const offOnAir = bus.on("stage-on-air", () => {
-      // The confirmed outcome drives StageScreen's LIVE truth via the transport's
-      // publication store (PRD 25.7); the sequencer only needs the settled void.
-      if (selfId) transition(async () => void (await stageVideo.goOnAir(SPACE_ID, selfId)));
+      if (!selfId) return;
+      transition(async () => {
+        // Clicking Go Live is the explicit microphone-enable gesture. Use the
+        // shared fan-out so the control bar and every active publisher stay in sync.
+        const mic = await setMic(true);
+        if (outcomeNeedsAttention(mic.status)) {
+          await setMic(false);
+          bus.emit("stage-live-failed");
+          return;
+        }
+        const live = await stageVideo.goLive(SPACE_ID, selfId);
+        if (outcomeNeedsAttention(live.status)) {
+          await setMic(false);
+          bus.emit("stage-live-failed");
+        }
+      });
     });
     const offOffAir = bus.on("stage-off-air", () => {
       if (selfId) transition(async () => void (await stageVideo.goOffAir(SPACE_ID, selfId)));
@@ -493,7 +507,6 @@ export default function App() {
       </Suspense>
       <div className="hud">
         <InteractionHint />
-        <Roster />
         <Suspense fallback={null}>
           <ArrivalPanel />
         </Suspense>

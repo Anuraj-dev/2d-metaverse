@@ -697,6 +697,49 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
     expect(solids.length).toBeGreaterThan(0);
   });
 
+  it("keeps Cauvery's shared hall open between two mirrored computer banks", () => {
+    const inSharedHall = (o: FurnObject): boolean => {
+      const tx = (o.x ?? 0) / TS;
+      const ty = (o.y ?? 0) / TS;
+      return tx >= 31 && tx <= 78 && ((ty >= 12 && ty <= 23) || (tx >= 72 && ty <= 11));
+    };
+    const shared = objects("furniture").filter(inSharedHall);
+    const centerClutter = shared.filter((o) => {
+      const tx = (o.x ?? 0) / TS;
+      return tx > 35 && tx < 74 && o.name !== "f_lz_whiteboard";
+    });
+    expect(centerClutter.map((o) => `${o.name}@${o.x},${o.y}`)).toHaveLength(0);
+
+    const left = shared.filter((o) => (o.x ?? 0) / TS <= 35);
+    const right = shared.filter((o) => (o.x ?? 0) / TS >= 74);
+    const rightKeys = new Set(
+      right.map((o) => `${(o.x ?? 0) / TS},${(o.y ?? 0) / TS}:${o.name}`),
+    );
+    expect(left).toHaveLength(6);
+    expect(right).toHaveLength(6);
+    for (const o of left) {
+      const tx = (o.x ?? 0) / TS;
+      const ty = (o.y ?? 0) / TS;
+      expect(rightKeys).toContain(`${109 - tx},${ty}:${o.name}`);
+    }
+  });
+
+  it("keeps Cauvery rooms free of auxiliary corner furniture", () => {
+    const removed = new Set([
+      "f_lz_armchair",
+      "f_lz_side_table",
+      "f_lz_floor_lamp",
+      "f_lz_plant_small",
+      "f_lz_filing",
+    ]);
+    const bad = objects("furniture").filter((o) => {
+      const tx = (o.x ?? 0) / TS;
+      const ty = (o.y ?? 0) / TS;
+      return tx >= 31 && tx <= 71 && ty >= 2 && ty <= 11 && removed.has(o.name);
+    });
+    expect(bad.map((o) => `${o.name}@${o.x},${o.y}`)).toHaveLength(0);
+  });
+
   it("no solid furniture body sits on a door threshold", () => {
     const doors = new Set<string>();
     for (const d of objects("doorZones")) for (const t of rectTiles(d)) doors.add(t);
@@ -807,6 +850,35 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
   });
 });
 
+describe("auditorium speaker station", () => {
+  type ObjectDef = {
+    name: string;
+    x?: number;
+    y?: number;
+    properties?: { name: string; value: unknown }[];
+  };
+  const objects = (layerName: string): ObjectDef[] => {
+    const map = loadMap("campus") as unknown as { layers: { name: string; objects?: ObjectDef[] }[] };
+    return map.layers.find((layer) => layer.name === layerName)?.objects ?? [];
+  };
+  const prop = (object: ObjectDef, name: string) =>
+    object.properties?.find((property) => property.name === name)?.value;
+
+  it("pairs the lectern with one centered padded chair and a local sit target", () => {
+    const furniture = objects("furniture");
+    const lectern = furniture.find((object) => object.name === "f_lz_lectern");
+    const chair = furniture.find(
+      (object) => object.name === "f_lz_armchair" && object.x === 99 * 16 + 8 && object.y === 8 * 16 + 8,
+    );
+    const seat = objects("stage").find((object) => prop(object, "zoneType") === "presenterSeat");
+
+    expect(lectern).toMatchObject({ x: 99 * 16 + 8, y: 10 * 16 + 8 });
+    expect(chair).toBeDefined();
+    expect(seat).toMatchObject({ x: 99 * 16, y: 8 * 16 });
+    expect(prop(seat!, "facing")).toBe("down");
+  });
+});
+
 // A prop placed in the map but never preloaded by BootScene renders as a green
 // missing-texture box in game — and the offline render harness reads the PNGs
 // directly, so it looks perfectly fine there. Only this guard catches it.
@@ -853,5 +925,13 @@ describe("furniture texture registration", () => {
     const loaded = preloadedKeys();
     const missing = [...named].filter((k) => !loaded.has(k));
     expect(missing, `drawn by WorldScene but not preloaded: ${missing.join(", ")}`).toHaveLength(0);
+  });
+
+  it("renders private-room and board-table seats with the padded LimeZu armchair family", () => {
+    const scene = readFileSync(resolve(__dirname, "./scenes/WorldScene.ts"), "utf-8");
+    expect(scene.match(/this\.addChair\(s, "armchair"\)/g)).toHaveLength(2);
+    expect(scene).not.toContain('this.addChair(s, "legacy")');
+    expect(scene).toContain('family === "armchair" ? "f_lz_armchair" : "f_chair"');
+    expect(scene).toContain('family === "armchair" ? "f_lz_armchair_side" : "f_chair_side"');
   });
 });

@@ -16,9 +16,9 @@ const center = (r: { x: number; y: number; width: number; height: number }) => (
 });
 
 describe("canPublishFromStage", () => {
-  it("accepts a point at the centre of the stage floor", () => {
+  it("rejects a point on the auditorium audience floor", () => {
     const c = center(stage);
-    expect(canPublishFromStage(zones, c.x, c.y)).toBe(true);
+    expect(canPublishFromStage(zones, c.x, c.y)).toBe(false);
   });
 
   it("accepts a point at the centre of the presenter podium", () => {
@@ -26,9 +26,15 @@ describe("canPublishFromStage", () => {
     expect(canPublishFromStage(zones, c.x, c.y)).toBe(true);
   });
 
-  it("accepts the inclusive corners of the stage floor", () => {
-    expect(canPublishFromStage(zones, stage.x, stage.y)).toBe(true);
-    expect(canPublishFromStage(zones, stage.x + stage.width, stage.y + stage.height)).toBe(true);
+  it("accepts the inclusive corners of the presenter platform", () => {
+    expect(canPublishFromStage(zones, presenter.x, presenter.y)).toBe(true);
+    expect(
+      canPublishFromStage(
+        zones,
+        presenter.x + presenter.width,
+        presenter.y + presenter.height,
+      ),
+    ).toBe(true);
   });
 
   it("rejects the spawn point and other off-stage positions", () => {
@@ -42,9 +48,12 @@ describe("canPublishFromStage", () => {
     expect(canPublishFromStage([], center(stage).x, center(stage).y)).toBe(false);
   });
 
-  it("isInStageZone agrees with canPublishFromStage", () => {
-    const c = center(presenter);
-    expect(isInStageZone(zones, c.x, c.y)).toBe(true);
+  it("keeps the wider auditorium zone for presence without granting publish", () => {
+    const audience = center(stage);
+    const platform = center(presenter);
+    expect(isInStageZone(zones, audience.x, audience.y)).toBe(true);
+    expect(canPublishFromStage(zones, audience.x, audience.y)).toBe(false);
+    expect(isInStageZone(zones, platform.x, platform.y)).toBe(true);
     expect(isInStageZone(zones, 0, 0)).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState, lazy, Suspense } from "react";
-import { Bell, Maximize, Settings as SettingsIcon, ShieldCheck } from "lucide-react";
+import { Bell, CircleHelp, Maximize, SlidersHorizontal, ShieldCheck } from "lucide-react";
 import { bus } from "../game/eventBus";
 import {
   getSettings,
@@ -88,9 +88,10 @@ export default function Settings() {
         className="icon-btn"
         aria-label="Settings"
         aria-expanded={open}
+        data-tooltip="Settings"
         onClick={() => setOpen((o) => !o)}
       >
-        <SettingsIcon size={18} aria-hidden="true" />
+        <SlidersHorizontal size={19} aria-hidden="true" />
       </button>
       {open && (
         <div className="settings-panel">
@@ -189,6 +190,14 @@ export default function Settings() {
             </select>
           </label>
           <div className="set-actions">
+            <button
+              onClick={() => {
+                setOpen(false);
+                bus.emit("show-controls-help");
+              }}
+            >
+              <CircleHelp size={14} aria-hidden="true" /> Controls & shortcuts
+            </button>
             <button onClick={toggleFullscreen}>
               <Maximize size={14} aria-hidden="true" /> Fullscreen
             </button>

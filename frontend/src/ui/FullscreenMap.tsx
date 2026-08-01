@@ -6,6 +6,26 @@ import { fitScale } from "./minimapScale";
 import type { TerrainInfo } from "./minimapTerrain";
 import Dialog from "./Dialog";
 
+const OTHER_PLAYER_COLORS = ["#2f80b7", "#7650a8", "#c65373", "#d29223"] as const;
+
+function playerColor(dot: MapDotFull, index: number): string {
+  return dot.self ? "#4c9b45" : OTHER_PLAYER_COLORS[index % OTHER_PLAYER_COLORS.length] ?? "#2f80b7";
+}
+
+function labelPalette(id: string): { fill: string; border: string; ink: string } {
+  const normalized = id.toLowerCase();
+  if (normalized.includes("hostel") || normalized.includes("cauvery") || normalized.includes("mandakini")) {
+    return { fill: "#617e9e", border: "#3c526c", ink: "#fff3cf" };
+  }
+  if (normalized.includes("stage")) {
+    return { fill: "#88618f", border: "#614367", ink: "#fff3cf" };
+  }
+  if (normalized.includes("arcade")) {
+    return { fill: "#9b6044", border: "#6d402c", ink: "#fff3cf" };
+  }
+  return { fill: "#e7d69c", border: "#754525", ink: "#382718" };
+}
+
 export interface MapArea {
   id: string;
   x: number;
@@ -73,10 +93,15 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
     return c;
   }, [info.terrain]);
 
-  // Aspect-preserving scale into ~86% of the viewport.
+  // Aspect-preserving scale that reserves room for the pinned player roster.
+  // The former calculation sized the canvas to the viewport before adding the
+  // sidebar, which could push the dialog beyond the visible screen.
   const scale = useMemo(() => {
-    const maxW = Math.max(320, window.innerWidth * 0.86);
-    const maxH = Math.max(240, window.innerHeight * 0.82);
+    const compact = window.innerWidth < 760;
+    const maxW = compact
+      ? Math.max(240, window.innerWidth - 56)
+      : Math.max(320, Math.min(window.innerWidth * 0.68, window.innerWidth - 340));
+    const maxH = Math.max(240, window.innerHeight * (compact ? 0.5 : 0.74));
     return fitScale(info.width, info.height, maxW, maxH);
   }, [info.width, info.height]);
 
@@ -100,36 +125,41 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
     }
 
     // Private-room footprints.
-    ctx.strokeStyle = "rgba(110,168,254,0.75)";
-    ctx.fillStyle = "rgba(110,168,254,0.14)";
-    ctx.lineWidth = 1 / scale;
+    ctx.strokeStyle = "rgba(117,69,37,0.82)";
+    ctx.fillStyle = "rgba(243,230,178,0.18)";
+    ctx.lineWidth = 2 / scale;
     for (const r of info.rooms) {
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.strokeRect(r.x, r.y, r.w, r.h);
     }
 
     // Area-name labels from the AREA_NAMES registry.
-    ctx.fillStyle = "#eef2ff";
-    ctx.strokeStyle = "rgba(6,10,20,0.85)";
-    ctx.lineWidth = 3 / scale;
-    ctx.font = `${Math.round(15 / scale)}px sans-serif`;
+    ctx.font = `800 ${Math.round(13 / scale)}px Nunito, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (const label of areaLabels(info.areas ?? [])) {
-      ctx.strokeText(label.name, label.cx, label.cy);
+      const palette = labelPalette(`${label.id} ${label.name}`);
+      const labelWidth = ctx.measureText(label.name).width + 16 / scale;
+      const labelHeight = 24 / scale;
+      ctx.fillStyle = palette.fill;
+      ctx.strokeStyle = palette.border;
+      ctx.lineWidth = 2 / scale;
+      ctx.fillRect(label.cx - labelWidth / 2, label.cy - labelHeight / 2, labelWidth, labelHeight);
+      ctx.strokeRect(label.cx - labelWidth / 2, label.cy - labelHeight / 2, labelWidth, labelHeight);
+      ctx.fillStyle = palette.ink;
       ctx.fillText(label.name, label.cx, label.cy);
     }
 
     // Live player dots.
-    for (const d of dots) {
+    dots.forEach((d, index) => {
       ctx.beginPath();
       ctx.arc(d.x, d.y, (d.self ? 6 : 5) / scale, 0, Math.PI * 2);
-      ctx.fillStyle = d.self ? "#7ee787" : "#e6e9f0";
+      ctx.fillStyle = playerColor(d, index);
       ctx.fill();
       ctx.lineWidth = 1.5 / scale;
-      ctx.strokeStyle = "#06122b";
+      ctx.strokeStyle = "#382718";
       ctx.stroke();
-    }
+    });
   }, [info, dots, terrainCanvas, scale, cw, ch]);
 
   // Esc, focus containment, and background inertness are owned by the Dialog
@@ -177,7 +207,7 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
       className="fullmap-panel"
     >
       <div className="fullmap-head">
-        <span>Campus map</span>
+        <span className="fullmap-title">Campus map</span>
         <button
           type="button"
           className="icon-btn fullmap-close"
@@ -198,11 +228,12 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
           onClick={onClick}
         />
         <nav className="fullmap-people" aria-label="People on the map">
+          <div className="fullmap-people-title">Players</div>
           {namedDots.length === 0 ? (
             <p className="fullmap-people-empty">No one else is here right now.</p>
           ) : (
             <ul className="fullmap-people-list">
-              {namedDots.map((d) => (
+              {namedDots.map((d, index) => (
                 <li key={d.id}>
                   <button
                     type="button"
@@ -213,6 +244,7 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
                     <span
                       className="fullmap-person-dot"
                       data-self={d.self}
+                      style={{ background: playerColor(d, index) }}
                       aria-hidden="true"
                     />
                     <span className="fullmap-person-name">
@@ -225,6 +257,7 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
               ))}
             </ul>
           )}
+          <p className="fullmap-note">Explore Hyprverse Campus!</p>
         </nav>
       </div>
       {hover && (

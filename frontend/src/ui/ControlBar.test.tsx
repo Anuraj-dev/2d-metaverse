@@ -75,7 +75,7 @@ describe("ControlBar", () => {
     fireEvent.click(share);
     expect(media.roomVideo.setScreenShareEnabled).toHaveBeenCalledWith(true);
     expect(shared).toBe(true);
-    expect(screen.getByRole("status").textContent).toBe("Sharing your screen");
+    expect(screen.getByRole("status").textContent).toBe("");
     off();
 
     // Leaving the meeting disables it again.
@@ -85,7 +85,7 @@ describe("ControlBar", () => {
     ).toBe(true);
   });
 
-  it("mutes the mic across every active publisher and announces it", () => {
+  it("mutes the mic across every active publisher without a duplicate status toast", () => {
     setMediaPrefs({ micOn: true });
     render(<ControlBar />);
     let toggled: { on: boolean } | undefined;
@@ -100,19 +100,18 @@ describe("ControlBar", () => {
     // Icon/label flips and a bus event fires for the sound mixer's blip.
     expect(screen.getByLabelText("Unmute microphone")).toBeTruthy();
     expect(toggled).toEqual({ on: false });
-    // Politely announced toast.
-    expect(screen.getByRole("status").textContent).toBe("Microphone muted");
+    expect(screen.getByRole("status").textContent).toBe("");
     off();
   });
 
-  it("toggles the camera on the room and stage publishers and announces it", () => {
+  it("toggles the camera publishers without a duplicate status toast", () => {
     setMediaPrefs({ camOn: true });
     render(<ControlBar />);
     fireEvent.click(screen.getByLabelText("Turn camera off"));
     expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(false);
     expect(media.stageVideo.setCamEnabled).toHaveBeenCalledWith(false);
     expect(screen.getByLabelText("Turn camera on")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toBe("Camera off");
+    expect(screen.getByRole("status").textContent).toBe("");
   });
 
   it("explicitly enables the microphone and keeps the control truthful", () => {
@@ -120,7 +119,7 @@ describe("ControlBar", () => {
     fireEvent.click(screen.getByLabelText("Unmute microphone"));
     expect(media.worldAudio.setMicEnabled).toHaveBeenLastCalledWith(true);
     expect(screen.getByLabelText("Mute microphone")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toBe("Microphone on");
+    expect(screen.getByRole("status").textContent).toBe("");
   });
 
   it("reverts the mic and announces when the transport denies the unmute (PRD 25.7)", async () => {
@@ -146,7 +145,7 @@ describe("ControlBar", () => {
     await waitFor(() => expect(media.roomVideo.setCamEnabled).toHaveBeenCalledWith(true));
     // No revert: the control stays on and never shows a failure toast.
     expect(screen.getByLabelText("Turn camera off")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toBe("Camera on");
+    expect(screen.getByRole("status").textContent).toBe("");
     // A successful publish is never reported as an operational failure.
     expect(reportMediaPublishFailure).not.toHaveBeenCalled();
   });

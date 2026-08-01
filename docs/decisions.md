@@ -117,3 +117,12 @@ props. The fix was not a better brief but an executable oracle: given the exact 
 runnable checker, all 5 cleared to zero in one round. Consequence: `DecorContext` deliberately exposes
 no `is_seat`/`is_wall`-style predicates (they also silently returned wrong answers, since the backing
 lists are empty during the floor phase). `frontend/src/game/maps.test.ts` is the single authority.
+
+## 2026-08-01 — Compact pixel-paper chat is the canonical HUD composition
+**Why:** Raja selected the attached mockup with one integrated bottom-left chat card, a command tray tucked over its lower-right edge, and the media controls in a compact horizontal bottom-centre bar. The earlier numbered-mockup wording was ambiguous, so the selected image itself is now the authority. Rejected: the split Field Notes cards and vertical control rail. Help remains reachable through `?` and Settings instead of becoming another floating button.
+
+## 2026-08-01 — Selected bubble/map concepts and presenter-only broadcast authority
+**Why:** Raja chose bubble concept 1 without its duplicate `You` tab and map concept 2's wooden noticeboard composition; the images, not their earlier ordering, are canonical. The world nameplate already identifies speakers, and a warm pinned roster fits the pixel-paper HUD better than the charcoal modal. Separately, auditorium presence/audio remains the full audience area, but broadcast prompt arming and backend token authorization require the generated `presenter` platform: being an audience member must never imply permission to broadcast. Successful media toggles use their already-visible button state; aria-live status is reserved for denied/unavailable/failed outcomes.
+
+## 2026-08-01 — Stage broadcast is one explicit live session
+**Why:** Separate “Go on air” and “Go Live (video)” paths produced overlapping prompts and two competing transport lifecycles. The presenter now gets one explicit `Go Live` action that enables microphone audio and starts the stage session; the existing global camera control adds or removes video from that same session, and `Stop Live` ends it. User-facing state is `LIVE` / `NOT LIVE`. This supersedes the 2026-07-07 “muted preference wins when going on air” choice: the new explicit Go Live click is itself consent to start audio, while camera consent remains independent.

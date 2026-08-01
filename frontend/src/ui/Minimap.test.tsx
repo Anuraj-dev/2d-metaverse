@@ -60,4 +60,15 @@ describe("Minimap overlay exclusivity", () => {
       cleanupBus();
     }
   });
+
+  it("opens when chat runs the map command", () => {
+    const { events, cleanupBus } = renderMap();
+    try {
+      events.length = 0;
+      act(() => bus.emit("show-map"));
+      expect(events).toEqual(["map-open"]);
+    } finally {
+      cleanupBus();
+    }
+  });
 });

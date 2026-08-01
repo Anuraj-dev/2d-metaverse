@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CircleStop, Mic, Video } from "lucide-react";
+import { CircleStop, Radio } from "lucide-react";
 import { bus } from "../game/eventBus";
 import { stageVideo } from "../media/livekit";
 import type { RoomTrack } from "../media/livekit";
 import { isPublishFailure, isPublished } from "../media/publicationState";
-import { sharedNet } from "../net/shared";
-
-const SPACE_ID = "1";
 
 function VideoTrackEl({ track }: { track: MediaStreamTrack }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -18,19 +15,16 @@ function VideoTrackEl({ track }: { track: MediaStreamTrack }) {
 
 /**
  * Stage broadcast HUD (PRD 17):
- *  - the on-air confirm prompt (raised by the pure on-air machine after the player
- *    stands still on the stage for ~2s) and the persistent ON AIR indicator;
- *  - the remote broadcast video grid + the keyless "Go Live" video control at the
- *    presenter podium (the presenter key was removed — publish is gated by the
- *    server validating the player's position).
+ *  - one Go Live prompt after the player stands still on the presenter platform;
+ *  - a persistent LIVE / NOT LIVE indicator;
+ *  - the remote video grid. Audio starts with Go Live; the global camera control
+ *    can add or remove video from that same broadcast.
  */
 export default function StageScreen() {
   const [tracks, setTracks] = useState<RoomTrack[]>([]);
   const [nearPresenter, setNearPresenter] = useState(false);
-  const [wantsVideo, setWantsVideo] = useState(false); // this client hit "Go Live" (video)
   const [promptOpen, setPromptOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The single truth for LIVE / ON AIR: the transport's CONFIRMED publication
+  // The single truth for LIVE: the transport's CONFIRMED publication
   // status (PRD 25.7). The stage can never render LIVE off an optimistic guess —
   // a failed/denied publish leaves this non-`live`, so the indicator stays down.
   const pubStatus = useSyncExternalStore(
@@ -56,27 +50,12 @@ export default function StageScreen() {
     };
   }, []);
 
-  async function handleGoLive() {
-    setError(null);
-    const outcome = await stageVideo.goLive(SPACE_ID, sharedNet().selfId);
-    if (outcome.status === "live") setWantsVideo(true);
-    else if (outcome.status === "denied")
-      setError("Camera or microphone blocked — allow access in your browser.");
-    else setError("Broadcast failed — are you standing on the stage?");
-  }
-
-  async function handleStopLive() {
-    setWantsVideo(false);
-    await stageVideo.goOffAir(SPACE_ID, sharedNet().selfId);
-  }
-
   const remoteTracks = tracks.filter((t) => !t.self);
   const selfTrack = tracks.find((t) => t.self);
-  // Confirmed on-air (voice or video). LIVE video is confirmed on-air AND this
-  // client chose video AND a self track is actually surfaced.
+  // Confirmed live means the publish token is active. A self video tile appears
+  // only when the camera control is on and the transport surfaces its track.
   const broadcasting = isPublished(pubStatus);
-  const isLive = broadcasting && wantsVideo;
-  // A failed/denied publish that this client initiated — surface it near the podium.
+  // A failed/denied publish re-opens this same prompt through WorldScene.
   const publishFailed = isPublishFailure(pubStatus);
 
   return (
@@ -95,52 +74,50 @@ export default function StageScreen() {
         </div>
       )}
 
-      {selfTrack && isLive && (
+      {selfTrack && broadcasting && (
         <div className="stage-self-preview">
           <VideoTrackEl track={selfTrack.track} />
           <span className="stage-self-label">You (live)</span>
         </div>
       )}
 
-      {broadcasting && (
-        <div className="stage-on-air-indicator" role="status">
+      {(nearPresenter || broadcasting) && (
+        <div
+          className={`stage-on-air-indicator ${broadcasting ? "is-live" : "is-off"}`}
+          role="status"
+          aria-live="polite"
+        >
           <span className="stage-on-air-dot" aria-hidden="true" />
-          ON AIR
+          {broadcasting ? "LIVE" : "NOT LIVE"}
         </div>
       )}
 
       {promptOpen && !broadcasting && (
         <div className="stage-presenter-panel stage-onair-prompt">
-          <div className="stage-onair-title">Go on air?</div>
-          <div className="stage-onair-sub">Your voice broadcasts to everyone in the space.</div>
+          <div className="stage-onair-title">Go live?</div>
+          <div className="stage-onair-sub">
+            Your microphone broadcasts to everyone. Turn on your camera anytime to add video.
+          </div>
           <div className="stage-onair-actions">
             <button className="stage-btn-go" onClick={() => bus.emit("stage-confirm")}>
-              <Mic size={16} aria-hidden="true" /> Go on air
+              <Radio size={16} aria-hidden="true" /> Go Live
             </button>
             <button className="stage-btn-cancel" onClick={() => bus.emit("stage-decline")}>
               Not now
             </button>
           </div>
-        </div>
-      )}
-
-      {nearPresenter && !isLive && (
-        <div className="stage-presenter-panel">
-          <button className="stage-btn-go" onClick={() => void handleGoLive()}>
-            <Video size={16} aria-hidden="true" /> Go Live (video)
-          </button>
-          {(error ?? (publishFailed ? "Broadcast failed — try again." : null)) && (
+          {publishFailed && (
             <span className="stage-error" role="alert">
-              {error ?? "Broadcast failed — try again."}
+              Couldn't start the live broadcast. Check microphone access and try again.
             </span>
           )}
         </div>
       )}
 
-      {isLive && (
+      {broadcasting && (
         <div className="stage-presenter-panel">
-          <button className="stage-btn-stop" onClick={() => void handleStopLive()}>
-            <CircleStop size={16} aria-hidden="true" /> Stop Broadcast
+          <button className="stage-btn-stop" onClick={() => bus.emit("stage-stop")}>
+            <CircleStop size={16} aria-hidden="true" /> Stop Live
           </button>
         </div>
       )}

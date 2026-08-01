@@ -2,13 +2,11 @@
 
 The plaza is the campus's main public room: a 96x35 sheet of paving where
 players spawn, walk between districts and gather. Its defining feature is
-open ground. Props exist only where they mark something — a portal, a door,
-a path junction — or where they make one small place worth standing in.
-Everything else stays bare paving.
+open ground. The district pass adds only paired entrance planters; the park,
+portal, crossing, water point and lawn need no extra furniture.
 
-Outdoor vocabulary, and nothing else: benches, palms, planters, bins, and a
-lamp post at a junction. No indoor furniture and no wall-hung sprite ever
-touches outdoor ground — those belong inside a building, against a wall.
+No indoor furniture and no wall-hung sprite ever touches outdoor ground —
+those belong inside a building, against a wall.
 
 Geometry it has to live with (all frozen):
   Plaza  x=12..107, y=26..60   Park  x=1..28, y=1..55
@@ -34,25 +32,6 @@ def decorate(ctx, phase: str) -> None:
 
 
 def _furnish(ctx) -> None:
-    # ── Park: grove rest stop ─────────────────────────────────────────────
-    # Two benches facing each other across a clearing between the trees.
-    # The only seating in the park.
-    ctx.furn("f_lz_bench_gold", 8, 19, True)
-    ctx.furn("f_lz_bench_gold", 8, 23, True)
-
-    # ── Park: west path gateway ───────────────────────────────────────────
-    # A matched palm either side of the stone path (y=43-45) where it leaves
-    # the plaza and enters the park lawn — a landmark, not a hedge.
-    ctx.furn("f_lz_palm", 3, 41, True)
-    ctx.furn("f_lz_palm", 3, 47, True)
-
-    # ── Plaza: portal rest stop ───────────────────────────────────────────
-    # Benches facing each other just east of the portal (27-28,43-44), off
-    # the portal path and off both arteries, so arrivals have somewhere to
-    # wait.
-    ctx.furn("f_lz_bench_gold", 32, 37, True)
-    ctx.furn("f_lz_bench_gold", 32, 41, True)
-
     # ── Plaza: HQ west door planters ──────────────────────────────────────
     # A planter each side of the door approach (x=49-50), marking the
     # entrance from the open paving. The east door sits on the N-S artery
@@ -60,33 +39,9 @@ def _furnish(ctx) -> None:
     ctx.furn("f_lz_plant", 47, 26, True)
     ctx.furn("f_lz_plant", 52, 26, True)
 
-    # ── Plaza: crossing lamp posts ────────────────────────────────────────
-    # A matched pair flanking the north approach to the main crossing of the
-    # two arteries. The floor labels handle wayfinding south of it.
-    ctx.furn("f_lz_floor_lamp", 55, 41, True)
-    ctx.furn("f_lz_floor_lamp", 64, 41, True)
-
-    # ── Plaza: water-cooler stop ──────────────────────────────────────────
-    # The cooler at (65,33) is the reason to stand here; a bin and a bench
-    # beside it turn it into a place.
-    ctx.furn("f_lz_bin", 67, 33, True)
-    ctx.furn("f_lz_bench_gold", 69, 33, True)
-
     # ── Plaza: auditorium entrance planters ───────────────────────────────
     # Framing the south door of the auditorium (x=98-99, y=44); the door
-    # approach itself stays open.
-    ctx.furn("f_lz_plant", 95, 47, True)
-    ctx.furn("f_lz_plant", 102, 47, True)
-
-    # ── Plaza: south-east shade cluster ───────────────────────────────────
-    # One planted group in the far south-east so the corner has a horizon
-    # line; the paving between it and the crossing stays empty.
-    ctx.furn("f_lz_palm", 90, 55, True)
-    ctx.furn("f_lz_palm", 93, 57, True)
-    ctx.furn("f_lz_plant_small", 88, 57, True)
-
-    # ── Plaza: south path junction planters ───────────────────────────────
-    # Marking where the south path (x=34-35, down to the hostel) meets the
-    # south plaza — one planter each side, corridor left clear.
-    ctx.furn("f_lz_plant", 32, 52, True)
-    ctx.furn("f_lz_plant", 38, 52, True)
+    # approach itself stays open. Row 48, not 47: a bottom-anchored body on 47
+    # reaches up into row 46, which is the corridor the E2E stage path walks.
+    ctx.furn("f_lz_plant", 95, 48, True)
+    ctx.furn("f_lz_plant", 102, 48, True)

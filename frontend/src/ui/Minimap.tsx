@@ -77,6 +77,7 @@ export default function Minimap() {
   // …and the reverse: opening Settings closes the map, so they never stack
   // (issue #79). Settings emits `settings-open` only on its open transition.
   useEffect(() => bus.on("settings-open", () => setOpen(false)), []);
+  useEffect(() => bus.on("show-map", () => setOpen(true)), []);
 
   // Keyboard shortcut: M toggles the fullscreen map while playing.
   useEffect(() => {

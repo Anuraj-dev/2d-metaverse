@@ -4,7 +4,7 @@ Both rooms exist for one activity: players walk in, take a seat at the long
 table and hold a meeting. The table and the seat rows are the room; everything
 else is a thin dressing of the walls, so the floor a player crosses on the way
 in stays empty. Rooms 1 and 2 are siblings, not clones — room 2 is the softer
-"discussion room" (a world map, a pinned agenda, a waiting couch), room 1 the
+"discussion room" (a world map, a pinned agenda, corner greenery), room 1 the
 "briefing room" (whiteboard at the head of the table, a reference shelf).
 
 Geometry (frozen):
@@ -23,7 +23,8 @@ claims its own column ±1 and the row below its anchor:
     south row (108) and never in the middle;
   · the door columns stay clear on the first interior row, so entry is never
     blocked;
-  · wall art is non-solid and hangs on row 101, flush against the north wall.
+  · wall art is non-solid and hangs on the actual north wall row 100, clear of
+    the taller LimeZu chair visuals on row 102.
 """
 
 R1_X0, R1_Y0, R1_X1, R1_Y1 = 41, 101, 51, 108
@@ -44,21 +45,12 @@ def decorate(ctx, phase: str) -> None:
         ctx.fill_pattern(32, 100, 33, 100, ctx.FLOOR_CREAM)
 
     elif phase == "furniture":
-        # Wall art is emitted before the furniture that leans on it — equal
-        # depth (both on row 101) resolves by insertion order, so the couch
-        # correctly draws over the map behind it.
-
         # ── Room 2 — discussion room ────────────────────────────────────────
         # North wall: a world map over the table and a pinned agenda board at
         # the east end — the room's only two hung pieces, both on stretches of
         # wall no solid stands in front of.
-        ctx.furn("f_lz_worldmap", 30, 101, False)
-        ctx.furn("f_lz_pinboard", 37, 101, False)
-        # Waiting corner: a two-seat couch in the west end bay, where no seat
-        # column reaches.
-        ctx.furn("f_lz_sofa", 28, 101, True)
-        # One floor plant at the east end.
-        ctx.furn("f_lz_plant", 38, 108, True)
+        ctx.furn("f_lz_worldmap", 30, 100, False)
+        ctx.furn("f_lz_pinboard", 37, 100, False)
         # South-west corner greenery, clear of the col-29/30 walking lane.
         ctx.furn("f_lz_palm", 27, 108, True)
         # The meeting table: 1-tile modules butted into one continuous run
@@ -74,11 +66,10 @@ def decorate(ctx, phase: str) -> None:
         # ── Room 1 — briefing room ──────────────────────────────────────────
         # West end bay: the whiteboard the table faces, with the reference
         # shelf below it on the south wall.
-        ctx.furn("f_lz_whiteboard", 42, 101, False)
+        ctx.furn("f_lz_whiteboard", 42, 100, False)
         ctx.furn("f_lz_bookshelf", 42, 108, True)
-        # East end bay: a pale two-seater for anyone waiting their turn, with
-        # one floor plant below it on the south wall.
-        ctx.furn("f_lz_armchair", 50, 101, True)
+        # East end bay: one floor plant anchors the south wall without adding
+        # redundant waiting furniture to a room already built around seating.
         ctx.furn("f_lz_plant", 50, 108, True)
         # The meeting table, shorter run than room 2's.
         ctx.furn("f_lz_table_books", 44, 104, True)

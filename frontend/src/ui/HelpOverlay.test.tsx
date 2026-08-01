@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 
 import HelpOverlay from "./HelpOverlay";
+import { bus } from "../game/eventBus";
 
 /**
  * The controls cheat-sheet must reflect the app's real keybindings and dock to
@@ -41,5 +42,11 @@ describe("HelpOverlay", () => {
     const backdrop = card.closest(".modal-backdrop");
     expect(backdrop).not.toBeNull();
     expect(backdrop?.classList.contains("help-backdrop")).toBe(true);
+  });
+
+  it("opens when the control rail requests help", () => {
+    render(<HelpOverlay />);
+    act(() => bus.emit("show-controls-help"));
+    expect(screen.getByRole("heading", { name: "Controls" })).toBeTruthy();
   });
 });

@@ -13,6 +13,7 @@ import { bus } from "./game/eventBus";
 // --- Media manager (LiveKit) doubles -------------------------------------
 const media = vi.hoisted(() => {
   const ok = () => vi.fn().mockResolvedValue(undefined);
+  const live = () => vi.fn().mockResolvedValue({ status: "live" });
   return {
     worldAudio: { start: ok(), stop: ok(), setMicEnabled: vi.fn() },
     roomVideo: {
@@ -24,9 +25,8 @@ const media = vi.hoisted(() => {
     },
     stageVideo: {
       joinAsAudience: ok(),
-      goOnAir: ok(),
       goOffAir: ok(),
-      goLive: ok(),
+      goLive: live(),
       leave: ok(),
       onTracks: vi.fn(() => () => {}),
       setMicEnabled: vi.fn(),
@@ -308,13 +308,28 @@ describe("App shell", () => {
     await waitFor(() => expect(media.stageVideo.joinAsAudience).toHaveBeenCalledWith("1", SELF));
   });
 
-  it("going on air / off air drives the stage publish reconnect", async () => {
+  it("the single live / stop-live lifecycle drives the stage publish reconnect", async () => {
     render(<App />);
     await enterAndInit();
     await emit(() => bus.emit("stage-on-air"));
-    await waitFor(() => expect(media.stageVideo.goOnAir).toHaveBeenCalledWith("1", SELF));
+    await waitFor(() => expect(media.worldAudio.setMicEnabled).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(media.stageVideo.goLive).toHaveBeenCalledWith("1", SELF));
     await emit(() => bus.emit("stage-off-air"));
     await waitFor(() => expect(media.stageVideo.goOffAir).toHaveBeenCalledWith("1", SELF));
+  });
+
+  it("re-mutes and re-opens the single prompt when starting live is denied", async () => {
+    media.stageVideo.goLive.mockResolvedValueOnce({ status: "denied" });
+    let failed = false;
+    const off = bus.on("stage-live-failed", () => (failed = true));
+    render(<App />);
+    await enterAndInit();
+
+    await emit(() => bus.emit("stage-on-air"));
+    await waitFor(() => expect(failed).toBe(true));
+    expect(media.worldAudio.setMicEnabled).toHaveBeenNthCalledWith(1, true);
+    expect(media.worldAudio.setMicEnabled).toHaveBeenNthCalledWith(2, false);
+    off();
   });
 
   it("holds a queued transition until the pending one fully settles, then runs in order", async () => {
@@ -329,7 +344,10 @@ describe("App shell", () => {
       return gate.promise;
     });
     media.roomVideo.join.mockImplementationOnce(async () => void order.push("room-join"));
-    media.stageVideo.goOnAir.mockImplementationOnce(async () => void order.push("stage-on-air"));
+    media.stageVideo.goLive.mockImplementationOnce(async () => {
+      order.push("stage-live");
+      return { status: "live" } as const;
+    });
 
     await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
     // op2 (stage-on-air) enqueued while op1 is still pending on the gate.
@@ -339,11 +357,11 @@ describe("App shell", () => {
     // Neither the rest of op1 nor any of op2 may start while op1 is pending —
     // this fails if the serialized mediaTransition queue is removed.
     expect(media.roomVideo.join).not.toHaveBeenCalled();
-    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
+    expect(media.stageVideo.goLive).not.toHaveBeenCalled();
 
     gate.resolve();
     await waitFor(() =>
-      expect(order).toEqual(["world-stop", "room-join", "stage-on-air"])
+      expect(order).toEqual(["world-stop", "room-join", "stage-live"])
     );
   });
 
@@ -483,9 +501,9 @@ describe("App shell", () => {
 
     // Phase A is still running (no portal-phase-a-done): the portal-in op must
     // HOLD the queue — an op enqueued behind it may not start.
-    media.stageVideo.goOnAir.mockClear();
+    media.stageVideo.goLive.mockClear();
     await emit(() => bus.emit("stage-on-air"));
-    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
+    expect(media.stageVideo.goLive).not.toHaveBeenCalled();
 
     // Self leaves mid-cinematic: cancellation settles the pending Phase A, the
     // queue drains in order (portal-exit runs, then the stage op), and the
@@ -494,7 +512,7 @@ describe("App shell", () => {
       netMock.net.emit("meeting-participant-left", { roomId: "D", playerId: SELF })
     );
     await waitFor(() => expect(busEvents).toContain("portal-exit"));
-    await waitFor(() => expect(media.stageVideo.goOnAir).toHaveBeenCalled());
+    await waitFor(() => expect(media.stageVideo.goLive).toHaveBeenCalled());
     expect(busEvents.indexOf("portal-enter")).toBeLessThan(busEvents.indexOf("portal-exit"));
     expect(screen.queryByTestId("meeting-overlay")).toBeNull();
 
@@ -584,9 +602,9 @@ describe("App shell", () => {
     await emit(() => netMock.net.emit("seat-update", { roomId: "D", playerId: SELF }));
     await waitFor(() => expect(media.worldAudio.stop).toHaveBeenCalledTimes(1));
     // …op2 (stage-on-air) is queued behind it, not yet started.
-    media.stageVideo.goOnAir.mockClear();
+    media.stageVideo.goLive.mockClear();
     await emit(() => bus.emit("stage-on-air"));
-    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
+    expect(media.stageVideo.goLive).not.toHaveBeenCalled();
 
     unmount();
     // Teardown must not run while op1 is still pending.
@@ -600,11 +618,11 @@ describe("App shell", () => {
     // op1 had already started, so it ran to completion after the gate opened…
     expect(media.roomVideo.join).toHaveBeenCalledWith("D");
     // …but the queued op2 was dropped by the disposed guard.
-    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
+    expect(media.stageVideo.goLive).not.toHaveBeenCalled();
 
     // Listeners are gone: a post-unmount bus event triggers no new joins.
     bus.emit("stage-on-air");
     await Promise.resolve();
-    expect(media.stageVideo.goOnAir).not.toHaveBeenCalled();
+    expect(media.stageVideo.goLive).not.toHaveBeenCalled();
   });
 });

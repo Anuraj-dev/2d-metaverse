@@ -386,7 +386,7 @@ for y in range(H):
 # 2) Grass clearings set into the plaza stone (2×2 inverse patches) — breaks
 #    up the large stone expanse. Kept off the arteries and the spawn area.
 for cx, cy in [(20, 30), (38, 33), (48, 55), (70, 52), (88, 32), (100, 56),
-               (16, 50), (30, 57), (96, 48), (10, 68), (24, 74), (40, 70)]:
+               (16, 50), (30, 57), (96, 48)]:
     if all(ground[idx(cx + dx, cy + dy)] == STONE for dx in (0, 1) for dy in (0, 1)):
         ground[idx(cx, cy)] = CLR_NW
         ground[idx(cx + 1, cy)] = CLR_NE
@@ -561,6 +561,7 @@ interactables_objs = [
 # stage_zone   — audience area (tiles 82-117, y=16-43)
 # presenter_zone — podium area (tiles 90-110, y=2-15)
 # screen        — point marking the broadcast screen (tile 99, 5)
+# presenter_seat — local, public sit target behind the lectern (tile 99, 8)
 stage_objs = [
     {
         "id": 50001, "name": "stage_zone",
@@ -582,6 +583,16 @@ stage_objs = [
         "width": 0, "height": 0,
         "point": True, "rotation": 0, "type": "", "visible": True,
         "properties": [],
+    },
+    {
+        "id": 50005, "name": "presenter_seat",
+        "x": 99 * TS, "y": 8 * TS,
+        "width": TS, "height": TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "zoneType", "type": "string", "value": "presenterSeat"},
+            {"name": "facing", "type": "string", "value": "down"},
+        ],
     },
     # arcade_zone — the FULL arcade-hall interior (cabinet hall + board-game
     # corner + seating), authored from the building shell (AX0..AX1 / AY0..AY1)
@@ -627,45 +638,25 @@ def furn(key, tx, ty, solid):
     })
 
 
-# Park — the tile trees above carry the canopy now; sprinkle swaying shrubs
-# between them (skipping any spot a tree footprint occupies).
-# NB: the old (18, 38) shrub was dropped (PRD 25.33) — it sat directly on the
-# plaza "Campus Map" info board (interactable at tile 18,38) and the welcome-desk
-# body, blocking the prompt and reading as clutter over the sign. The row keeps
-# its (8, 38)/(25, 38) shrubs so the park edge still reads planted.
-for tx, ty in [(8, 8), (16, 8), (24, 9), (11, 18), (22, 18),
-               (5, 23), (15, 23), (20, 28), (25, 23),
-               (8, 38), (25, 38), (10, 47), (24, 47)]:
-    if (tx, ty) not in tree_cells:
-        furn("f_plant_big", tx, ty, True)
-for tx, ty in [(6,6),(14,11),(21,6),(9,20),(18,24),
-               (6,30),(14,35),(22,30),(7,40),(20,42),
-               (5,50),(12,52),(19,50)]:
-    if (tx, ty) not in tree_cells:
-        furn("f_plant_small", tx, ty, False)
+# Park — the authored tile trees already carry the planting scheme. Potted
+# indoor shrubs scattered between them made the lawn read like a showroom and
+# created inconsistent collision, so the open grass needs no furniture pass.
 
-# Plaza — welcome desk, water cooler, landmark plants, clock.
-# The auditorium was later built over the plaza's NE corner, so the clock hangs
-# on its east wall and the corner landmark planter that would have stood at
-# (105, 28) is dropped: both sat in the middle of the audience seating block.
+# Plaza — one functional welcome point and one wall-mounted auditorium clock.
+# Open paving is the social surface; the former cooler and corner planters had
+# no relationship to a door, path junction, or usable cluster.
 furn("f_desk",  16, 38, True)
 furn("f_chair", 16, 39, False)
-furn("f_water", 65, 33, True)
 furn("f_clock", 117, 28, False)
-for tx, ty in [(14, 28), (14, 58), (105, 58)]:
-    furn("f_plant_big", tx, ty, True)
 
 # Cafe furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
 # Coworking furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
 # Auditorium furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
 # HQ hall furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
-# Hostel forecourt — planters framing the residential facade (kept clear of the
-# door columns 17/32/45 and the central approach path at x=34-35).
+# Hostel forecourt — one matched planter at each end of the residential facade,
+# clear of door columns 17/32/45 and the central approach at x=34-35.
 furn("f_plant_big",   11, 94, True)
 furn("f_plant_big",   51, 94, True)
-furn("f_plant_small", 21, 95, False)
-furn("f_plant_small", 43, 95, False)
-furn("f_sofa_small",  8, 97, True)
 
 # ── DISTRICT ART PASSES (furniture phase) ─────────────────────────────────────
 # Same registry as the floor phase above; insertion order here preserves the

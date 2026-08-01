@@ -1,10 +1,10 @@
 """Game Arcade hall — LimeZu art pass (games room).
 
-The room is small (19x13 interior) and holds four things, nothing else:
-the two arcade cabinets on the north wall, the two board tables on a parquet
-mat in the south-west, a snack corner against the east wall, and two wall
-sprites (high-score board, poster) flush to the north wall. The middle of the
-room is deliberately empty floor — that is where spectators stand.
+The room is small (19x13 interior) and holds three things, nothing else: the
+two arcade cabinets on the north wall, the two board tables on a parquet mat
+in the south-west, and a minimal snack point against the east wall. Two wall
+sprites dress the cabinet line. The middle is deliberately empty spectator
+floor.
 
 Geometry it has to live with (all frozen):
   interior  x=68..86, y=95..107      door gap  x=78-81 on the north wall (y=94)
@@ -64,21 +64,5 @@ def _furnish(ctx) -> None:
     # (snake ends at x=72.5, flappy starts at x=75.5).
     ctx.furn("f_lz_chalkboard", 74, 95, False)
 
-    # ── Snack corner (east wall) — vending machine + two stools ───────────
+    # ── Snack point (east wall) ───────────────────────────────────────────
     ctx.furn("f_lz_vending_shelf", 85, 96, True)
-    ctx.furn("f_lz_stool", 84, 98, False)
-    ctx.furn("f_lz_stool_wood", 85, 98, False)
-
-    # ── East wall run — lockers, spectator bench, prize cabinet ───────────
-    # All bodies sit in cols 84-86 against the east wall, so the walking lane
-    # x=76-83 and the whole room centre stay clear.
-    ctx.furn("f_lz_lockers", 85, 101, True)
-    ctx.furn("f_lz_bench_gold", 85, 103, True)
-    ctx.furn("f_lz_display_cab", 85, 105, True)
-
-    # ── South wall — storage east of the door spine ───────────────────────
-    ctx.furn("f_lz_sideboard", 83, 107, True)
-
-    # ── West wall greenery — bookends the otherwise bare west line ────────
-    ctx.furn("f_lz_plant_small", 68, 98, True)
-    ctx.furn("f_lz_plant_small", 68, 107, True)

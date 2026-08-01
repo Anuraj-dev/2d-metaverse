@@ -1,7 +1,7 @@
-"""Hostel room 3 — LimeZu proof-of-concept art pass (reference district module).
+"""Hostel room 3 — LimeZu art pass.
 
-Migrated verbatim from the former "ROOM 3 ART PASS" / "ROOM 3 furnishing" blocks
-in gen_campus.py. Geometry (seats, roomBounds, doorZone, walls) is frozen; this
+Derived from the former "ROOM 3 ART PASS" / "ROOM 3 furnishing" blocks in
+gen_campus.py. Geometry (seats, roomBounds, doorZone, walls) is frozen; this
 module only repaints the floor and hangs furniture around it.
 
 Geometry it has to live with (all frozen):
@@ -50,20 +50,17 @@ def _furnish(ctx) -> None:
     # from the LimeZu interior sheet by scripts/gen_limezu_sprites.py (source
     # tile coords named there).
     # Placement notes (see the walkability rules in the module docstring):
-    #   · wall-hung art is emitted BEFORE the furniture that leans on it — equal
-    #     depth (both at row 101) resolves by insertion order, so the sofa
-    #     correctly overlaps the board/window behind it;
+    #   · wall-hung art sits on the actual north wall row 100;
     #   · solids all sit on row 101 (body → rows 101-102) or row 109 (body →
     #     rows 109-110), which keeps the seat-approach aisles at rows 104 and
     #     108 open.
-    # North wall, west of the door — the lounge corner.
-    ctx.furn("f_lz_board", 11, 101, False)  # wall board, above the couch
-    ctx.furn("f_lz_window", 13, 101, False)  # window, half-hidden behind the couch
-    ctx.furn("f_lz_sofa", 11, 102, True)  # 3-seat couch facing into the room
+    # North wall, west of the door — the reference wall. Wall-hung pieces sit
+    # on the actual wall row; the shelf is wall-flush on the first floor row.
+    ctx.furn("f_lz_board", 11, 100, False)
+    ctx.furn("f_lz_window", 13, 100, False)
     ctx.furn("f_lz_bookshelf", 15, 101, True)
-    ctx.furn("f_lz_side_table", 11, 104, False)  # small round table beside the couch
     # North wall, east of the door — the kitchenette.
-    ctx.furn("f_lz_worldmap", 20, 101, False)
+    ctx.furn("f_lz_worldmap", 20, 100, False)
     ctx.furn("f_lz_counter", 22, 101, True)
     ctx.furn("f_lz_fridge", 24, 101, True)
     # The long study table between the two seat rows: 1-tile modules butt
@@ -72,10 +69,6 @@ def _furnish(ctx) -> None:
     _R3_TABLE = ["f_lz_table", "f_lz_table_books", "f_lz_table", "f_lz_table_cup"]
     for _i, _tx in enumerate(range(13, 24)):
         ctx.furn(_R3_TABLE[_i % len(_R3_TABLE)], _tx, 105, True)
-    # South wall — greenery, a reading lamp and a noticeboard.
-    ctx.furn("f_lz_lamp", 11, 109, True)
-    ctx.furn("f_lz_plant", 13, 109, True)
+    # South wall — only the storage pieces the study room needs.
     ctx.furn("f_lz_sideboard", 16, 109, True)
-    ctx.furn("f_lz_palm", 19, 109, True)
     ctx.furn("f_lz_shelf_jars", 22, 109, True)
-    ctx.furn("f_lz_plant_small", 25, 109, True)

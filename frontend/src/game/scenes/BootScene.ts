@@ -49,11 +49,11 @@ export default class BootScene extends Phaser.Scene {
       "sofa_small", "water", "clock", "arcade_snake", "arcade_flappy",
       // LimeZu interior props (scripts/gen_limezu_sprites.py). Catalog: docs/art/limezu-catalog.md
       // Only keys the map or WorldScene actually uses are preloaded; maps.test.ts guards both directions.
-      "lz_ac", "lz_armchair", "lz_bench_gold", "lz_bin", "lz_board", "lz_bookshelf",
+      "lz_ac", "lz_armchair", "lz_armchair_side", "lz_bench_gold", "lz_bin", "lz_board", "lz_bookshelf",
       "lz_bookshelf_tall", "lz_boxes", "lz_chair", "lz_chair_side", "lz_chair_wood",
       "lz_chalkboard", "lz_computer", "lz_counter", "lz_display_cab", "lz_filing",
       "lz_floor_lamp", "lz_floor_lamp_blue", "lz_fridge", "lz_fruit_bowl", "lz_globe",
-      "lz_kiosk", "lz_lamp", "lz_lockers", "lz_painting", "lz_palm", "lz_pc_tower",
+      "lz_kiosk", "lz_lamp", "lz_lectern", "lz_lockers", "lz_painting", "lz_palm", "lz_pc_tower",
       "lz_pinboard", "lz_plant", "lz_plant_small", "lz_poster_grid", "lz_shelf_jars",
       "lz_shelf_white", "lz_side_table", "lz_sideboard", "lz_sofa", "lz_sofa_white", "lz_stool",
       "lz_stool_wood", "lz_table", "lz_table_books", "lz_table_cafe", "lz_table_cup",

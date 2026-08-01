@@ -7,6 +7,7 @@
 | FEATURES.md | User-facing feature guide — what each feature is, how to reach it, status/caveats; includes the safety/moderation runbook |
 | decisions.md | Append-only log of load-bearing choices + why |
 | conventions.md | Stack, run/test commands, naming — quick-reference (CLAUDE.md is the full rulebook) |
+| DESIGN.md | Canonical pixel-campus visual system, HUD composition, placement rules, and tokens |
 | product-direction.md | Owner-approved Hyprverse product direction, MVP boundaries, pilot, metrics, and agent handoff |
 | product-v2-strategy.md | Evidence-backed product/code/UX audit, strategic alternatives, and owner decision gate for Hyprverse Next |
 | old_context.md | Honest pre-tracking backstory reconstructed at adoption |
