@@ -716,9 +716,11 @@ has two opposite seats: walk up to a seat and press **E** to sit down. Once both
 seats are taken, each player gets a **match offer** — click *Accept match* in the
 HUD panel; when both accept, the match starts. Click a cell (tic-tac-toe) or a
 column (Connect-4) on your turn to play. Standing up (or disconnecting) forfeits
-a live match to the opponent. Passers-by who walk up to a table in progress see
+a live match to the opponent. When a match ends, both players get *Play again* —
+one click re-opens the offer, the opponent accepts, and a fresh board starts
+without anyone standing up. Passers-by who walk up to a table in progress see
 the same board panel read-only (spectating). The world does **not** sleep — you
-stay seated in-world while the panel floats over the HUD.
+stay seated in-world while the panel sits centred over the HUD.
 
 Unlike the arcade cabinets, board tables are **two-player and server-authoritative**:
 
@@ -731,28 +733,31 @@ Unlike the arcade cabinets, board tables are **two-player and server-authoritati
   (`backend/src/boardMatch.ts`) + a side-effect shell (`board-manager.ts`), modeled
   on the meeting machine. The server broadcasts an authoritative `board-update`
   snapshot on every change and rejects illegal/out-of-turn moves with a typed
-  `board-error`.
+  `board-error`. A **rematch is an accept on a finished match** — the same
+  `board-accept` event, one extra branch in the machine, no rematch lifecycle of
+  its own; it needs both seats still held, so a forfeit offers no *Play again*.
 - **Seats reuse the sit mechanics but are their own map layer** (`board_seats`) and
   `WorldScene.boardSeats` array — public plaza seats, ungated by room entry, so they
   never trigger meetings or the minimap room list. The scene emits `near-board-seat`
   / `board-sat` / `board-stood` on the bus; `App.tsx` keeps the per-table snapshots
   and renders the lazy `ui/BoardTablePanel.tsx`.
 - **Client-side decisions** (view model, whose turn, offer prompt, spectator display,
-  grid click → move index) live in the pure `game/boardTable.ts` (+ vitest). Sounds
-  go through the `soundMixer` event→clip table (`board-sat`/`board-move`/`board-win`).
-  Since issue #163 the move/win cues are **dedicated board foley** (`board_place`,
-  `board_win`) rather than borrowed arcade chiptune — these are wooden plaza tables,
-  not cabinets, so they belong to the recorded-foley family with the rest of the world.
-- **Piece motion is transition-gated CSS** (issue #163): the panel remembers the previous
-  snapshot and gives `is-new` only to a 0→filled transition, so historical marks are
-  already settled for a spectator joining mid-match and ordinary re-renders cannot
-  restart the animation. Connect-4 discs fall in from above their landing row (the frame
-  clips them at its top edge), tic-tac-toe X/O strokes draw themselves in
-  (`pathLength="1"` + one dash-offset keyframe), and the winning line pops along its
-  length. The only two geometry decisions — how many rows a disc falls (`cellRow`) and a
-  cell's position in the win line (`winLineStep`) — are pure functions in
-  `game/boardTable.ts` with tests. Reduced motion drops the motion and keeps every end
-  state.
+  grid click → move index, and where a Connect-4 disc would land) live in the pure
+  `game/boardTable.ts` (+ vitest).
+- **Which sound a snapshot transition earns is its own pure module**,
+  `game/boardSound.ts` (+ vitest): the cues are per-viewer, so your own move
+  (`board-place`) sounds nearer than your opponent's (`board-place-far`), and a
+  finish is `board-win` / `board-lose` / `board-draw` depending on who is listening
+  — never one shared game-over sting. It also refuses to fire for the first
+  snapshot of a table you merely walked past, so a stranger's match never replays
+  its start or its result at you. `App.tsx` just emits whatever it returns; the
+  `soundMixer` event→clip table maps those to the curated board foley
+  (`scripts/curate_audio.py` → `curate_board_sounds`).
+- **The panel is composed, not monolithic**: `ui/BoardTablePanel.tsx` is the shell and
+  `ui/board/` holds the pieces (`SeatChip`, `BoardGrid`, `BoardMark`, `BoardResult`,
+  `board.css`). It follows the pixel-paper HUD direction in `docs/DESIGN.md` and reads
+  its tokens as `var(--hud-*, <DESIGN.md fallback>)`, so it renders correctly both
+  before and after the HUD token set lands.
 
 **Test coverage.** Board rules are covered exhaustively by the shared-package unit
 tests (`shared/src/games/*.test.ts`) and the match lifecycle by the backend socket-seam

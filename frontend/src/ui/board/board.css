@@ -1,0 +1,589 @@
+/**
+ * Board-table panel styling (tic-tac-toe / Connect 4).
+ *
+ * Theme: the warm pixel-paper HUD (see docs/DESIGN.md) — opaque paper surfaces,
+ * crisp brown outlines, hard offset shadows. Explicitly NOT the dark glass-blur
+ * card this panel used to be, which DESIGN.md rules out for in-world HUD.
+ *
+ * Every token is read as `var(--token, fallback)`: the fallbacks are the
+ * DESIGN.md values, so the panel renders correctly on a build that has not yet
+ * defined the HUD token set, and inherits the real tokens the moment it does.
+ *
+ * The two player colours are a burnt-orange / deep-blue pair rather than the
+ * classic red/yellow: both hold contrast on cream paper and stay separable for
+ * the common colour-vision deficiencies. Colour is never the only signal —
+ * tic-tac-toe uses real X and O glyphs, and the Connect-4 discs differ by an
+ * inner ring as well as hue.
+ */
+
+.board-panel {
+  --board-p1: #c2542f;
+  --board-p2: #2f6ea8;
+  --board-paper: var(--hud-paper, #f3e6b2);
+  --board-paper-deep: var(--hud-paper-deep, #ddcd91);
+  --board-ink: var(--hud-border, #754525);
+  --board-shadow: var(--hud-shadow, #4c2e1e);
+  --board-wood: #9a6636;
+  --board-wood-deep: #6d4523;
+
+  position: absolute;
+  /* Dead centre of the viewport. While you are seated at a table the board IS
+     what you are doing, so it takes the middle of the screen instead of hiding
+     in a corner — and the centre is the one region the HUD leaves free, since
+     the roster, minimap, chat box and control bar all hug the edges. */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-height: calc(100dvh - 32px);
+  z-index: 30;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: fit-content;
+  /* Wide enough that two player names sit side by side without truncating.
+     Costs nothing now that the panel sits in open space rather than wedged
+     between the HUD rails. */
+  min-width: 380px;
+  max-width: min(92vw, 460px);
+  padding: 14px 16px 16px;
+
+  background: var(--board-paper);
+  border: 3px solid var(--board-ink);
+  border-radius: 12px;
+  box-shadow: 5px 5px 0 var(--board-shadow);
+  color: var(--foreground, #23331c);
+  font-family: inherit;
+  pointer-events: auto;
+}
+
+/* It is your move: the panel's hard shadow warms to the accent so the call to
+   act is visible from the corner of the eye, without a soft glow. */
+.board-panel.is-my-turn {
+  border-color: var(--hud-active, #557f32);
+  box-shadow: 5px 5px 0 var(--hud-active, #557f32);
+  animation: board-turn-nudge 2.4s ease-in-out infinite;
+}
+
+@keyframes board-turn-nudge {
+  0%,
+  100% {
+    box-shadow: 5px 5px 0 var(--hud-active, #557f32);
+  }
+  50% {
+    box-shadow: 5px 5px 0 var(--accent, #eeae3c);
+  }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.board-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--board-ink);
+}
+
+.board-panel__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--board-ink);
+}
+
+.board-panel__badge {
+  padding: 3px 8px;
+  border: 2px solid var(--board-ink);
+  border-radius: 999px;
+  background: var(--board-paper-deep);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--board-ink);
+}
+
+/* ── Seats ───────────────────────────────────────────────────────────────── */
+
+.board-panel__seats {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.board-panel__vs {
+  align-self: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #5d6b52);
+}
+
+.board-seat {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 2px solid var(--board-ink);
+  border-radius: 8px;
+  background: var(--board-paper-deep);
+  box-shadow: 2px 2px 0 var(--board-shadow);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.board-seat.is-empty {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+/* The seat the match is waiting on: lifted, brighter, and carrying a caret —
+   never signalled by colour alone. */
+.board-seat.is-active {
+  background: var(--hud-paper-hover, #ead99e);
+  transform: translateY(-2px);
+  box-shadow: 2px 4px 0 var(--board-shadow);
+}
+
+.board-seat__mark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.board-seat__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.board-seat__name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--board-ink);
+}
+
+.board-seat__you,
+.board-seat__ready {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #5d6b52);
+}
+
+.board-seat__ready.is-ready {
+  color: var(--hud-active, #557f32);
+}
+
+.board-seat__turn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--hud-active, #557f32);
+}
+
+/* ── Grid ────────────────────────────────────────────────────────────────── */
+
+.board-grid {
+  display: grid;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+/* Cell size drives the whole panel's footprint: it is capped against BOTH
+   viewport axes so the board never outgrows a short or narrow window and the
+   panel (width: fit-content) simply follows it. */
+.board-grid--tictactoe {
+  --board-cell: clamp(54px, min(9.5vh, 13vw), 100px);
+  gap: 0;
+  padding: 6px;
+  border: 3px solid var(--board-ink);
+  border-radius: 10px;
+  background: var(--board-paper-deep);
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.25);
+}
+
+.board-grid--connect4 {
+  --board-cell: clamp(28px, min(5vh, 5.6vw), 48px);
+  gap: 5px;
+  padding: 9px;
+  border: 3px solid var(--board-wood-deep);
+  border-radius: 10px;
+  /* A wooden slab with punched holes — the campus reads warm pixel-paper, so a
+     glossy blue plastic frame would sit outside the art direction. Kept to a
+     plain vertical shade: an angled repeating gradient aliases into visible
+     arcs across the slab at these sizes. */
+  background: linear-gradient(180deg, #a56d3a, var(--board-wood) 55%, #85562c);
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.18);
+}
+
+.board-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--board-cell);
+  height: var(--board-cell);
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+.board-cell:not(:disabled) {
+  cursor: pointer;
+}
+
+.board-cell:focus-visible {
+  outline: 3px solid var(--hud-active, #557f32);
+  outline-offset: -3px;
+  z-index: 1;
+}
+
+/* Tic-tac-toe: inner rules only, drawn on the paper like a real grid — not nine
+   separate boxes. Fixed 3×3 (TICTACTOE_SIZE). */
+.board-grid--tictactoe .board-cell {
+  border: none;
+  border-right: 3px solid var(--board-ink);
+  border-bottom: 3px solid var(--board-ink);
+  background: transparent;
+}
+.board-grid--tictactoe .board-cell:nth-child(3n) {
+  border-right: none;
+}
+.board-grid--tictactoe .board-cell:nth-child(n + 7) {
+  border-bottom: none;
+}
+.board-grid--tictactoe .board-cell:not(:disabled):hover {
+  background: rgb(255 255 255 / 0.4);
+}
+
+/* Connect 4: each cell is a hole punched through the slab. */
+.board-grid--connect4 .board-cell {
+  border: none;
+  border-radius: 50%;
+  background: var(--board-paper);
+  box-shadow: inset 0 2px 3px rgb(0 0 0 / 0.35);
+}
+
+/* The whole column stays clickable while it has room; the cell the disc would
+   actually rest in is the one that lights up. */
+.board-grid--connect4 .board-cell.is-landing:not(:disabled) {
+  background: var(--hud-paper-hover, #ead99e);
+}
+
+/* ── Marks ───────────────────────────────────────────────────────────────── */
+
+.board-mark {
+  display: block;
+  width: 78%;
+  height: 78%;
+}
+
+.board-mark--p1 {
+  color: var(--board-p1);
+}
+.board-mark--p2 {
+  color: var(--board-p2);
+}
+
+/* The landing preview has to be unmistakably "your piece goes HERE" — a barely
+   tinted hole reads as an empty hole. */
+.board-mark.is-ghost {
+  position: absolute;
+  opacity: 0.6;
+  animation: board-ghost-breathe 1.5s ease-in-out infinite;
+}
+
+@keyframes board-ghost-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Ring the ghost so it still reads on a busy board and without colour. */
+.board-mark.is-ghost .board-disc {
+  box-shadow: inset 0 0 0 3px rgb(255 255 255 / 0.6);
+}
+
+/* Tic-tac-toe glyphs: stroked so they stay crisp at any cell size, and drawn in
+   on placement. */
+.board-glyph {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.board-glyph__stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-dasharray: 200;
+  stroke-dashoffset: 0;
+  animation: board-draw-in 0.24s ease-out backwards;
+}
+
+.board-glyph__stroke--b {
+  animation-delay: 0.1s;
+}
+
+.board-glyph__ring {
+  stroke-dasharray: 180;
+  animation-duration: 0.34s;
+}
+
+@keyframes board-draw-in {
+  from {
+    stroke-dashoffset: 200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Connect-4 disc, dropped in from above. `relative` is load-bearing: it is the
+   positioning context for the inner ring below, which otherwise escapes to the
+   panel and stretches into a pill. */
+.board-disc {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.22), inset 0 2px 0 rgb(255 255 255 / 0.25);
+  animation: board-drop 0.26s cubic-bezier(0.45, 0.05, 0.55, 1.35) backwards;
+}
+
+/* Second player's disc carries an inner ring, so the two are separable without
+   relying on hue. */
+.board-disc__ring {
+  position: absolute;
+  inset: 26%;
+  border: 2px solid rgb(255 255 255 / 0.55);
+  border-radius: 50%;
+}
+
+.board-mark.is-ghost .board-disc {
+  animation: none;
+}
+
+@keyframes board-drop {
+  from {
+    transform: translateY(-420%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Winning cells pop and stay lit; the rest of the pieces recede so the line
+   reads instantly. */
+.board-cell.is-win .board-mark {
+  animation: board-win-pop 0.42s ease-out 0.1s backwards;
+}
+
+.board-grid--tictactoe .board-cell.is-win {
+  background: rgb(255 255 255 / 0.55);
+}
+
+.board-grid--connect4 .board-cell.is-win {
+  box-shadow: inset 0 0 0 3px var(--accent, #eeae3c);
+}
+
+.board-cell.is-faded .board-mark {
+  opacity: 0.42;
+}
+
+@keyframes board-win-pop {
+  0% {
+    transform: scale(1);
+  }
+  55% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ── Status, result, actions ─────────────────────────────────────────────── */
+
+.board-panel__status {
+  margin: 0;
+  min-height: 20px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted, #5d6b52);
+}
+
+.board-panel__status.is-error {
+  color: var(--hud-danger, #a7473f);
+  animation: board-shake 0.3s ease-in-out;
+}
+
+@keyframes board-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.board-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 2px solid var(--board-ink);
+  border-radius: 8px;
+  background: var(--board-paper-deep);
+  box-shadow: 3px 3px 0 var(--board-shadow);
+  text-align: center;
+  animation: board-result-in 0.3s ease-out backwards;
+}
+
+.board-result--win {
+  border-color: var(--hud-active, #557f32);
+  box-shadow: 3px 3px 0 var(--hud-active, #557f32);
+}
+
+.board-result--lose {
+  border-color: var(--hud-danger, #a7473f);
+  box-shadow: 3px 3px 0 var(--hud-danger, #a7473f);
+}
+
+.board-result__headline {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--board-ink);
+}
+
+.board-result__detail {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #5d6b52);
+}
+
+@keyframes board-result-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.board-panel__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.board-btn {
+  padding: 7px 14px;
+  border: 2px solid var(--board-ink);
+  border-radius: 8px;
+  background: var(--board-paper-deep);
+  box-shadow: 3px 3px 0 var(--board-shadow);
+  color: var(--board-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.board-btn:hover {
+  background: var(--hud-paper-hover, #ead99e);
+}
+
+/* The button physically presses into its own hard shadow. */
+.board-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--board-shadow);
+}
+
+.board-btn:focus-visible {
+  outline: 3px solid var(--hud-active, #557f32);
+  outline-offset: 2px;
+}
+
+.board-btn--accept {
+  background: var(--hud-active, #557f32);
+  border-color: var(--board-ink);
+  color: var(--primary-foreground, #ffffff);
+}
+
+.board-btn--accept:hover {
+  background: #62923a;
+}
+
+/* ── Narrow / short viewports ────────────────────────────────────────────── */
+
+/* The panel stays centred at every size — only its breathing room changes. On a
+   phone the side rails are gone, so it may use nearly the full width. */
+@media (max-width: 640px) {
+  .board-panel {
+    max-width: 94vw;
+  }
+}
+
+/* A short window (a laptop with browser chrome, or landscape phone): trim the
+   panel's own padding so the cell clamp — which is already vh-based — keeps the
+   board, the seat chips and the buttons all on screen together. */
+@media (max-height: 620px) {
+  .board-panel {
+    gap: 7px;
+    padding: 10px 12px 12px;
+    max-height: calc(100dvh - 16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-panel,
+  .board-panel.is-my-turn,
+  .board-seat,
+  .board-btn,
+  .board-mark,
+  .board-mark.is-ghost,
+  .board-glyph__stroke,
+  .board-disc,
+  .board-cell.is-win .board-mark,
+  .board-result,
+  .board-panel__status.is-error {
+    animation: none;
+    transition: none;
+  }
+}
