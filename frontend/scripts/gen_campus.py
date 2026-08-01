@@ -599,16 +599,6 @@ stage_objs = [
         "point": True, "rotation": 0, "type": "", "visible": True,
         "properties": [],
     },
-    {
-        "id": 50005, "name": "presenter_seat",
-        "x": 99 * TS, "y": 8 * TS,
-        "width": TS, "height": TS,
-        "rotation": 0, "type": "", "visible": True,
-        "properties": [
-            {"name": "zoneType", "type": "string", "value": "presenterSeat"},
-            {"name": "facing", "type": "string", "value": "down"},
-        ],
-    },
     # arcade_zone — the FULL arcade-hall interior (cabinet hall + board-game
     # corner + seating), authored from the building shell (AX0..AX1 / AY0..AY1)
     # so the area-focus dim and the HUD map light the whole room as one area.

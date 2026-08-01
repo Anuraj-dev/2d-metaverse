@@ -105,9 +105,10 @@ export default function BoardTablePanel({
 
       <BoardGrid view={view} onMove={onMove} fresh={current.fresh} />
 
-      {view.outcome !== null ? (
+      {view.outcome !== null && (
         <BoardResult outcome={view.outcome} mySeat={view.mySeat} seatNames={view.seatNames} />
-      ) : (
+      )}
+      {(error !== null || view.outcome === null) && (
         <p className={`board-panel__status${error !== null ? " is-error" : ""}`} role="status">
           {error ?? view.status}
         </p>

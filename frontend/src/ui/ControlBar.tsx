@@ -102,7 +102,7 @@ export default function ControlBar() {
         className={`icon-btn control-btn ${prefs.micOn ? "on" : "off"}`}
         onClick={onMic}
         aria-label={prefs.micOn ? "Mute microphone" : "Unmute microphone"}
-        aria-pressed={!prefs.micOn}
+        aria-pressed={prefs.micOn}
         data-tooltip={prefs.micOn ? "Mute microphone" : "Unmute microphone"}
       >
         {prefs.micOn ? (
@@ -119,7 +119,7 @@ export default function ControlBar() {
         className={`icon-btn control-btn ${prefs.camOn ? "on" : "off"}`}
         onClick={onCam}
         aria-label={prefs.camOn ? "Turn camera off" : "Turn camera on"}
-        aria-pressed={!prefs.camOn}
+        aria-pressed={prefs.camOn}
         data-tooltip={prefs.camOn ? "Turn camera off" : "Turn camera on"}
       >
         {prefs.camOn ? (

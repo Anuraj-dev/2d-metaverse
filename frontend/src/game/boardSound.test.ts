@@ -195,11 +195,11 @@ describe("boardSoundEvents — match lifecycle", () => {
     expect(boardSoundEvents(before, after, "b")).toEqual(["board-offer"]);
   });
 
-  it("announces the match going live, to players and spectators alike", () => {
+  it("announces the match going live only to seated players", () => {
     const before = snap({ phase: "offer", seats: [alice, bob] });
     const after = active(1, board());
     expect(boardSoundEvents(before, after, "a")).toEqual(["board-match-start"]);
-    expect(boardSoundEvents(before, after, "watcher")).toEqual(["board-match-start"]);
+    expect(boardSoundEvents(before, after, "watcher")).toEqual([]);
   });
 
   it("does not announce the start again on every later active snapshot", () => {

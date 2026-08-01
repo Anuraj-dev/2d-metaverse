@@ -344,6 +344,15 @@ export default function ChatBox() {
     [commandsDismissed, text],
   );
 
+  // Keep the highlight inside the filtered list (e.g. ArrowUp to last, then type).
+  useEffect(() => {
+    if (commands.length === 0) {
+      setCommandIndex(0);
+      return;
+    }
+    setCommandIndex((index) => Math.min(index, commands.length - 1));
+  }, [commands]);
+
   const chooseCommand = (command: ChatCommand) => {
     setText(commandInsertion(command));
     setCommandsDismissed(true);

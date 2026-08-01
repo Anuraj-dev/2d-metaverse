@@ -852,26 +852,31 @@ describe("campus furniture plausibility (PRD 25.33)", () => {
 });
 
 describe("auditorium speaker station", () => {
-  type ObjectDef = {
+  interface ObjectDef {
     name: string;
     x?: number;
     y?: number;
     properties?: { name: string; value: unknown }[];
-  };
+  }
+  interface ObjectLayer {
+    name: string;
+    objects?: ObjectDef[];
+  }
+  interface CampusMap {
+    layers: ObjectLayer[];
+  }
   const objects = (layerName: string): ObjectDef[] => {
-    const map = loadMap("campus") as unknown as { layers: { name: string; objects?: ObjectDef[] }[] };
+    const map = loadMap("campus") as CampusMap;
     return map.layers.find((layer) => layer.name === layerName)?.objects ?? [];
   };
   const prop = (object: ObjectDef, name: string) =>
     object.properties?.find((property) => property.name === name)?.value;
 
-  it("keeps a local presenter sit target on a prop-free platform", () => {
+  it("keeps the presenter platform prop-free and without an invisible sit target", () => {
+    // No chair/lectern on the platform and no ghost sit that would mid-air snap.
     const seat = objects("stage").find((object) => prop(object, "zoneType") === "presenterSeat");
-    if (!seat) throw new Error("missing presenterSeat on stage layer");
-    expect(seat).toMatchObject({ x: 99 * 16, y: 8 * 16 });
-    expect(prop(seat, "facing")).toBe("down");
+    expect(seat).toBeUndefined();
 
-    // Presenter zone (90-110 × 2-15) must stay clear of decorative furniture.
     const furniture = objects("furniture");
     const inPresenter = furniture.filter((object) => {
       if (object.x === undefined || object.y === undefined) return false;
@@ -897,10 +902,18 @@ describe("furniture texture registration", () => {
     return new Set([...block[1].matchAll(/"([a-z0-9_-]+)"/g)].map((m) => `f_${m[1] as string}`));
   };
 
+  interface FurnitureObject {
+    properties?: { name: string; value: unknown }[];
+  }
+  interface FurnitureLayer {
+    name: string;
+    objects?: FurnitureObject[];
+  }
+  interface FurnitureMap {
+    layers: FurnitureLayer[];
+  }
   const mapKeys = (): string[] => {
-    const json = loadMap(DEFAULT_MAP) as unknown as {
-      layers: { name: string; objects?: { properties?: { name: string; value: unknown }[] }[] }[];
-    };
+    const json = loadMap(DEFAULT_MAP) as FurnitureMap;
     const layer = json.layers.find((l) => l.name === "furniture");
     return (layer?.objects ?? []).map(
       (o) => String(o.properties?.find((p) => p.name === "key")?.value ?? "")

@@ -44,7 +44,7 @@
   /* Wide enough that two player names sit side by side without truncating.
      Costs nothing now that the panel sits in open space rather than wedged
      between the HUD rails. */
-  min-width: 380px;
+  min-width: min(380px, 94vw);
   max-width: min(92vw, 460px);
   padding: 14px 16px 16px;
 

@@ -79,7 +79,14 @@ export function boardSoundEvents(
   // as a fresh start is a lie. (The offer prompt above deliberately does NOT
   // take this guard: if the first snapshot you ever see is an offer waiting on
   // you, you still need telling.)
-  if (before !== undefined && before.phase !== "active" && after.phase === "active") {
+  // Only seated players hear the start — space-wide board-update would otherwise
+  // ding every client on campus whenever any table begins.
+  if (
+    before !== undefined &&
+    before.phase !== "active" &&
+    after.phase === "active" &&
+    mySeat !== null
+  ) {
     events.push("board-match-start");
   }
 
