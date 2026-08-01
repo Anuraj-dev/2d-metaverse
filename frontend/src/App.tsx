@@ -377,8 +377,13 @@ export default function App() {
     const offOffAir = bus.on("stage-off-air", () => {
       if (!selfId) return;
       transition(async () => {
-        await stageVideo.goOffAir(SPACE_ID, selfId);
-        if (!stageMicWasOnBeforeLive) await setMic(false);
+        // Consent restore must not depend on transport teardown succeeding —
+        // a rejecting disconnect would otherwise leave the world mic hot.
+        try {
+          await stageVideo.goOffAir(SPACE_ID, selfId);
+        } finally {
+          if (!stageMicWasOnBeforeLive) await setMic(false);
+        }
       });
     });
 
