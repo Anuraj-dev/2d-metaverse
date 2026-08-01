@@ -35,21 +35,28 @@ test("arcade: walk into the arcade room, open a cabinet, play, and close", async
   });
   await expect(page.locator(".arcade-overlay")).toBeVisible();
   await expect(page.locator(".arcade-leaderboard")).toBeVisible();
-  // The new overlay chrome: per-arcade sound control + fullscreen toggle. The
-  // overlay auto-requests browser fullscreen on open, so the toggle reports
-  // "Exit fullscreen" when the request is granted (as in CI Chromium) and
-  // "Enter fullscreen" when it is denied — match either state.
+  // Overlay chrome: per-arcade sound control + fullscreen toggle. The overlay
+  // never auto-requests browser fullscreen — true fullscreen is an explicit
+  // opt-in via the header toggle, so it always starts as "Enter fullscreen".
   await expect(page.locator(".arcade-sound")).toBeVisible();
   await expect(page.getByLabel("Mute arcade sound")).toBeVisible();
-  await expect(page.getByLabel(/^(Enter|Exit) fullscreen$/)).toBeVisible();
+  await expect(page.getByLabel("Enter fullscreen")).toBeVisible();
 
   // Play a couple of inputs (flap); the overlay stays up.
   await page.keyboard.press("Space");
   await page.keyboard.press("Space");
   await expect(page.locator(".arcade-overlay")).toBeVisible();
 
-  // Escape closes instantly → close-arcade fires and the overlay unmounts.
+  // Escape is a pause, not a quit: it raises the pause menu (Resume selected).
   await page.keyboard.press("Escape");
+  await expect(page.locator('[data-panel="pause"]')).toHaveAttribute("data-open", "true");
+  await expect(page.getByRole("menuitem", { name: "Quit" })).toBeVisible();
+
+  // Quit via the menu (ArrowDown ×2 selects Quit, Enter activates) →
+  // close-arcade fires and the overlay unmounts after its fade.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
   await page.waitForFunction(() =>
     (window.__testHook?.state.events ?? []).some((e) => e.event === "close-arcade"),
   );

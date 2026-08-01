@@ -31,3 +31,4 @@ dist-ssr
 # Playwright E2E
 test-results/
 playwright-report/
+__pycache__/

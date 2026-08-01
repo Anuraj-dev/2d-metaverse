@@ -56,6 +56,11 @@ PREFIX = "Cozy Game Sound Pack 1/"
 # warning if the library is not mounted.
 DSLR_LIB = "/run/media/raja/New Volume/DSLR (The beast)/Sound Effects"
 
+# Owner's standalone Snake game (sibling repo) — source wavs for the arcade
+# Snake port. Machine-specific path; curate_snake_sounds() skips with a warning
+# if the directory is not present.
+SNAKE_GAME_SOUND = "/home/raja/Anuraj-Dev/Snake-game/sound"
+
 STEMS = {
     "drums6": "6-G#-96 BPM/6-Drums Only.opus",
     "drums10": "10-C -65 BPM/10-FullLoop(Drums Only).opus",
@@ -144,12 +149,10 @@ def encode(src: str, clip: str, quality: str = "3") -> None:
 def synth_arcade() -> None:
     """Synthesize the arcade cabinet blips (square-wave chiptune).
 
-    Issue #163: every meaningful beat of a run gets its OWN cue rather than
-    re-using one point blip — eat (Snake's score), point (Flappy's score), near
-    miss, wing flap, game over, new personal best. They stay one family (square
-    wave, short, peak-normalized) but are separated by contour and register, and
-    the two high-frequency ones (flap, near) sit well below the rest so a busy
-    run does not turn into noise.
+    Every meaningful beat gets its own cue. The common cabinet/score/death,
+    near-miss, and best cues use the square-wave family; Flappy's frequently
+    repeated wing/crash pair uses the softer sine/noise treatment from the
+    current arcade renderer.
     """
     def blip(name: str, *segs: tuple[float, int], fade: float, peak: float = -3.0) -> str:
         parts = []
@@ -163,16 +166,26 @@ def synth_arcade() -> None:
         run(["sox", joined, out, "fade", "h", "0.005", str(fade), "0.03", "gain", "-n", str(peak)])
         return out
 
-    # Scoring: Flappy's pipe pass (two-step up) vs Snake's bite (higher, snappier).
+    def sweep(name: str, wave: str, f0: int, f1: int, dur: float, peak_db: float) -> str:
+        """One falling/rising voice, faded at both ends and peak-normalized."""
+        raw = os.path.join(TMP, f"{name}_raw.wav")
+        run(["sox", "-n", raw, "synth", str(dur), wave, f"{f0}:{f1}"])
+        return fx(raw, name, "fade", "h", "0.004", str(dur), str(dur * 0.7),
+                  "gain", "-n", str(peak_db))
+
+    def puff(name: str, cutoff: int, dur: float, peak_db: float) -> str:
+        """Lowpassed noise burst — the air behind a wingbeat / the crash body."""
+        raw = os.path.join(TMP, f"{name}_raw.wav")
+        run(["sox", "-n", raw, "synth", str(dur), "pinknoise"])
+        return fx(raw, name, "lowpass", str(cutoff), "fade", "h", "0.003", str(dur),
+                  str(dur * 0.8), "gain", "-n", str(peak_db))
+
     encode(blip("arcade_point", (0.09, 880), (0.05, 1180), fade=0.14), "arcade_point")
-    encode(blip("arcade_eat", (0.045, 1046), (0.055, 1568), fade=0.10), "arcade_eat")
     # Near miss: a fast descending whip — a warning, so quiet and out of the way.
     encode(
         blip("arcade_near", (0.04, 1760), (0.035, 1318), (0.035, 988), fade=0.11, peak=-13.0),
         "arcade_near",
     )
-    # Wing flap: fires several times a second, so the shortest and quietest cue.
-    encode(blip("arcade_flap", (0.035, 392), fade=0.05, peak=-17.0), "arcade_flap")
     encode(blip("arcade_start", (0.08, 523), (0.08, 659), (0.12, 784), fade=0.28), "arcade_start")
     encode(blip("arcade_over", (0.14, 440), (0.14, 349), (0.22, 262), fade=0.5), "arcade_over")
     # New personal best: the only rising four-note fanfare in the set.
@@ -180,6 +193,16 @@ def synth_arcade() -> None:
         blip("arcade_best", (0.08, 659), (0.08, 784), (0.08, 988), (0.20, 1319), fade=0.42),
         "arcade_best",
     )
+
+    # Wingbeat: a short downward blip with a breath of air under it. Quiet by
+    # design — it fires several times a second.
+    encode(mix("arcade_flap",
+               (sweep("flap_tone", "sine", 560, 210, 0.09, -13), 0.0),
+               (puff("flap_air", 1300, 0.07, -20), 0.0)), "arcade_flap")
+    # Crash: a low body thud with a fast pitch drop, no tail.
+    encode(mix("arcade_hit",
+               (sweep("hit_tone", "sine", 200, 52, 0.26, -5), 0.0),
+               (puff("hit_body", 420, 0.14, -11), 0.0)), "arcade_hit")
 
 
 def curate_board() -> None:
@@ -265,6 +288,48 @@ def curate_portal_transitions() -> None:
         fx(swoosh, "portalout_trim", "trim", "0", "1.0", "fade", "h", "0.02", "1.0", "0.5"),
         "portalout_norm", -13), "portalout_final", "fade", "h", "0.01", "1.0", "0.1")
     encode(p_out, "portal_out")
+
+
+def curate_snake_sounds() -> None:
+    """Port the owner's Snake-game wavs into mono peak-normalized Ogg Vorbis.
+
+    Source: sibling repo `/home/raja/Anuraj-Dev/Snake-game/sound/*.wav`
+    (MIT, Anuraj Jit Saikia). Five clips: eat, bonus-food, game-over, highscore,
+    milestone. Each is converted mono @ 48 kHz, silence-trimmed, peak-normalized
+    to ~-4 dB (same loudness family as the other arcade one-shots), then encoded
+    as Ogg Vorbis. Skipped with a warning if the source dir is missing.
+    """
+    if not os.path.isdir(SNAKE_GAME_SOUND):
+        print(f"  [skip] snake sounds — source not found at {SNAKE_GAME_SOUND}")
+        return
+
+    # (source filename without path, output clip basename, peak dB)
+    clips = [
+        ("eat.wav", "arcade_eat", -4),
+        ("bonus-food.wav", "arcade_bonus", -4),
+        ("game-over.wav", "arcade_snake_over", -4),
+        ("highscore.wav", "arcade_highscore", -4),
+        ("milestone.wav", "arcade_milestone", -4),
+    ]
+    for src_name, clip, peak_db in clips:
+        src = os.path.join(SNAKE_GAME_SOUND, src_name)
+        if not os.path.isfile(src):
+            print(f"  [skip] {clip} — missing {src}")
+            continue
+        mono = os.path.join(TMP, f"{clip}_mono.wav")
+        run(["ffmpeg", "-y", "-i", src, "-ac", "1", "-ar", "48000", mono])
+        # Trim leading/trailing silence (threshold ~1%), keep a short pad so
+        # sharp attacks aren't eaten by the silence gate.
+        trimmed = os.path.join(TMP, f"{clip}_trim.wav")
+        run([
+            "sox", mono, trimmed,
+            "silence", "1", "0.01", "1%",
+            "reverse",
+            "silence", "1", "0.01", "1%",
+            "reverse",
+            "pad", "0", "0.02",
+        ])
+        encode(peak_normalize(trimmed, f"{clip}_n", peak_db), clip)
 
 
 def curate_music_pool() -> None:
@@ -414,6 +479,11 @@ def main() -> None:
     # short, peak-normalized, and mixed low by the sfx channel like every cue.
     synth_arcade()
 
+    # ── Snake port SFX (owner's standalone Snake-game wavs) ─────────────────
+    # Machine-specific sibling-repo path (see SNAKE_GAME_SOUND); skipped with a
+    # warning if that tree is not present. Flappy's synth clips above stay put.
+    curate_snake_sounds()
+
     # ── Verification table ──────────────────────────────────────────────────
     print("\nverification:")
     for f in sorted(os.listdir(OUT_DIR)):
@@ -437,6 +507,7 @@ STEPS = {
     "board": curate_board,
     "portal": curate_portal_transitions,
     "music": curate_music_pool,
+    "snake": curate_snake_sounds,
 }
 
 

@@ -43,11 +43,16 @@ const CLIPS = [
   "arcade_start",
   "arcade_point",
   "arcade_over",
-  // Issue #163: per-event arcade cues + dedicated board-table foley.
+  "arcade_flap",
+  "arcade_hit",
+  // Issue #163: per-event Snake cues + dedicated board-table foley.
   "arcade_eat",
   "arcade_near",
-  "arcade_flap",
   "arcade_best",
+  "arcade_bonus",
+  "arcade_snake_over",
+  "arcade_highscore",
+  "arcade_milestone",
   "board_place",
   "board_win",
 ] as const;

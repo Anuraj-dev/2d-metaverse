@@ -6,7 +6,7 @@ import {
   snakeHeadPressure,
   snakeNearMiss,
 } from "./feedback";
-import { DEFAULT_FLAPPY_CONFIG, initFlappy, type FlappyState } from "./flappy";
+import { initFlappy, type FlappyState } from "./flappy";
 import type { SnakeState } from "./snake";
 
 function snake(partial: Partial<SnakeState>): SnakeState {
@@ -110,85 +110,34 @@ describe("snakeHeadPressure", () => {
 });
 
 function flappy(partial: Partial<FlappyState>): FlappyState {
-  return { ...initFlappy(1), ...partial };
+  return { ...initFlappy(1), phase: "play", ...partial };
 }
 
 describe("flappy near miss", () => {
-  const { pipeWidth, pipeGap, birdX, birdRadius } = DEFAULT_FLAPPY_CONFIG;
+  const base = initFlappy(1);
 
   it("is null between pipes", () => {
     expect(flappyGapClearance(flappy({ pipes: [] }))).toBeNull();
-    // A pipe far to the right does not overlap the bird.
     expect(
-      flappyGapClearance(flappy({ pipes: [{ x: birdX + 100, gapY: 50, scored: false }] }))
+      flappyGapClearance(
+        flappy({ pipes: [{ x: base.birdX + 100, top: 50, gap: 200, scored: false }] })
+      )
     ).toBeNull();
   });
 
-  it("measures the smaller of the two gap-edge clearances", () => {
-    // Gap 50..50+pipeGap; bird centred at 80 with radius 8 ⇒ top edge 72,
-    // bottom edge 88 ⇒ clearances 22 and pipeGap - 38.
-    const s = flappy({
-      pipes: [{ x: birdX - pipeWidth / 2, gapY: 50, scored: false }],
-      birdY: 80,
-    });
-    expect(flappyGapClearance(s)).toBe(Math.min(72 - 50, 50 + pipeGap - 88));
-  });
-
-  it("flags a tight squeeze and not a comfortable one", () => {
+  it("flags a safe tight squeeze but not comfortable, colliding, or terminal states", () => {
+    const overlapping = base.birdX - base.pipeWidth / 2;
     const tight = flappy({
-      pipes: [{ x: birdX - pipeWidth / 2, gapY: 50, scored: false }],
-      // Sitting just below the top lip: clearance 4px.
-      birdY: 50 + birdRadius + 4,
+      pipes: [{ x: overlapping, top: 50, gap: 200, scored: false }],
+      birdY: 50 + base.birdRadius + 4,
     });
+    expect(flappyGapClearance(tight)).toBe(4);
     expect(flappyNearMiss(tight)).toBe(true);
+    expect(flappyNearMiss(tight, 4)).toBe(false);
+    expect(flappyNearMiss(tight, FLAPPY_NEAR_MISS_PX + 5)).toBe(true);
 
-    const comfy = flappy({
-      pipes: [{ x: birdX - pipeWidth / 2, gapY: 50, scored: false }],
-      birdY: 50 + pipeGap / 2,
-    });
-    expect(flappyNearMiss(comfy)).toBe(false);
-  });
-
-  it("does not flag a dead bird or a negative (inside-pipe) clearance", () => {
-    const inside = flappy({
-      pipes: [{ x: birdX - pipeWidth / 2, gapY: 50, scored: false }],
-      birdY: 20,
-    });
-    expect(flappyGapClearance(inside)).toBeLessThan(0);
-    expect(flappyNearMiss(inside)).toBe(false);
-
-    const dead = flappy({
-      pipes: [{ x: birdX - pipeWidth / 2, gapY: 50, scored: false }],
-      birdY: 50 + birdRadius + 2,
-      alive: false,
-    });
-    expect(flappyNearMiss(dead)).toBe(false);
-  });
-
-  it("respects a custom threshold", () => {
-    const s = flappy({
-      pipes: [{ x: birdX - pipeWidth / 2, gapY: 50, scored: false }],
-      birdY: 50 + birdRadius + FLAPPY_NEAR_MISS_PX + 2,
-    });
-    expect(flappyNearMiss(s)).toBe(false);
-    expect(flappyNearMiss(s, FLAPPY_NEAR_MISS_PX + 5)).toBe(true);
-  });
-
-  it("takes the tightest pipe when two overlap the bird", () => {
-    const s = flappy({
-      pipes: [
-        { x: birdX - pipeWidth, gapY: 40, scored: false },
-        { x: birdX + birdRadius - 2, gapY: 90, scored: false },
-      ],
-      birdY: 100,
-    });
-    const clearance = flappyGapClearance(s);
-    expect(clearance).not.toBeNull();
-    expect(clearance).toBe(
-      Math.min(
-        Math.min(100 - birdRadius - 40, 40 + pipeGap - (100 + birdRadius)),
-        Math.min(100 - birdRadius - 90, 90 + pipeGap - (100 + birdRadius))
-      )
-    );
+    expect(flappyNearMiss({ ...tight, birdY: 150 })).toBe(false);
+    expect(flappyNearMiss({ ...tight, birdY: 20 })).toBe(false);
+    expect(flappyNearMiss({ ...tight, phase: "dying" })).toBe(false);
   });
 });

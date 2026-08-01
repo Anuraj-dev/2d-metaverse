@@ -639,11 +639,19 @@ so an OS or in-app preference change applies to the active run without a restart
   sheet is loaded by the overlay canvas with a plain `Image`, **not** through
   BootScene — it is not a Phaser world texture, and registering it there would
   make every player download it whether or not they ever open a cabinet.
+  Flappy's drawing code is split
+  its art into small draw-only modules beside it — Flappy's live in
+  `src/ui/arcade/flappy/` (`scenery`, `pipes`, `bird`, `hud`, `fx`, `render`),
+  procedural canvas art with no assets to ship. `FlappyGame.tsx` itself is
+  the fixed-step loop (`FLAPPY_STEP` accumulator on rAF), input, and event
+  wiring.
 - **Sound stays out of game logic:** games emit domain events on `eventBus`
-  (`arcade-eat`, `arcade-point`, `arcade-near`, `arcade-flap`, `arcade-over`,
-  `arcade-best`); `open-arcade` opens the overlay. The sound mixer's event→clip
-  table decides the blip (see *Sound + polish pipeline*) — the games never touch
-  audio.
+  (`arcade-eat`, `arcade-point`, `arcade-near`, `arcade-flap`, `arcade-hit`,
+  `arcade-over`, `arcade-best`); `open-arcade` opens the overlay. The sound
+  mixer's event→clip table decides the blip (see *Sound + polish pipeline*) —
+  the games never touch audio. Every arcade cue
+  plays on the dedicated `arcade` channel, which has its own volume + mute in
+  the overlay header (also toggled with **M**), independent of world sfx.
 - **High scores** are one REST resource (`/api/v1/arcade/scores`), shapes in
   `@metaverse/shared`. The overlay shows your best + a top-N leaderboard per
   cabinet. A submission returns an authoritative `newBest` verdict computed

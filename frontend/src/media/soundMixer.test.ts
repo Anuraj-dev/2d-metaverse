@@ -174,6 +174,20 @@ describe("cueForEvent", () => {
     expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
     expect(cueForEvent("board-move")).toEqual({ clip: "board_place", channel: "sfx" });
     expect(cueForEvent("board-win")).toEqual({ clip: "board_win", channel: "sfx" });
+    expect(cueForEvent("arcade-hit")).toEqual({ clip: "arcade_hit", channel: "arcade" });
+    expect(cueForEvent("arcade-bonus")).toEqual({ clip: "arcade_bonus", channel: "arcade" });
+    expect(cueForEvent("arcade-milestone")).toEqual({
+      clip: "arcade_milestone",
+      channel: "arcade",
+    });
+    expect(cueForEvent("arcade-highscore")).toEqual({
+      clip: "arcade_highscore",
+      channel: "arcade",
+    });
+    expect(cueForEvent("arcade-snake-over")).toEqual({
+      clip: "arcade_snake_over",
+      channel: "arcade",
+    });
     expect(cueForEvent("stage-on-air")).toEqual({ clip: "meeting_join", channel: "sfx" });
     expect(cueForEvent("stage-off-air")).toEqual({ clip: "meeting_leave", channel: "sfx" });
     // Screen share (PRD 23).

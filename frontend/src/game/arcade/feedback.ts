@@ -2,10 +2,9 @@
  * Run-feedback predicates for the arcade games — pure, no DOM/Phaser/net.
  *
  * These decide WHICH feedback beat has just happened (a near miss); the
- * renderers only act on the answer. They are
- * READ-ONLY views over existing state: nothing here changes a rule or is
- * consulted by a reducer, which is also why they live in their own module —
- * Flappy's rule module stays byte-for-byte untouched by issue #163.
+ * renderer only acts on the answer. It is a READ-ONLY view over existing
+ * state: nothing here changes a rule or is consulted by a reducer. Flappy's
+ * current renderer owns its richer pipe/impact feedback beside its draw code.
  */
 import { isBlockedCell, type SnakeState } from "./snake";
 import type { FlappyState } from "./flappy";
@@ -50,13 +49,12 @@ export function snakeNearMiss(state: SnakeState): boolean {
   return snakeHeadPressure(state) >= 2;
 }
 
-/** Pixels of near-miss clearance below which Flappy counts as "that was close". */
+/** World-unit clearance below which a living bird counts as a near miss. */
 export const FLAPPY_NEAR_MISS_PX = 10;
 
 /**
- * Smallest gap-edge clearance while the bird horizontally overlaps a pipe, or
- * null when the bird is between pipes. Negative values mean the bird is inside
- * the pipe body (i.e. it just died).
+ * Smallest gap-edge clearance while the bird overlaps a pipe horizontally, or
+ * null between pipes. Negative means the bird is already inside pipe geometry.
  */
 export function flappyGapClearance(state: FlappyState): number | null {
   const left = state.birdX - state.birdRadius;
@@ -66,15 +64,15 @@ export function flappyGapClearance(state: FlappyState): number | null {
   let closest: number | null = null;
   for (const pipe of state.pipes) {
     if (right < pipe.x || left > pipe.x + state.pipeWidth) continue;
-    const clearance = Math.min(top - pipe.gapY, pipe.gapY + state.pipeGap - bottom);
+    const clearance = Math.min(top - pipe.top, pipe.top + pipe.gap - bottom);
     if (closest === null || clearance < closest) closest = clearance;
   }
   return closest;
 }
 
-/** True while the living bird is squeezing through a pipe gap with little room. */
+/** True only while the living bird safely squeezes close to a gap edge. */
 export function flappyNearMiss(state: FlappyState, threshold = FLAPPY_NEAR_MISS_PX): boolean {
-  if (!state.alive) return false;
+  if (state.phase !== "play") return false;
   const clearance = flappyGapClearance(state);
   return clearance !== null && clearance >= 0 && clearance < threshold;
 }

@@ -1,6 +1,27 @@
 /** Tiny typed event bus bridging Phaser <-> React (UI overlays). */
 type Listener<T> = (payload: T) => void;
 
+/**
+ * Known domain event names used by the sound mixer / arcade (and documented
+ * elsewhere on this bus). The bus remains stringly-typed at the on/emit
+ * surface so existing callers compile; this union is the checklist for new
+ * arcade events so typos have a single place to land.
+ */
+export type ArcadeBusEvent =
+  | "open-arcade"
+  | "close-arcade"
+  | "arcade-point"
+  | "arcade-over"
+  | "arcade-flap"
+  | "arcade-hit"
+  | "arcade-eat"
+  | "arcade-near"
+  | "arcade-best"
+  | "arcade-bonus"
+  | "arcade-milestone"
+  | "arcade-highscore"
+  | "arcade-snake-over";
+
 class EventBus {
   // Stored loosely (handlers carry their own payload type); on()/emit() are the typed surface.
   private map = new Map<string, Set<Listener<never>>>();
@@ -25,6 +46,9 @@ class EventBus {
  *  'world-info'{width,height,rooms,areas,terrain} |
  *  Board tables (PRD 11 p2): 'near-board-seat'{tableId,seat,game,label,occupied} | 'leave-board-seat' |
  *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-move' | 'board-win'
+ *  Arcade (see ArcadeBusEvent): 'open-arcade' | 'close-arcade' | 'arcade-point' | 'arcade-over' |
+ *  'arcade-flap' | 'arcade-hit' | 'arcade-eat' | 'arcade-bonus' | 'arcade-milestone' |
+ *  'arcade-highscore' | 'arcade-snake-over' (sound mixer maps these; games stay audio-agnostic)
  *  Meeting (PRD 10): the server meeting-lifecycle events are mirrored here by the
  *  app shell, incl. 'meeting-chat'{roomId,id,name,text} (participant-scoped chat).
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'

@@ -24,4 +24,10 @@ export interface ArcadeGameProps {
    * call — a deferred report can be lost if the component unmounts first.
    */
   onGameOver: (finalScore: number) => void;
+  /**
+   * Player's personal best for this cabinet (from the overlay's leaderboard).
+   * Optional so Flappy (and older callers) compile unchanged. Snake uses it for
+   * the highscore sting — only when it is a concrete number (not null/undefined).
+   */
+  bestScore?: number | null;
 }

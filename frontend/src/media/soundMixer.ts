@@ -227,20 +227,27 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   // Arcade cabinets (PRD 11): games stay audio-agnostic and emit these domain
   // events; the mixer decides the blip. On the dedicated `arcade` channel so
   // players get an independent volume/mute (surfaced in the arcade overlay)
-  // without affecting world sfx.
-  // Issue #163 gives every meaningful arcade beat its own cue: eating (Snake's
-  // score), passing a pipe (Flappy's score), a near miss, a wing beat, death,
-  // and a new personal best. Distinct clips, all short chiptune, all on `arcade`.
+  // without affecting world sfx. The flap/hit pair came with the flappy port —
+  // the wingbeat clip is deliberately mixed far quieter than the rest since it
+  // fires several times a second. Issue #163 adds near-miss and authoritative
+  // personal-best cues plus dedicated board-table foley.
   "open-arcade": { clip: "arcade_start", channel: "arcade" },
   "arcade-point": { clip: "arcade_point", channel: "arcade" },
   "arcade-eat": { clip: "arcade_eat", channel: "arcade" },
   "arcade-near": { clip: "arcade_near", channel: "arcade" },
   "arcade-flap": { clip: "arcade_flap", channel: "arcade" },
   "arcade-over": { clip: "arcade_over", channel: "arcade" },
+  "arcade-hit": { clip: "arcade_hit", channel: "arcade" },
   "arcade-best": { clip: "arcade_best", channel: "arcade" },
-  // Board-game tables (PRD 11 phase 2): `board-sat` reuses the world sit thud,
-  // but the move/win cues are now dedicated wooden-table foley (issue #163) —
-  // they used to borrow the arcade chiptune, which read as the wrong room. The
+  // Snake port (owner's standalone game clips): games stay audio-agnostic and
+  // emit these domain events. Snake death uses its own event so flappy's
+  // arcade-over mapping stays intact.
+  "arcade-bonus": { clip: "arcade_bonus", channel: "arcade" },
+  "arcade-milestone": { clip: "arcade_milestone", channel: "arcade" },
+  "arcade-highscore": { clip: "arcade_highscore", channel: "arcade" },
+  "arcade-snake-over": { clip: "arcade_snake_over", channel: "arcade" },
+  // Board-game tables use dedicated wooden-table foley rather than borrowing
+  // cabinet chiptune.
   // game stays audio-agnostic and emits these domain events; the mixer decides.
   "board-sat": { clip: "sit", channel: "sfx" },
   "board-move": { clip: "board_place", channel: "sfx" },
