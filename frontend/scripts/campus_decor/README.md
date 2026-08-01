@@ -71,6 +71,33 @@ def decorate(ctx, phase: str) -> None:
         ctx.furn("f_lz_plant", tx, ty, True)
 ```
 
+## Placement rules
+
+**Empty floor is not a defect.** This is a social space, not a showroom — open floor
+is where players stand, walk and gather. A district that fills its floor becomes
+unusable. Every prop must earn its place by being one of:
+
+- **(a)** flush against a wall,
+- **(b)** part of a cluster you can name in a comment (a desk pod, a snack counter,
+  a table setting, a lounge),
+- **(c)** a deliberate landmark at a path junction.
+
+Anything else gets deleted. Three corollaries:
+
+1. **Wall-hung sprites go only on the tile row against a wall** — never mid-floor,
+   never outdoors. That is `f_lz_painting*`, `mirror*`, `board`, `chalkboard`,
+   `whiteboard`, `pinboard`, `poster_grid`, `worldmap`, `window*`, `quilt*`,
+   `shelf*`, `string_lights`, `ac`.
+2. **Indoor furniture never goes outdoors.** The outdoor vocabulary is benches,
+   trees/palms, a few planters, bins, the occasional lamp post, and notice boards
+   against a structure. Nothing else.
+3. **No single sprite key more than ~6 times per district**, except purpose-built
+   seating rows. Needing 20 of something to fill a space means the space did not
+   need filling.
+
+Aisles, room centres, door spines and the auditorium **presenter zone** carry no
+props at all.
+
 ## Rules
 
 - **One district owns exactly one file.** Do not edit another district's module
@@ -80,4 +107,5 @@ def decorate(ctx, phase: str) -> None:
 - Keep accent floor zones small (`FLOOR_PARQUET` etc. are rugs, not wall-to-wall).
 - Walkable lanes must stay **≥ 2 tiles** (player body is 18px; tiles are 16px).
 - Solid furniture lines the walls; clutter can be non-solid in open floor.
+- Comments describe the space as it is — never a changelog of what was moved or cut.
 - Never run `git` from a district agent; never run npm/vitest/tsc.

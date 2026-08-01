@@ -843,4 +843,15 @@ describe("furniture texture registration", () => {
     );
     expect(missing, `preloaded with no PNG: ${missing.join(", ")}`).toHaveLength(0);
   });
+
+  // WorldScene draws a few sprites the map never names — the fallback room table
+  // and the seat chairs — so trimming the preload list down to "what the map
+  // places" silently breaks them. Guard the code-side keys too.
+  it("every furniture key WorldScene names directly is preloaded by BootScene", () => {
+    const scene = readFileSync(resolve(__dirname, "./scenes/WorldScene.ts"), "utf-8");
+    const named = new Set([...scene.matchAll(/"(f_[a-z0-9_]+)"/g)].map((m) => m[1] as string));
+    const loaded = preloadedKeys();
+    const missing = [...named].filter((k) => !loaded.has(k));
+    expect(missing, `drawn by WorldScene but not preloaded: ${missing.join(", ")}`).toHaveLength(0);
+  });
 });

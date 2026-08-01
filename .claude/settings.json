@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grok:*)",
       "Merge if reviwer revied the code and approved or codex approves in the comments in github and CI is green then u can merge a branch"
     ]
   }

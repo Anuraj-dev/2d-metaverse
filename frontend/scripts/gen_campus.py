@@ -644,12 +644,15 @@ for tx, ty in [(6,6),(14,11),(21,6),(9,20),(18,24),
     if (tx, ty) not in tree_cells:
         furn("f_plant_small", tx, ty, False)
 
-# Plaza — welcome desk, water cooler, landmark plants, clock
+# Plaza — welcome desk, water cooler, landmark plants, clock.
+# The auditorium was later built over the plaza's NE corner, so the clock hangs
+# on its east wall and the corner landmark planter that would have stood at
+# (105, 28) is dropped: both sat in the middle of the audience seating block.
 furn("f_desk",  16, 38, True)
 furn("f_chair", 16, 39, False)
 furn("f_water", 65, 33, True)
-furn("f_clock", 95, 30, False)
-for tx, ty in [(14, 28), (14, 58), (105, 28), (105, 58)]:
+furn("f_clock", 117, 28, False)
+for tx, ty in [(14, 28), (14, 58), (105, 58)]:
     furn("f_plant_big", tx, ty, True)
 
 # Cafe furniture: re-authored in scripts/campus_decor/ (LimeZu art pass).
