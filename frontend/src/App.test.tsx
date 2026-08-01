@@ -319,6 +319,22 @@ describe("App shell", () => {
     await waitFor(() => expect(media.stageVideo.goLive).toHaveBeenCalledWith("1", SELF));
     await emit(() => bus.emit("stage-off-air"));
     await waitFor(() => expect(media.stageVideo.goOffAir).toHaveBeenCalledWith("1", SELF));
+    // Consent-safe default was muted: stop (or walk-off) must re-mute the world mic.
+    await waitFor(() => expect(media.worldAudio.setMicEnabled).toHaveBeenLastCalledWith(false));
+  });
+
+  it("keeps a pre-existing world mic on when the stage broadcast ends", async () => {
+    const { setMediaPrefs } = await import("./media/mediaPrefs");
+    setMediaPrefs({ micOn: true });
+    render(<App />);
+    await enterAndInit();
+    media.worldAudio.setMicEnabled.mockClear();
+    await emit(() => bus.emit("stage-on-air"));
+    await waitFor(() => expect(media.stageVideo.goLive).toHaveBeenCalledWith("1", SELF));
+    await emit(() => bus.emit("stage-off-air"));
+    await waitFor(() => expect(media.stageVideo.goOffAir).toHaveBeenCalledWith("1", SELF));
+    // setMic(true) on go-live is fine; setMic(false) must not follow stop.
+    expect(media.worldAudio.setMicEnabled.mock.calls.map((c) => c[0])).not.toContain(false);
   });
 
   it("re-mutes and re-opens the single prompt when starting live is denied", async () => {

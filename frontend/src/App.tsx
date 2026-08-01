@@ -221,6 +221,9 @@ export default function App() {
     // otherwise play place/outcome foley on every campus client.
     const seatedRef = { current: null as string | null };
     const nearRef = { current: null as string | null };
+    // Clear any in-flight error toast on a new rejection or effect teardown so
+    // a second error is not dismissed by the first timer.
+    let boardErrorTimer: ReturnType<typeof window.setTimeout> | null = null;
 
     const offUpdate = net.on(SERVER_EVENTS.boardUpdate, (snap: BoardUpdatePayload) => {
       const before = prev.get(snap.tableId);
@@ -244,7 +247,11 @@ export default function App() {
       };
       setBoardError(messages[err.reason] ?? "Move rejected");
       bus.emit("board-invalid");
-      window.setTimeout(() => setBoardError(null), 1800);
+      if (boardErrorTimer !== null) window.clearTimeout(boardErrorTimer);
+      boardErrorTimer = window.setTimeout(() => {
+        boardErrorTimer = null;
+        setBoardError(null);
+      }, 1800);
     });
     const offSat = bus.on<{ tableId: string }>("board-sat", (p) => {
       seatedRef.current = p.tableId;
@@ -264,6 +271,7 @@ export default function App() {
       setBoardNearTable(null);
     });
     return () => {
+      if (boardErrorTimer !== null) window.clearTimeout(boardErrorTimer);
       offUpdate();
       offError();
       offSat();
@@ -340,14 +348,18 @@ export default function App() {
     // reconnects with the position-validated publish token, and applies the
     // current camera preference. The global camera control can add/remove video
     // afterward without creating a second stage action.
+    //
+    // Mic consent: Go Live unmutes via the shared fan-out (world + room + stage).
+    // Capture the pre-live pref so failure and stop both restore consent-safe
+    // silence when the player had not already unmuted for proximity voice.
+    // Walking off the presenter platform also emits stage-off-air — that path
+    // must re-mute too, or the world publisher stays hot with no further gesture.
+    let stageMicWasOnBeforeLive = false;
     const offOnAir = bus.on("stage-on-air", () => {
       if (!selfId) return;
       transition(async () => {
-        // Clicking Go Live is the explicit microphone-enable gesture. Use the
-        // shared fan-out so the control bar and every active publisher stay in sync.
-        // If the mic was already on for world proximity, do not disable it when
-        // a later stage-only failure occurs.
         const micWasOn = getMediaPrefs().micOn;
+        stageMicWasOnBeforeLive = micWasOn;
         const mic = await setMic(true);
         if (outcomeNeedsAttention(mic.status)) {
           if (!micWasOn) await setMic(false);
@@ -362,7 +374,11 @@ export default function App() {
       });
     });
     const offOffAir = bus.on("stage-off-air", () => {
-      if (selfId) transition(async () => void (await stageVideo.goOffAir(SPACE_ID, selfId)));
+      if (!selfId) return;
+      transition(async () => {
+        await stageVideo.goOffAir(SPACE_ID, selfId);
+        if (!stageMicWasOnBeforeLive) await setMic(false);
+      });
     });
 
     // ---- Meeting lifecycle + portal handoff (PRD 10) ----------------------
