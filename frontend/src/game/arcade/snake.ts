@@ -6,7 +6,16 @@
  * given seed + input script always produces the same run (see snake.test.ts).
  *
  * Coordinate system: integer grid cells, origin top-left, `x` right, `y` down.
- * The scene renders `body`/`food`; it never re-derives a rule here.
+ * The scene renders `body`/`food`/`walls`; it never re-derives a rule here.
+ *
+ * LEVELS ARE DATA (issue #163). A level is an ASCII map parsed once at module
+ * load into `{ width, height, walls, start }` and handed to `initSnake`. Adding
+ * a level is adding rows to `SNAKE_LEVELS` — the reducer below is level-agnostic
+ * and treats every wall cell as lethal, exactly like the board edge.
+ *
+ * SPEED IS DATA TOO: `SNAKE_SPEEDS` holds the tick cadence per tier. The tick
+ * interval is a presentation cadence, not a rule (the reducer is per-step), so
+ * the renderer reads it from here rather than hard-coding a magic number.
  */
 import { nextInt } from "./prng";
 
@@ -16,6 +25,8 @@ export interface Cell {
   readonly x: number;
   readonly y: number;
 }
+
+export type SnakeLevelId = "open" | "pillars" | "corridors" | "vault";
 
 export interface SnakeState {
   readonly width: number;
@@ -33,15 +44,212 @@ export interface SnakeState {
    */
   readonly pendingDir: Dir | null;
   readonly food: Cell;
+  /** Lethal obstacle cells from the level layout (empty on the "open" level). */
+  readonly walls: readonly Cell[];
+  /** Which level this run is playing (carried so the HUD can label it). */
+  readonly levelId: SnakeLevelId;
   readonly alive: boolean;
-  /** Terminal win: the snake fills the entire board. */
+  /** Terminal win: the snake fills every non-wall cell of the board. */
   readonly won: boolean;
   readonly score: number;
   readonly rngSeed: number;
 }
 
-export const DEFAULT_SNAKE_WIDTH = 17;
-export const DEFAULT_SNAKE_HEIGHT = 15;
+export interface SnakeLevel {
+  readonly id: SnakeLevelId;
+  readonly name: string;
+  /** One-line description shown next to the level picker. */
+  readonly hint: string;
+  readonly width: number;
+  readonly height: number;
+  readonly walls: readonly Cell[];
+  /** Head cell of the starting snake; the two body cells extend to its left. */
+  readonly start: Cell;
+}
+
+export type SnakeSpeedId = "chill" | "normal" | "fast";
+
+export interface SnakeSpeed {
+  readonly id: SnakeSpeedId;
+  readonly label: string;
+  /** Milliseconds between reducer ticks. */
+  readonly tickMs: number;
+}
+
+/**
+ * The three speed tiers. `normal` keeps the historical 110ms cadence so old
+ * high scores stay comparable; `chill` is a genuinely relaxed 180ms (the fix
+ * for "too fast to be playable") and `fast` is the challenge tier.
+ */
+export const SNAKE_SPEEDS: readonly SnakeSpeed[] = [
+  { id: "chill", label: "Chill", tickMs: 180 },
+  { id: "normal", label: "Normal", tickMs: 110 },
+  { id: "fast", label: "Fast", tickMs: 75 },
+];
+
+const DEFAULT_SNAKE_SPEED: SnakeSpeed = { id: "normal", label: "Normal", tickMs: 110 };
+
+/** Resolve a (possibly stale/persisted) speed id; unknown ids fall back to Normal. */
+export function snakeSpeedById(id: string): SnakeSpeed {
+  return SNAKE_SPEEDS.find((s) => s.id === id) ?? DEFAULT_SNAKE_SPEED;
+}
+
+/**
+ * Parse an ASCII level map. `#` is a wall, `>` marks the head start cell (the
+ * snake starts heading right with two body cells to its left), everything else
+ * is empty floor. The documented invariants are VALIDATED here, not assumed:
+ * rows must be non-empty and all the same length, there must be exactly one
+ * `>`, and the two cells to its left must exist and be floor (initSnake places
+ * the starting body there). Violations throw — the shipped levels parse at
+ * module load, so a bad layout edit fails the suite instantly instead of
+ * shipping a level whose snake starts inside a wall or off the board.
+ */
+export function parseSnakeLevel(
+  id: SnakeLevelId,
+  name: string,
+  hint: string,
+  rows: readonly string[]
+): SnakeLevel {
+  const first = rows[0];
+  if (first === undefined || first.length === 0) {
+    throw new Error(`snake level "${id}": layout must have at least one non-empty row`);
+  }
+  const height = rows.length;
+  const width = first.length;
+  const walls: Cell[] = [];
+  let start: Cell | null = null;
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y] ?? "";
+    if (row.length !== width) {
+      throw new Error(
+        `snake level "${id}": row ${y} has length ${row.length}, expected ${width} (rows must be rectangular)`
+      );
+    }
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x];
+      if (ch === "#") walls.push({ x, y });
+      else if (ch === ">") {
+        if (start !== null) {
+          throw new Error(`snake level "${id}": more than one ">" start marker`);
+        }
+        start = { x, y };
+      }
+    }
+  }
+  if (start === null) {
+    throw new Error(`snake level "${id}": missing the ">" start marker`);
+  }
+  // The starting snake is head + two body cells extending left of it.
+  if (start.x < 2) {
+    throw new Error(
+      `snake level "${id}": start at (${start.x}, ${start.y}) needs two cells to its left for the body`
+    );
+  }
+  const startRow = rows[start.y] ?? "";
+  if (startRow[start.x - 1] === "#" || startRow[start.x - 2] === "#") {
+    throw new Error(
+      `snake level "${id}": the two cells left of the start must be floor (the body spawns there)`
+    );
+  }
+  return { id, name, hint, width, height, walls, start };
+}
+
+// Every level is 17 × 15, so the canvas geometry (and therefore the arcade
+// stage layout) is identical whichever level is picked.
+const OPEN_LEVEL = parseSnakeLevel("open", "Open Field", "No obstacles — pure snake.", [
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  "........>........",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+  ".................",
+]);
+
+const PILLARS_LEVEL = parseSnakeLevel("pillars", "Pillars", "Six blocks to weave around.", [
+  ".................",
+  ".................",
+  ".................",
+  "...##...##...##..",
+  "...##...##...##..",
+  ".................",
+  ".................",
+  "........>........",
+  ".................",
+  ".................",
+  "...##...##...##..",
+  "...##...##...##..",
+  ".................",
+  ".................",
+  ".................",
+]);
+
+const CORRIDORS_LEVEL = parseSnakeLevel(
+  "corridors",
+  "Corridors",
+  "Thread the gaps between the walls.",
+  [
+    "....#.......#....",
+    "....#.......#....",
+    "....#.......#....",
+    "....#.......#....",
+    "....#.......#....",
+    "....#...#...#....",
+    "....#...#...#....",
+    "....#...#...#....",
+    "....#...#...#....",
+    "....#...#...#....",
+    "........#........",
+    "........#........",
+    ".................",
+    "........>........",
+    ".................",
+  ]
+);
+
+const VAULT_LEVEL = parseSnakeLevel("vault", "The Vault", "Start boxed in — four doors out.", [
+  ".................",
+  ".................",
+  ".................",
+  "...#####.#####...",
+  "...#.........#...",
+  "...#.........#...",
+  "...#.........#...",
+  "........>........",
+  "...#.........#...",
+  "...#.........#...",
+  "...#.........#...",
+  "...#####.#####...",
+  ".................",
+  ".................",
+  ".................",
+]);
+
+/** The designed levels, in pick order. The first is the default. */
+export const SNAKE_LEVELS: readonly SnakeLevel[] = [
+  OPEN_LEVEL,
+  PILLARS_LEVEL,
+  CORRIDORS_LEVEL,
+  VAULT_LEVEL,
+];
+
+export const DEFAULT_SNAKE_LEVEL = OPEN_LEVEL;
+
+/** Resolve a (possibly stale/persisted) level id; unknown ids fall back to Open Field. */
+export function snakeLevelById(id: string): SnakeLevel {
+  return SNAKE_LEVELS.find((l) => l.id === id) ?? DEFAULT_SNAKE_LEVEL;
+}
+
+export const DEFAULT_SNAKE_WIDTH = DEFAULT_SNAKE_LEVEL.width;
+export const DEFAULT_SNAKE_HEIGHT = DEFAULT_SNAKE_LEVEL.height;
 
 const DELTA: Record<Dir, Cell> = {
   up: { x: 0, y: -1 },
@@ -61,21 +269,27 @@ function eq(a: Cell, b: Cell): boolean {
   return a.x === b.x && a.y === b.y;
 }
 
+function has(cells: readonly Cell[], cell: Cell): boolean {
+  return cells.some((c) => eq(c, cell));
+}
+
 /**
- * Place food on a random empty cell. If the board is full (win), keep the old
- * food position — the caller marks the game `won` and stops play.
+ * Place food on a random empty (non-body, non-wall) cell. If nothing is free
+ * (win), keep the old food position — the caller marks the game `won` and stops
+ * play.
  */
 function placeFood(
   width: number,
   height: number,
   occupied: readonly Cell[],
+  walls: readonly Cell[],
   seed: number
 ): { food: Cell; rngSeed: number } {
   const free: Cell[] = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const cell = { x, y };
-      if (!occupied.some((c) => eq(c, cell))) free.push(cell);
+      if (!has(occupied, cell) && !has(walls, cell)) free.push(cell);
     }
   }
   if (free.length === 0) {
@@ -88,27 +302,27 @@ function placeFood(
   return { food: food ?? { x: 0, y: 0 }, rngSeed };
 }
 
-/** Fresh game: a length-3 snake centred and heading right, with food placed. */
-export function initSnake(
-  seed: number,
-  width = DEFAULT_SNAKE_WIDTH,
-  height = DEFAULT_SNAKE_HEIGHT
-): SnakeState {
-  const cy = Math.floor(height / 2);
-  const cx = Math.floor(width / 2);
+/**
+ * Fresh game on `level`: a length-3 snake at the level's start cell heading
+ * right, with food placed on a free cell.
+ */
+export function initSnake(seed: number, level: SnakeLevel = DEFAULT_SNAKE_LEVEL): SnakeState {
+  const { x, y } = level.start;
   const body: Cell[] = [
-    { x: cx, y: cy },
-    { x: cx - 1, y: cy },
-    { x: cx - 2, y: cy },
+    { x, y },
+    { x: x - 1, y },
+    { x: x - 2, y },
   ];
-  const { food, rngSeed } = placeFood(width, height, body, seed);
+  const { food, rngSeed } = placeFood(level.width, level.height, body, level.walls, seed);
   return {
-    width,
-    height,
+    width: level.width,
+    height: level.height,
     body,
     dir: "right",
     pendingDir: null,
     food,
+    walls: level.walls,
+    levelId: level.id,
     alive: true,
     won: false,
     score: 0,
@@ -131,10 +345,10 @@ export function snakeInput(state: SnakeState, dir: Dir): SnakeState {
  * Advance one step:
  *  - the buffered turn applies only if it is not a 180° reversal of the
  *    direction actually last moved (else it is discarded);
- *  - moving out of bounds or into your own body (except the tail cell you are
- *    about to vacate) kills the snake — state returned with `alive: false`;
+ *  - moving out of bounds, into a level wall, or into your own body (except the
+ *    tail cell you are about to vacate) kills the snake — `alive: false`;
  *  - eating food grows the snake (tail retained) and spawns new food;
- *  - filling the whole board is a terminal win (`won: true`);
+ *  - filling every non-wall cell is a terminal win (`won: true`);
  *  - otherwise the snake slides (tail removed).
  * Dead or won states are idempotent no-ops.
  */
@@ -161,21 +375,27 @@ export function snakeTick(state: SnakeState): SnakeState {
     return { ...state, dir, pendingDir: null, alive: false };
   }
 
+  // Level walls are as lethal as the board edge.
+  if (has(state.walls, next)) {
+    return { ...state, dir, pendingDir: null, alive: false };
+  }
+
   const eating = eq(next, state.food);
   // When not eating, the tail moves away this tick, so colliding with the
   // current tail cell is legal.
   const bodyToCheck = eating ? state.body : state.body.slice(0, -1);
-  if (bodyToCheck.some((c) => eq(c, next))) {
+  if (has(bodyToCheck, next)) {
     return { ...state, dir, pendingDir: null, alive: false };
   }
 
   if (eating) {
     const grown = [next, ...state.body];
-    const won = grown.length >= state.width * state.height;
+    const won = grown.length >= state.width * state.height - state.walls.length;
     const { food, rngSeed } = placeFood(
       state.width,
       state.height,
       grown,
+      state.walls,
       state.rngSeed
     );
     return {
@@ -192,4 +412,10 @@ export function snakeTick(state: SnakeState): SnakeState {
 
   const moved = [next, ...state.body.slice(0, -1)];
   return { ...state, dir, pendingDir: null, body: moved };
+}
+
+/** True when `cell` is outside the board or on a level wall. Rendering/near-miss helper. */
+export function isBlockedCell(state: SnakeState, cell: Cell): boolean {
+  if (cell.x < 0 || cell.y < 0 || cell.x >= state.width || cell.y >= state.height) return true;
+  return has(state.walls, cell);
 }

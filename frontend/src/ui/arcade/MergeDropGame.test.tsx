@@ -33,7 +33,7 @@ function movesSince(start: number): number[] {
 }
 
 function mount(): void {
-  render(<MergeDropGame seed={1} paused={false} onScore={() => {}} onGameOver={() => {}} />);
+  render(<MergeDropGame seed={1} paused={false} shake={true} onScore={() => {}} onGameOver={() => {}} />);
 }
 
 beforeEach(() => {

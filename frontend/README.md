@@ -432,7 +432,11 @@ before reaching for new art.
    Vorbis (`scripts/curate_audio.py` regenerates the whole soundscape from the
    owner-supplied Cozy pack — every event SFX is cut from real recorded
    material at documented timestamps, layered/filtered, peak-normalized; no
-   synthesis). Keep loops short and seamless.
+   synthesis, **except the deliberately diegetic arcade chiptune**). Keep loops
+   short and seamless. Use `--only <step[,step]>` (steps: `arcade`, `board`,
+   `portal`, `music`) when you are adding a few clips — a full run re-encodes
+   every already-shipped clip and would put unrelated binary churn in the diff.
+   `COZY_PACK` overrides the pack path if the zip is not at repo-root `Assets/`.
 3. **Register attribution.** Add a row to **`ATTRIBUTIONS.md`** (asset → source →
    author → license). This is **required** — an unattributed asset must not ship.
 4. **Wire it.** Tilesets go through the `maps.ts` registry (and are auto-checked
@@ -563,30 +567,45 @@ the old open-plaza cabinets. No seats also means it can never arm the all-seated
 meeting trigger. Walking next to a cabinet shows the usual interact hint; pressing
 **E** opens the overlay hosting the game.
 
-The overlay presents the game **fullscreen**: it requests the browser Fullscreen
-API on the backdrop on open (with a header toggle that always runs from a real
-user gesture) and **falls back gracefully to a CSS-maximized overlay** when
-fullscreen is denied (no user activation, or the API is unavailable). The game
-canvas scales to fill the stage crisply (`object-fit: contain` +
-`image-rendering: pixelated`), so it stays sharp at any size. The world scene
-**sleeps** underneath (the same pattern meetings use) and **Escape** closes
-instantly *and* exits fullscreen. The overlay pauses the game when the tab loses
-visibility or the window loses focus, and it takes keyboard focus robustly on
-open (blurring any lingering input — e.g. the chat field — so its focus can't
-swallow the game's keys via the scene's `isTyping` guard).
+The overlay is a **full-bleed CSS surface** that covers the viewport and
+**never** takes browser fullscreen on its own (browser fullscreen swallows the
+first Escape to leave itself). True fullscreen is an **explicit opt-in** via the
+header toggle or **F**. The game canvas scales to fill the stage crisply
+(`object-fit: contain` + `image-rendering: pixelated`). The world scene
+**sleeps** underneath (the same pattern meetings use). **Escape is a pause, not
+a quit**: it raises the pause menu (Resume / Restart / Quit); the header Quit
+button opens the same menu with Quit pre-selected. The overlay also auto-pauses
+when the tab loses visibility or the window loses focus, and it takes keyboard
+focus robustly on open (blurring any lingering input — e.g. the chat field — so
+its focus can't swallow the game's keys via the scene's `isTyping` guard).
 
 **Per-arcade sound control:** the overlay header carries a mute toggle + volume
 slider bound to a dedicated **`arcade` mixer channel** (`arcadeVolume` /
 `muteArcade` in `ui/settings.ts`). Kept in the (lazy-loaded) overlay rather than
 the core Settings panel so the entry bundle stays lean under the size budget.
-Arcade blips (`open-arcade`, `arcade-point`, `arcade-over`, and the merge-drop
+Arcade blips (`open-arcade`, `arcade-eat`, `arcade-point`, `arcade-near`,
+`arcade-flap`, `arcade-over`, `arcade-best`, and the merge-drop
 `arcade-drop`/`arcade-merge`/`arcade-nova`) route on that channel in the pure
 `soundMixer` `EVENT_SOUNDS` table, so a player can quiet a noisy game
-independently of world sfx. Scope is **arcade-wide**, not per-game: the
-`SfxBridge` is game-agnostic (it only forwards the event payload to the pure
-`cueRate`), so a per-game volume would mean threading the active game through the
-global bridge for marginal value — arcade-wide is the clean seam and still honours the pure-mixer
+independently of world sfx. Scope is **arcade-wide**, not per-game: every game
+shares the same domain cues and the `SfxBridge` is game-agnostic (it only
+forwards the event payload to the pure `cueRate` for tier-pitched merge chimes), so a
+per-game volume would mean threading the active game through the global bridge for
+marginal value — arcade-wide is the clean seam and still honours the pure-mixer
 rule (games stay audio-agnostic; the mixer decides the blip).
+
+**Per-run options + juice (issue #163).** Snake's cabinet carries a **speed**
+picker (chill / normal / fast) and a **level** picker; the header carries a
+**screen-shake** toggle. All three persist through the shared settings store
+(`snakeSpeed`, `snakeLevel`, `arcadeShake` in `ui/settings.ts` — imported there
+**type-only** so no arcade code reaches the entry chunk). Picking an option
+**bumps the run seed**, which remounts the game component; a renderer therefore
+reads its options exactly once per run and a mid-run change can never reshape the
+board under the player. Death shows a card with a one-key restart (Space / Enter /
+R). Screen shake is suppressed by the shake toggle **and** by the global
+reduced-motion preference, like every other decorative motion in the app. Both
+canvas renderers subscribe through `useReducedMotion()`,
+so an OS or in-app preference change applies to the active run without a restart.
 
 **Architecture — pure rules, thin renderers, audio-agnostic:**
 
@@ -596,21 +615,52 @@ rule (games stay audio-agnostic; the mixer decides the blip).
   serializable `rngSeed` in each state, so *a given seed + input script always
   reproduces a run* (asserted by determinism tests). Each module lands with its
   vitest file in the same commit.
+- **Level layouts and speed tiers are DATA in the rules module**, not renderer
+  constants: `SNAKE_LEVELS` parses ASCII maps (`#` wall, `>` start) into
+  `{ width, height, walls, start }` at module load and `SNAKE_SPEEDS` holds the
+  tick cadence per tier. The reducer is level-agnostic — a wall cell is as lethal
+  as the board edge, food never spawns on one, and a win means filling every
+  *non-wall* cell. **Adding a level is adding rows to `SNAKE_LEVELS`**; the level
+  tests then check its geometry, its start, and that every one of its wall cells
+  kills, automatically.
+- **Juice is a pure reducer too** (`juice.ts`): particles, score pop-ups and
+  screen-shake energy, with every random draw threaded through its own `rngSeed`
+  — never `Math.random` — so the feedback is as reproducible as the game. It is
+  seeded from the run seed but keeps a *separate* stream, so adding or removing a
+  particle burst can never perturb the game's own randomness. `feedback.ts` holds
+  the read-only near-miss predicates; nothing there is consulted by a reducer.
 - **Renderers** are thin React components (`src/ui/arcade/`): one per game, they
   own a canvas/DOM surface, run the module's tick/reduce on a loop, draw the
   returned state, and report score/game-over upward. No game *rules* in a
   renderer or the scene. The overlay (`ArcadeOverlay.tsx`) and its game modules
   are **lazy-loaded** — a separate chunk, so no cabinet's code ever bloats the
-  entry bundle (only the tiny `ARCADE_GAMES` registry entry is shared).
+  entry bundle (only the tiny `ARCADE_GAMES` registry entry is shared). Snake draws from a 16-tile sprite sheet
+  (`public/assets/arcade/snake_tiles.png`, generated by
+  `scripts/gen_snake_sprites.py`); which tile a segment uses is geometry, so it
+  lives in the pure `snakeSprites.ts` and the renderer only blits the index. The
+  sheet is loaded by the overlay canvas with a plain `Image`, **not** through
+  BootScene — it is not a Phaser world texture, and registering it there would
+  make every player download it whether or not they ever open a cabinet.
+  Flappy's drawing code is split
+  its art into small draw-only modules beside it — Flappy's live in
+  `src/ui/arcade/flappy/` (`scenery`, `pipes`, `bird`, `hud`, `fx`, `render`),
+  procedural canvas art with no assets to ship. `FlappyGame.tsx` itself is
+  the fixed-step loop (`FLAPPY_STEP` accumulator on rAF), input, and event
+  wiring.
 - **Sound stays out of game logic:** games emit domain events on `eventBus`
-  (`arcade-point`, `arcade-over`, `arcade-flap`, and the merge-drop
-  `arcade-drop`/`arcade-merge`/`arcade-nova`); `open-arcade` opens the
-  overlay. The sound mixer's event→clip table decides the blip — including the
-  playback rate for tier-pitched cues (see *Sound + polish pipeline*) — and the
-  games never touch audio.
+  (`arcade-eat`, `arcade-point`, `arcade-near`, `arcade-flap`, `arcade-hit`,
+  `arcade-over`, `arcade-best`, and the merge-drop
+  `arcade-drop`/`arcade-merge`/`arcade-nova`); `open-arcade` opens the overlay. The sound
+  mixer's event→clip table decides the blip — including the playback rate for
+  tier-pitched cues (see *Sound + polish pipeline*) — the games never touch audio. Every arcade cue
+  plays on the dedicated `arcade` channel, which has its own volume + mute in
+  the overlay header (also toggled with **M**), independent of world sfx.
 - **High scores** are one REST resource (`/api/v1/arcade/scores`), shapes in
   `@metaverse/shared`. The overlay shows your best + a top-N leaderboard per
-  cabinet. **Scores are client-reported and trusted at this level** — there is
+  cabinet. A submission returns an authoritative `newBest` verdict computed
+  atomically with the score upsert; the client never tries to infer the pre-run
+  best from racing leaderboard requests. **Scores are client-reported and trusted
+  at this level** — there is
   no server-side play validation, so the leaderboard is best treated as
   cosmetic; hardening (server replay/authoritative sim) is out of scope for
   Phase 1.
@@ -621,7 +671,7 @@ exporting `init<Game>(seed) → State`, a per-tick/per-input reducer
 `rngSeed`, plus its `.test.ts` (transition table + a determinism test). Add the
 id to `ARCADE_GAMES` in `@metaverse/shared`. Write a thin renderer in
 `src/ui/arcade/` implementing `ArcadeGameProps` (`seed`, `paused`, `onScore`,
-`onGameOver`) and register it in `ArcadeOverlay`'s `GAMES` map. Place a cabinet
+`shake`, `onScore`, `onGameOver`) and register it in `ArcadeOverlay`'s `GAMES` map. Place a cabinet
 by editing `scripts/gen_campus.py` (a solid `furn(...)` sprite + an
 `interactType="arcade"` interactable carrying a `game` payload) and regenerate
 the map — never hand-edit `campus.json`. Add a cabinet sprite via
@@ -690,6 +740,19 @@ Unlike the arcade cabinets, board tables are **two-player and server-authoritati
 - **Client-side decisions** (view model, whose turn, offer prompt, spectator display,
   grid click → move index) live in the pure `game/boardTable.ts` (+ vitest). Sounds
   go through the `soundMixer` event→clip table (`board-sat`/`board-move`/`board-win`).
+  Since issue #163 the move/win cues are **dedicated board foley** (`board_place`,
+  `board_win`) rather than borrowed arcade chiptune — these are wooden plaza tables,
+  not cabinets, so they belong to the recorded-foley family with the rest of the world.
+- **Piece motion is transition-gated CSS** (issue #163): the panel remembers the previous
+  snapshot and gives `is-new` only to a 0→filled transition, so historical marks are
+  already settled for a spectator joining mid-match and ordinary re-renders cannot
+  restart the animation. Connect-4 discs fall in from above their landing row (the frame
+  clips them at its top edge), tic-tac-toe X/O strokes draw themselves in
+  (`pathLength="1"` + one dash-offset keyframe), and the winning line pops along its
+  length. The only two geometry decisions — how many rows a disc falls (`cellRow`) and a
+  cell's position in the win line (`winLineStep`) — are pure functions in
+  `game/boardTable.ts` with tests. Reduced motion drops the motion and keeps every end
+  state.
 
 **Test coverage.** Board rules are covered exhaustively by the shared-package unit
 tests (`shared/src/games/*.test.ts`) and the match lifecycle by the backend socket-seam

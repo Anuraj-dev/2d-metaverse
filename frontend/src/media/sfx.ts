@@ -43,8 +43,21 @@ const CLIPS = [
   "arcade_start",
   "arcade_point",
   "arcade_over",
+  "arcade_flap",
+  "arcade_hit",
+  // Issue #163: per-event Snake cues + dedicated board-table foley.
+  "arcade_eat",
+  "arcade_near",
+  "arcade_best",
+  "arcade_bonus",
+  "arcade_snake_over",
+  "arcade_highscore",
+  "arcade_milestone",
+  // Arcade 2.0 Stellar Forge merge-drop cabinet.
   "arcade_merge",
   "arcade_nova",
+  "board_place",
+  "board_win",
 ] as const;
 
 /** Legacy one-shot names still referenced by ChatToast / older callers. */

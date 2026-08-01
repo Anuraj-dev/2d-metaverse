@@ -7,14 +7,14 @@
  * rather than throwing — the games are fully playable offline, scores just do
  * not persist.
  */
-import type { ArcadeGame, ArcadeLeaderboard } from "@metaverse/shared";
+import type { ArcadeGame, ArcadeLeaderboard, ArcadeScoreResult } from "@metaverse/shared";
 import { authToken, serverBase, USE_MOCK } from "./auth";
 
 function emptyBoard(game: ArcadeGame): ArcadeLeaderboard {
   return { game, top: [], best: null };
 }
 
-async function request(path: string, init: RequestInit): Promise<ArcadeLeaderboard | null> {
+async function request<T>(path: string, init: RequestInit): Promise<T | null> {
   if (USE_MOCK) return null;
   const res = await fetch(`${serverBase}${path}`, {
     ...init,
@@ -24,12 +24,12 @@ async function request(path: string, init: RequestInit): Promise<ArcadeLeaderboa
     },
   });
   if (!res.ok) throw new Error(`arcade request failed (${res.status})`);
-  return (await res.json()) as ArcadeLeaderboard;
+  return (await res.json()) as T;
 }
 
 /** Fetch the top-N leaderboard for a cabinet plus the caller's personal best. */
 export async function fetchLeaderboard(game: ArcadeGame): Promise<ArcadeLeaderboard> {
-  const board = await request(`/api/v1/arcade/scores/${game}`, { method: "GET" });
+  const board = await request<ArcadeLeaderboard>(`/api/v1/arcade/scores/${game}`, { method: "GET" });
   return board ?? emptyBoard(game);
 }
 
@@ -37,10 +37,10 @@ export async function fetchLeaderboard(game: ArcadeGame): Promise<ArcadeLeaderbo
 export async function submitScore(
   game: ArcadeGame,
   score: number
-): Promise<ArcadeLeaderboard> {
-  const board = await request(`/api/v1/arcade/scores`, {
+): Promise<ArcadeScoreResult> {
+  const board = await request<ArcadeScoreResult>(`/api/v1/arcade/scores`, {
     method: "POST",
     body: JSON.stringify({ game, score }),
   });
-  return board ?? emptyBoard(game);
+  return board ?? { ...emptyBoard(game), best: score, newBest: score > 0 };
 }

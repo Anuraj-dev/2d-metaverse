@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { BoardOccupant, BoardUpdatePayload } from "@metaverse/shared";
 import {
+  boardCells,
   boardSeatHolder,
   boardSeatOccupants,
   boardTableView,
   canTakeBoardSeat,
+  cellRow,
   clickToMove,
+  winLineStep,
 } from "./boardTable";
 
 const board9 = (fill: 0 | 1 | 2 = 0): (0 | 1 | 2)[] => Array<0 | 1 | 2>(9).fill(fill);
@@ -161,5 +164,79 @@ describe("boardTableView — endings", () => {
     // The forfeiter's seat is emptied, so they (and any spectator) see the same.
     expect(boardTableView(forfeit, "a").status).toBe("Bob wins by forfeit");
     expect(boardTableView(forfeit, "spectator").status).toBe("Bob wins by forfeit");
+  });
+});
+
+// ── Animation inputs (issue #163) ───────────────────────────────────────────
+// The panel's drop / draw-in / win-line motion is CSS, but the two numbers it
+// keys off are decisions and therefore live in this pure module.
+
+describe("boardCells", () => {
+  it("returns the live board when a match is running", () => {
+    const cells = [1, 0, 2, 0, 0, 0, 0, 0, 0] as const;
+    const s = snap({
+      phase: "active",
+      state: { board: [...cells], turn: 1, result: { status: "in_progress" } },
+    });
+    expect(boardCells(s)).toEqual([...cells]);
+  });
+
+  it("zero-fills to the game's grid size when idle", () => {
+    expect(boardCells(snap({ game: "tictactoe" }))).toHaveLength(9);
+    expect(boardCells(snap({ game: "connect4" }))).toHaveLength(42);
+    expect(boardCells(snap({ game: "connect4" })).every((c) => c === 0)).toBe(true);
+  });
+});
+
+describe("cellRow (Connect-4 drop distance)", () => {
+  const cases: Array<{ index: number; columns: number; row: number }> = [
+    { index: 0, columns: 7, row: 0 },
+    { index: 6, columns: 7, row: 0 },
+    { index: 7, columns: 7, row: 1 },
+    { index: 20, columns: 7, row: 2 },
+    { index: 41, columns: 7, row: 5 },
+    { index: 8, columns: 3, row: 2 },
+  ];
+  for (const { index, columns, row } of cases) {
+    it(`cell ${index} on a ${columns}-wide grid is row ${row}`, () => {
+      expect(cellRow(index, columns)).toBe(row);
+    });
+  }
+
+  it("clamps degenerate input to row 0 instead of throwing", () => {
+    expect(cellRow(-3, 7)).toBe(0);
+    expect(cellRow(5, 0)).toBe(0);
+    expect(cellRow(5, -1)).toBe(0);
+  });
+});
+
+describe("winLineStep (win-line stagger)", () => {
+  it("gives each winning cell its position along the line", () => {
+    const line = [2, 5, 8];
+    expect(winLineStep(line, 2)).toBe(0);
+    expect(winLineStep(line, 5)).toBe(1);
+    expect(winLineStep(line, 8)).toBe(2);
+  });
+
+  it("is null for cells outside the line (and for no line at all)", () => {
+    expect(winLineStep([2, 5, 8], 4)).toBeNull();
+    expect(winLineStep([], 0)).toBeNull();
+  });
+
+  it("matches the view's winning line end to end", () => {
+    const won = snap({
+      phase: "over",
+      reason: "win",
+      seats: [{ ...alice, accepted: true }, { ...bob, accepted: true }],
+      state: {
+        board: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        turn: 1,
+        result: { status: "won", winner: 1, line: [0, 4, 8] },
+      },
+    });
+    const view = boardTableView(won, "a");
+    expect(view.cells.map((_, i) => winLineStep(view.winningLine, i))).toEqual([
+      0, null, null, null, 1, null, null, null, 2,
+    ]);
   });
 });

@@ -1,21 +1,40 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { bus } from "../../game/eventBus";
 import {
   initSnake,
   snakeInput,
+  snakeLevelById,
+  snakeSpeedById,
   snakeTick,
-  DEFAULT_SNAKE_WIDTH,
-  DEFAULT_SNAKE_HEIGHT,
   type Dir,
   type SnakeState,
 } from "../../game/arcade/snake";
+import { snakeNearMiss } from "../../game/arcade/feedback";
+import {
+  FOOD_TILE,
+  SNAKE_SHEET_URL,
+  SNAKE_TILE_PX,
+  WALL_TILE,
+  snakeTileIndex,
+} from "../../game/arcade/snakeSprites";
+import {
+  burst,
+  fadeAlpha,
+  initJuice,
+  popup,
+  shake,
+  shakeOffset,
+  stepJuice,
+  type JuiceState,
+} from "../../game/arcade/juice";
+import { getSettings } from "../settings";
+import { useReducedMotion } from "../reducedMotionBridge";
 import type { ArcadeGameProps } from "./gameTypes";
 
-// Internal render resolution (CSS scales the canvas up crisply to fill the
-// stage). Larger cells than the world tile give room for rounded segments +
-// eyes without touching the pure game module.
-const CELL = 24;
-const TICK_MS = 110;
+/** Render cell size: exactly 2x the 16px sprite tile, so scaling stays crisp. */
+const CELL = SNAKE_TILE_PX * 2;
+/** Frame cadence for juice + drawing; the reducer ticks on the level's own cadence. */
+const FRAME_MS = 16;
 
 const KEY_DIR: Record<string, Dir> = {
   ArrowUp: "up",
@@ -32,12 +51,20 @@ const KEY_DIR: Record<string, Dir> = {
   D: "right",
 };
 
-const EYE_OFFSET: Record<Dir, [number, number][]> = {
-  up: [[0.3, 0.32], [0.7, 0.32]],
-  down: [[0.3, 0.68], [0.7, 0.68]],
-  left: [[0.32, 0.3], [0.32, 0.7]],
-  right: [[0.68, 0.3], [0.68, 0.7]],
-};
+/**
+ * The sprite sheet is shared across mounts (a run restart remounts this
+ * component) so a restart never re-requests it. Absent in non-DOM test
+ * environments — the renderer falls back to plain shapes until it decodes.
+ */
+let sheetImage: HTMLImageElement | null = null;
+function snakeSheet(): HTMLImageElement | null {
+  if (typeof Image === "undefined") return null;
+  if (!sheetImage) {
+    sheetImage = new Image();
+    sheetImage.src = SNAKE_SHEET_URL;
+  }
+  return sheetImage;
+}
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -55,24 +82,76 @@ function roundRect(
 
 /**
  * Thin canvas renderer for the pure Snake module. A new run remounts this
- * component (ArcadeOverlay keys it by seed), so the refs init fresh from `seed`.
- * All game rules stay in game/arcade/snake — this only draws the returned state.
+ * component (ArcadeOverlay keys it by a monotonic run id), so the refs init
+ * fresh from `seed` AND from the persisted level/speed settings — which is why
+ * changing an option in the overlay starts a new run. Screen shake is a live
+ * prop (accessibility toggle mid-run must apply immediately).
+ *
+ * All game rules stay in game/arcade/snake; the level layout and tick cadence
+ * are data from that module; the particles/pop-ups/shake are the pure
+ * game/arcade/juice reducer. This file only draws and wires input, and it stays
+ * audio-agnostic: it emits domain events on the bus and the sound mixer decides
+ * the clip.
  */
-export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
+// The `shake` prop is destructured as `shakeSetting` — the bare name would
+// shadow the imported juice `shake` reducer.
+export default function SnakeGame({
+  seed,
+  paused,
+  shake: shakeSetting,
+  onScore,
+  onGameOver,
+}: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef<SnakeState>(initSnake(seed));
+  // Snapshot the board-shaping options once per run so a mid-run settings
+  // change cannot reshape the board under the player. The overlay remounts this
+  // component for every run (it keys the game by run id), so a fresh run always
+  // re-reads them. Screen shake is deliberately NOT snapshotted: it arrives as
+  // a live prop so the accessibility toggle applies to the active run.
+  const [options] = useState(() => {
+    const s = getSettings();
+    return {
+      level: snakeLevelById(s.snakeLevel),
+      tickMs: snakeSpeedById(s.snakeSpeed).tickMs,
+    };
+  });
+  const reduced = useReducedMotion();
+  const shakeEnabled = shakeSetting && !reduced;
+
+  const stateRef = useRef<SnakeState>(initSnake(seed, options.level));
+  // Juice gets its own PRNG stream seeded from the run seed, so the feedback is
+  // as reproducible as the game itself and never touches the game's own seed.
+  const juiceRef = useRef<JuiceState>(initJuice(((seed ^ 0x9e3779b9) >>> 0) || 1));
   const overRef = useRef(false);
+  const nearRef = useRef(false);
+  const accRef = useRef(0);
+
+  const centre = useCallback(
+    (c: { x: number; y: number }) => ({ x: c.x * CELL + CELL / 2, y: c.y * CELL + CELL / 2 }),
+    []
+  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
     const s = stateRef.current;
+    const j = juiceRef.current;
     const { width, height } = canvas;
+    const sheet = snakeSheet();
+    const ready = !!sheet && sheet.complete && sheet.naturalWidth > 0;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
 
     // Playfield backdrop + subtle checker so motion reads clearly.
     ctx.fillStyle = "#0b0f18";
     ctx.fillRect(0, 0, width, height);
+
+    const off = shakeEnabled ? shakeOffset(j) : { x: 0, y: 0 };
+    ctx.save();
+    ctx.translate(off.x, off.y);
+
     ctx.fillStyle = "rgba(127, 209, 185, 0.04)";
     for (let y = 0; y < s.height; y++) {
       for (let x = 0; x < s.width; x++) {
@@ -80,61 +159,157 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
       }
     }
 
-    // Food: a glowing pink pellet.
+    const tile = (index: number, cx: number, cy: number, size = CELL) => {
+      if (!ready || !sheet) return false;
+      const inset = (CELL - size) / 2;
+      ctx.drawImage(
+        sheet,
+        index * SNAKE_TILE_PX,
+        0,
+        SNAKE_TILE_PX,
+        SNAKE_TILE_PX,
+        cx * CELL + inset,
+        cy * CELL + inset,
+        size,
+        size
+      );
+      return true;
+    };
+
+    // Level walls.
+    for (const w of s.walls) {
+      if (!tile(WALL_TILE, w.x, w.y)) {
+        ctx.fillStyle = "#3a4767";
+        ctx.fillRect(w.x * CELL, w.y * CELL, CELL, CELL);
+      }
+    }
+
+    // Food, with a gentle breathing pulse (skipped under reduced motion).
+    const pulse = reduced ? 1 : 1 + 0.07 * Math.sin(j.elapsedMs / 180);
     ctx.save();
     ctx.shadowColor = "#e0567a";
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = "#e0567a";
-    roundRect(ctx, s.food.x * CELL + 4, s.food.y * CELL + 4, CELL - 8, CELL - 8, 5);
+    ctx.shadowBlur = 10;
+    if (!tile(FOOD_TILE, s.food.x, s.food.y, CELL * pulse)) {
+      ctx.fillStyle = "#e0567a";
+      roundRect(ctx, s.food.x * CELL + 6, s.food.y * CELL + 6, CELL - 12, CELL - 12, 6);
+    }
     ctx.restore();
 
-    // Snake: rounded segments fading head→tail; the head carries two eyes.
-    const n = s.body.length;
+    // Snake: one sprite tile per segment, chosen from its neighbours.
     s.body.forEach((c, i) => {
+      if (tile(snakeTileIndex(s.body, i, s.dir), c.x, c.y)) return;
+      // Fallback while the sheet decodes: the pre-#163 rounded segments.
+      const n = s.body.length;
       const t = n > 1 ? i / (n - 1) : 0;
-      const head = i === 0;
-      ctx.fillStyle = head ? "#8ff0d6" : `rgb(${74 - t * 20}, ${157 - t * 40}, ${142 - t * 30})`;
-      roundRect(ctx, c.x * CELL + 1.5, c.y * CELL + 1.5, CELL - 3, CELL - 3, 6);
-      if (head) {
-        ctx.fillStyle = "#0b0f18";
-        for (const [ex, ey] of EYE_OFFSET[s.dir]) {
-          ctx.beginPath();
-          ctx.arc(c.x * CELL + ex * CELL, c.y * CELL + ey * CELL, CELL * 0.09, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      ctx.fillStyle =
+        i === 0 ? "#8ff0d6" : `rgb(${74 - t * 20}, ${157 - t * 40}, ${142 - t * 30})`;
+      roundRect(ctx, c.x * CELL + 2, c.y * CELL + 2, CELL - 4, CELL - 4, 8);
     });
+
+    // Particles.
+    for (const p of j.particles) {
+      ctx.globalAlpha = fadeAlpha(p.life, p.maxLife);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+    }
+    ctx.globalAlpha = 1;
+
+    // Score pop-ups.
+    ctx.font = "bold 20px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const u of j.popups) {
+      ctx.globalAlpha = fadeAlpha(u.life, u.maxLife);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(11, 15, 24, 0.9)";
+      ctx.strokeText(u.text, u.x, u.y);
+      ctx.fillStyle = u.color;
+      ctx.fillText(u.text, u.x, u.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
 
     // Frame.
     ctx.strokeStyle = "#1d2740";
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
-  }, []);
+  }, [reduced, shakeEnabled]);
 
-  // Paint the initial frame once mounted.
-  useEffect(draw, [draw]);
+  // Paint the initial frame once mounted, and again when the sheet decodes.
+  useEffect(() => {
+    draw();
+    const sheet = snakeSheet();
+    if (!sheet || sheet.complete) return;
+    sheet.addEventListener("load", draw);
+    return () => sheet.removeEventListener("load", draw);
+  }, [draw]);
 
-  // Game loop.
+  // Game loop: fixed-cadence reducer ticks, per-frame juice + repaint.
   useEffect(() => {
     if (paused) return;
     const id = window.setInterval(() => {
-      const prev = stateRef.current;
-      const next = snakeTick(prev);
-      stateRef.current = next;
-      if (next.score !== prev.score) {
-        onScore(next.score);
-        bus.emit("arcade-point");
+      accRef.current += FRAME_MS;
+      while (accRef.current >= options.tickMs) {
+        accRef.current -= options.tickMs;
+        const prev = stateRef.current;
+        const next = snakeTick(prev);
+        stateRef.current = next;
+        let j = juiceRef.current;
+
+        if (next.score !== prev.score) {
+          // Eating is Snake's score event; it gets its own cue (issue #163).
+          onScore(next.score);
+          bus.emit("arcade-eat");
+          const at = centre(prev.food);
+          j = burst(j, {
+            x: at.x,
+            y: at.y,
+            count: 14,
+            color: "#e0567a",
+            speed: 3.4,
+            life: 420,
+            size: 2.5,
+          });
+          j = popup(j, { x: at.x, y: at.y - 6, text: "+1" });
+          if (shakeEnabled) j = shake(j, 0.16);
+        }
+
+        // Near miss: edge-triggered so threading a long corridor blips once.
+        const near = snakeNearMiss(next);
+        if (near && !nearRef.current) bus.emit("arcade-near");
+        nearRef.current = near;
+
+        // Terminal states: death or a full-board win both end the run.
+        if ((!next.alive || next.won) && !overRef.current) {
+          overRef.current = true;
+          const head = next.body[0];
+          if (head) {
+            const at = centre(head);
+            j = burst(j, {
+              x: at.x,
+              y: at.y,
+              count: 26,
+              color: next.won ? "#f2c14e" : "#8ff0d6",
+              speed: 5,
+              life: 620,
+              size: 3,
+            });
+          }
+          if (shakeEnabled) j = shake(j, next.won ? 0.4 : 0.9);
+          bus.emit("arcade-over");
+          // Report immediately — a deferred report is lost if we unmount first.
+          // The overlay owns the death-freeze presentation; this loop keeps
+          // running (the reducer is idempotent on terminal states) so the death
+          // burst + shake still animate until the overlay pauses us.
+          onGameOver(next.score);
+        }
+        juiceRef.current = j;
       }
-      // Terminal states: death or a full-board win both end the run.
-      if ((!next.alive || next.won) && !overRef.current) {
-        overRef.current = true;
-        bus.emit("arcade-over");
-        onGameOver(next.score);
-      }
+      juiceRef.current = stepJuice(juiceRef.current, FRAME_MS);
       draw();
-    }, TICK_MS);
+    }, FRAME_MS);
     return () => window.clearInterval(id);
-  }, [paused, draw, onScore, onGameOver]);
+  }, [paused, draw, onScore, onGameOver, options, centre, shakeEnabled]);
 
   // Keyboard: window-level so a stale focused input can't swallow it.
   useEffect(() => {
@@ -152,8 +327,8 @@ export default function SnakeGame({ seed, paused, onScore, onGameOver }: ArcadeG
     <canvas
       ref={canvasRef}
       className="arcade-canvas"
-      width={DEFAULT_SNAKE_WIDTH * CELL}
-      height={DEFAULT_SNAKE_HEIGHT * CELL}
+      width={options.level.width * CELL}
+      height={options.level.height * CELL}
     />
   );
 }

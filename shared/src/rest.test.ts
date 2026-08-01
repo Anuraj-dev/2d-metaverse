@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   arcadeLeaderboardSchema,
+  arcadeScoreResultSchema,
   arcadeScoreSchema,
   analyticsIngestRequestSchema,
   analyticsIngestFailureSchema,
@@ -355,6 +356,13 @@ describe("arcade leaderboard response", () => {
   it("rejects a non-integer score in a row", () => {
     const bad = { game: "flappy", top: [{ username: "a", score: 1.2 }], best: 3 };
     expect(arcadeLeaderboardSchema.safeParse(bad).success).toBe(false);
+  });
+  it("requires an authoritative improvement verdict on score submissions", () => {
+    const result = { game: "snake", top: [], best: 9, newBest: true };
+    expect(arcadeScoreResultSchema.safeParse(result).success).toBe(true);
+    expect(arcadeScoreResultSchema.safeParse({ ...result, newBest: "yes" }).success).toBe(false);
+    const { newBest: _newBest, ...missingVerdict } = result;
+    expect(arcadeScoreResultSchema.safeParse(missingVerdict).success).toBe(false);
   });
 });
 

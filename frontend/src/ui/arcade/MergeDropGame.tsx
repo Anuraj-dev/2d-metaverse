@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useReducedMotion } from "../reducedMotionBridge";
 import { bus } from "../../game/eventBus";
 import { nextFloat } from "../../game/arcade/prng";
 import {
@@ -202,10 +203,17 @@ interface Particle {
  * chain banner, all driven by the reducer's domain events. Sound is emitted as
  * domain events on the bus — the mixer's event→clip table picks the blip.
  */
-export default function MergeDropGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
+export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver }: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<MergeDropState>(initMergeDrop(seed));
   const overRef = useRef(false);
+  // Live shake preference × reduced-motion — same contract as Snake/Flappy: a
+  // mid-run settings change must suppress canvas shake without remounting.
+  const reducedMotion = useReducedMotion();
+  const shakeEnabled = shake && !reducedMotion;
+  // Tick/draw callbacks close over a ref so a mid-run settings flip is visible
+  // without restarting the interval. Synced in an effect (never during render).
+  const shakeEnabledRef = useRef(shakeEnabled);
 
   // Input, sampled once per tick. Aim keys flow through the pure tap latch
   // (game/arcade/tapLatch): every tap gets its minimum nudge regardless of
@@ -542,9 +550,9 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     const s = stateRef.current;
     const tick = s.tick;
 
-    const shake = shakeRef.current;
-    const ox = shake > 0 ? (fxRandom() - 0.5) * shake : 0;
-    const oy = shake > 0 ? (fxRandom() - 0.5) * shake : 0;
+    const shakeAmt = shakeEnabledRef.current ? shakeRef.current : 0;
+    const ox = shakeAmt > 0 ? (fxRandom() - 0.5) * shakeAmt : 0;
+    const oy = shakeAmt > 0 ? (fxRandom() - 0.5) * shakeAmt : 0;
     ctx.setTransform(S, 0, 0, S, ox * S, oy * S);
 
     drawStarfield(ctx, tick);
@@ -683,13 +691,15 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
             rung.color,
             "#ffffff",
           ]);
-          shakeRef.current = Math.max(shakeRef.current, 0.6 + event.tier * 0.45);
+          if (shakeEnabledRef.current) {
+            shakeRef.current = Math.max(shakeRef.current, 0.6 + event.tier * 0.45);
+          }
           if (event.chain > 1) bannerRef.current = { text: `CHAIN x${event.chain}`, life: 46 };
           // Audio-agnostic: the mixer maps this to a clip and pitches it by tier.
           bus.emit("arcade-merge", { tier: event.tier });
         } else if (event.type === "nova") {
           burst(WELL_X + event.x, WELL_Y + event.y, 90, 5.5, ["#fff4d6", "#ffd166", "#ff7b00", "#ff4d5e"]);
-          shakeRef.current = 9;
+          if (shakeEnabledRef.current) shakeRef.current = 9;
           flashRef.current = 30;
           bannerRef.current = { text: "SUPERNOVA", life: 70 };
           bus.emit("arcade-nova", { tier: MAX_TIER });
@@ -724,6 +734,18 @@ export default function MergeDropGame({ seed, paused, onScore, onGameOver }: Arc
     }, TICK_MS);
     return () => window.clearInterval(id);
   }, [paused, draw, burst, onScore, onGameOver]);
+
+  useEffect(() => {
+    shakeEnabledRef.current = shakeEnabled;
+  }, [shakeEnabled]);
+
+  // Live preference: kill residual shake energy the moment the toggle or
+  // reduced-motion preference flips, then repaint so the offset disappears
+  // without waiting for the next tick.
+  useEffect(() => {
+    if (!shakeEnabled) shakeRef.current = 0;
+    draw();
+  }, [shakeEnabled, draw]);
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {

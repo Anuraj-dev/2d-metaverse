@@ -1,53 +1,122 @@
+/* ==========================================================================
+   Arcade overlay — "dark arcade room, light cabinet screen".
+   Sections: tokens → shell → header/tools → stage/score → surface → panels →
+   leaderboard → buttons → game-specific → responsive → reduced motion.
+   Only the game-specific section may use non-token colours (the games own
+   their own palettes).
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Tokens
+   -------------------------------------------------------------------------- */
+.arcade-backdrop {
+  --arc-shell: #141a29;
+  --arc-deep: #0b0f18;
+  --arc-panel: #10141f;
+  --arc-line: #26304a;
+  --arc-line-strong: #3a4767;
+  --arc-ink: #e8ecf5;
+  --arc-dim: #9aa5c0;
+  --arc-teal: #7fd1b9;
+  --arc-amber: #f2c14e;
+  --arc-green: #4caf50;
+  --arc-blue: #2196f3;
+  --arc-danger: #e2564d;
+
+  --arc-r-sm: 6px;
+  --arc-r-md: 10px;
+  --arc-r-lg: 14px;
+
+  --arc-s1: 4px;
+  --arc-s2: 8px;
+  --arc-s3: 12px;
+  --arc-s4: 16px;
+  --arc-s5: 20px;
+  --arc-s6: 24px;
+
+  --arc-ease: cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+
+/* --------------------------------------------------------------------------
+   2. Shell — full-bleed, identical geometry in and out of browser fullscreen
+   -------------------------------------------------------------------------- */
 .arcade-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: flex;
-  align-items: center;
-  justify-content: center;
   background: radial-gradient(circle at 50% 30%, #10182b 0%, #06090f 100%);
+  animation: arcade-backdrop-in 0.18s var(--arc-ease) both;
+  transition: opacity 0.14s linear;
 }
-/* When the backdrop itself is the fullscreen element it must paint the whole
-   screen (the default :fullscreen bg is black). */
-.arcade-backdrop:fullscreen {
-  background: radial-gradient(circle at 50% 30%, #10182b 0%, #06090f 100%);
+.arcade-backdrop[data-closing="true"] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .arcade-overlay {
   display: flex;
   flex-direction: column;
-  width: min(1100px, 96vw);
-  height: min(88vh, 840px);
-  background: #141a29;
-  color: #e8ecf5;
-  border: 1px solid #2b3550;
-  border-radius: 14px;
-  padding: 14px 18px 18px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  width: 100vw;
+  height: 100dvh;
+  background: transparent;
+  color: var(--arc-ink);
+  border: none;
+  border-radius: 0;
+  padding: var(--arc-s3) var(--arc-s5) var(--arc-s5);
   outline: none;
   font-family: system-ui, sans-serif;
 }
-/* Fill the screen when we actually got fullscreen. */
-.arcade-backdrop:fullscreen .arcade-overlay {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  border-radius: 0;
-  border: none;
+
+@keyframes arcade-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes arcade-body-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
+/* --------------------------------------------------------------------------
+   3. Header + tools
+   -------------------------------------------------------------------------- */
 .arcade-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--arc-s3);
+  padding-bottom: var(--arc-s2);
+  margin-bottom: var(--arc-s3);
+  border-bottom: 1px solid var(--arc-line);
   flex: 0 0 auto;
+}
+.arcade-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.arcade-eyebrow {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--arc-dim);
 }
 .arcade-header h2 {
   margin: 0;
-  font-size: 1.2rem;
-  letter-spacing: 0.02em;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 .arcade-tools {
   display: flex;
@@ -57,15 +126,11 @@
 .arcade-sound {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #10141f;
-  border: 1px solid #26304a;
-  border-radius: 8px;
-  padding: 3px 8px 3px 4px;
-}
-.arcade-vol {
-  width: 84px;
-  accent-color: #7fd1b9;
+  gap: var(--arc-s2);
+  background: var(--arc-panel);
+  border: 1px solid var(--arc-line);
+  border-radius: var(--arc-r-sm);
+  padding: 3px var(--arc-s2) 3px var(--arc-s1);
 }
 /* Modifier on the shared .icon-btn base (index.css — always loaded; this file
    is a lazy chunk and must not duplicate the base). Size + palette only. */
@@ -74,57 +139,153 @@
   height: 30px;
   background: #24304a;
   color: #cdd6ea;
-  border-color: #3a4767;
+  border-color: var(--arc-line-strong);
 }
-.arcade-close {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #24304a;
-  color: #cdd6ea;
-  border: 1px solid #3a4767;
-  border-radius: 6px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-.arcade-close:hover {
-  background: #2f3d5c;
+.icon-btn.arcade-icon-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
+/* Volume — styled native range (webkit + moz pseudo-elements). */
+.arcade-vol {
+  width: 84px;
+  height: 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.arcade-vol::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--arc-line-strong);
+}
+.arcade-vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--arc-teal);
+  border: 2px solid var(--arc-deep);
+  transition: transform 0.12s var(--arc-ease);
+}
+.arcade-vol:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.arcade-vol::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--arc-line-strong);
+}
+.arcade-vol::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--arc-teal);
+  border: 2px solid var(--arc-deep);
+  transition: transform 0.12s var(--arc-ease);
+}
+.arcade-vol:hover::-moz-range-thumb {
+  transform: scale(1.15);
+}
+.arcade-vol:focus-visible {
+  outline: 2px solid var(--arc-teal);
+  outline-offset: 3px;
+  border-radius: var(--arc-r-sm);
+}
+
+/* --------------------------------------------------------------------------
+   4. Stage + score bar
+   -------------------------------------------------------------------------- */
 .arcade-body {
-  display: flex;
-  gap: 16px;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(240px, 20vw, 300px);
+  gap: var(--arc-s6);
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
   flex: 1 1 auto;
   min-height: 0;
+  animation: arcade-body-in 0.26s var(--arc-ease) both;
 }
 
 .arcade-stage {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  flex: 1 1 auto;
+  gap: var(--arc-s2);
   min-width: 0;
   min-height: 0;
-}
-.arcade-scoreline {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 0.92rem;
-  color: #aeb8d0;
-  flex: 0 0 auto;
-}
-.arcade-score {
-  font-weight: 600;
-  color: #e8ecf5;
-  font-variant-numeric: tabular-nums;
-}
-.arcade-controls-hint {
-  color: #7c88a6;
+  /* Room for the bezel rings so they are never clipped. */
+  padding: 10px;
 }
 
+.arcade-scorebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--arc-s4);
+  flex: 0 0 auto;
+  background: var(--arc-panel);
+  border: 1px solid var(--arc-line);
+  border-radius: var(--arc-r-md);
+  padding: var(--arc-s2) var(--arc-s4);
+}
+.arcade-scorecell {
+  display: flex;
+  align-items: baseline;
+  gap: var(--arc-s2);
+}
+.arcade-scorecell--best {
+  margin-left: auto;
+}
+.arcade-scorelabel {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--arc-dim);
+}
+.arcade-scorenum {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--arc-ink);
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+}
+.arcade-scorenum--best {
+  color: var(--arc-amber);
+  font-size: 1.2rem;
+}
+.arcade-scorenum[data-bump="a"] {
+  animation: arcade-pop-a 0.18s var(--arc-ease);
+}
+.arcade-scorenum[data-bump="b"] {
+  animation: arcade-pop-b 0.18s var(--arc-ease);
+}
+@keyframes arcade-pop-a {
+  50% {
+    transform: scale(1.16);
+  }
+}
+@keyframes arcade-pop-b {
+  50% {
+    transform: scale(1.16);
+  }
+}
+/* Screen-reader mirror of the live score. */
+.arcade-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   5. Surface — the cabinet bezel around the light game screen
+   -------------------------------------------------------------------------- */
 .arcade-surface {
   position: relative;
   flex: 1 1 auto;
@@ -132,12 +293,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--arc-r-md);
   overflow: hidden;
   background:
     radial-gradient(circle at 50% 0%, rgba(127, 209, 185, 0.08), transparent 60%),
-    #0b0f18;
-  box-shadow: inset 0 0 0 1px #1d2740, inset 0 0 40px rgba(0, 0, 0, 0.55);
+    var(--arc-deep);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 0 1px #0a0d15,
+    0 0 0 9px #171d2c,
+    0 0 0 10px #0a0d15,
+    0 0 26px 10px rgba(127, 209, 185, 0.07),
+    0 22px 50px rgba(0, 0, 0, 0.6);
 }
 /* The game canvas scales to fill the stage crisply, preserving aspect ratio. */
 .arcade-canvas {
@@ -147,60 +314,179 @@
   object-fit: contain;
   image-rendering: pixelated;
 }
+/* Flappy sizes its own backing store to the surface (smooth vector art, not a
+   pixel grid), so it fills the stage edge to edge instead of letterboxing. */
+.arcade-canvas--fill {
+  image-rendering: auto;
+  object-fit: fill;
+}
 
-.arcade-gameover {
+/* --------------------------------------------------------------------------
+   6. Panels (pause menu / game over / auto-pause scrim)
+   Always mounted; `data-open` drives them so the exit animates too.
+   -------------------------------------------------------------------------- */
+.arcade-panel {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: rgba(8, 11, 20, 0.82);
-  text-align: center;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 9, 16, 0.82);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.22s ease,
+    visibility 0s linear 0.22s;
 }
-.arcade-gameover p {
-  margin: 0;
-  font-size: 1.3rem;
+.arcade-panel[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 0.22s ease,
+    visibility 0s;
 }
-.arcade-final {
-  color: #f2c14e;
-  font-weight: 700;
-  font-size: 1.5rem !important;
-}
-.arcade-play-again {
-  margin-top: 4px;
-  background: #7fd1b9;
-  color: #10141f;
-  border: none;
-  border-radius: 6px;
-  padding: 9px 18px;
-  font-weight: 600;
+.arcade-panel--auto {
+  background: rgba(6, 9, 16, 0.62);
   cursor: pointer;
 }
-.arcade-play-again:hover {
-  background: #96e0ca;
+.arcade-autotext {
+  margin: 0;
+  color: var(--arc-ink);
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
 }
 
+.arcade-card {
+  position: relative;
+  min-width: 240px;
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: var(--arc-r-lg);
+  padding: 22px 26px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  transform: translateY(10px) scale(0.97);
+  transition: transform 0.26s var(--arc-ease);
+}
+.arcade-panel[data-open="true"] .arcade-card {
+  transform: none;
+}
+/* 4px accent rail differentiates the two cards at a glance. */
+.arcade-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+}
+.arcade-card--pause::before {
+  background: var(--arc-teal);
+}
+.arcade-card--over::before {
+  background: var(--arc-amber);
+}
+.arcade-card-title {
+  margin: 0 0 var(--arc-s4);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.arcade-card--pause .arcade-card-title {
+  color: #17614f;
+}
+.arcade-card--over .arcade-card-title {
+  color: #8a6413;
+}
+.arcade-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--arc-s2);
+  min-width: 200px;
+}
+.arcade-hint {
+  margin: var(--arc-s3) 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+.arcade-final {
+  margin: 0;
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
+}
+.arcade-newbest {
+  display: inline-block;
+  margin: var(--arc-s2) 0 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(242, 193, 78, 0.22);
+  color: #8a6413;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.arcade-card-row {
+  display: flex;
+  gap: var(--arc-s2);
+  justify-content: center;
+  margin-top: var(--arc-s5);
+}
+
+/* --------------------------------------------------------------------------
+   7. Leaderboard
+   -------------------------------------------------------------------------- */
 .arcade-leaderboard {
-  flex: 0 0 220px;
-  min-width: 180px;
-  background: #10141f;
-  border: 1px solid #26304a;
-  border-radius: 10px;
-  padding: 12px 14px;
+  min-width: 0;
+  align-self: start;
+  max-height: 100%;
+  background: linear-gradient(180deg, #151b2b 0%, var(--arc-panel) 100%);
+  border: 1px solid var(--arc-line);
+  border-radius: var(--arc-r-md);
+  padding: var(--arc-s4);
   overflow: auto;
 }
-.arcade-leaderboard h3 {
-  margin: 0 0 6px;
-  font-size: 0.98rem;
+.arcade-lb-title {
+  margin: 0 0 var(--arc-s3);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--arc-dim);
 }
-.arcade-best {
-  margin: 0 0 8px;
-  color: #f2c14e;
-  font-size: 0.88rem;
+.arcade-yourbest {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--arc-s2);
+  margin-bottom: var(--arc-s3);
+  padding: var(--arc-s2) var(--arc-s3);
+  border-radius: var(--arc-r-sm);
+  background: rgba(242, 193, 78, 0.1);
+  border: 1px solid rgba(242, 193, 78, 0.22);
 }
-.arcade-leaderboard ol {
+.arcade-yourbest-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--arc-dim);
+}
+.arcade-yourbest-num {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--arc-amber);
+  font-variant-numeric: tabular-nums;
+}
+.arcade-lb-note {
+  margin: 0;
+  color: var(--arc-dim);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+.arcade-rows {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -208,39 +494,423 @@
   flex-direction: column;
   gap: 3px;
 }
-.arcade-leaderboard li {
-  display: flex;
+.arcade-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--arc-s2);
+  padding: 7px 9px;
+  border-radius: var(--arc-r-sm);
   font-size: 0.85rem;
-  padding: 2px 0;
+  animation: arcade-row-in 0.24s var(--arc-ease) both;
+  animation-delay: calc(var(--i, 0) * 24ms);
+}
+.arcade-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+@keyframes arcade-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.arcade-row--r1 {
+  background: linear-gradient(90deg, rgba(242, 193, 78, 0.16), transparent 70%);
+}
+.arcade-row--r2 {
+  background: linear-gradient(90deg, rgba(203, 213, 225, 0.14), transparent 70%);
+}
+.arcade-row--r3 {
+  background: linear-gradient(90deg, rgba(205, 127, 50, 0.14), transparent 70%);
 }
 .arcade-rank {
-  width: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: #7c88a6;
+  text-align: center;
+}
+.arcade-row--r1 .arcade-rank {
+  color: #f2c14e;
+}
+.arcade-row--r2 .arcade-rank {
+  color: #cbd5e1;
+}
+.arcade-row--r3 .arcade-rank {
+  color: #cd7f32;
 }
 .arcade-name {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--arc-s1);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--arc-ink);
 }
 .arcade-pts {
-  color: #7fd1b9;
+  color: var(--arc-teal);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
-.arcade-empty {
-  color: #7c88a6;
-  font-style: italic;
+.arcade-row--me {
+  background: rgba(127, 209, 185, 0.12);
+  box-shadow: inset 3px 0 0 var(--arc-teal);
+}
+.arcade-you {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(127, 209, 185, 0.2);
+  color: var(--arc-teal);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.arcade-lb-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.arcade-skel {
+  display: block;
+  height: 30px;
+  border-radius: var(--arc-r-sm);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 240% 100%;
+  animation: arcade-shimmer 1.2s linear infinite;
+}
+@keyframes arcade-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
 }
 
-/* Narrow screens: stack the leaderboard under the game. */
-@media (max-width: 720px) {
+/* --------------------------------------------------------------------------
+   8. Button system
+   -------------------------------------------------------------------------- */
+.arc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--arc-s1);
+  background: #24304a;
+  color: #cdd6ea;
+  border: 1px solid var(--arc-line-strong);
+  border-radius: var(--arc-r-sm);
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.1s var(--arc-ease),
+    background 0.14s var(--arc-ease),
+    color 0.14s var(--arc-ease),
+    border-color 0.14s var(--arc-ease);
+}
+.arc-btn:hover {
+  transform: translateY(-1px);
+}
+.arc-btn:active {
+  transform: translateY(1px);
+}
+.arc-btn:focus-visible {
+  outline: 2px solid var(--arc-teal);
+  outline-offset: 2px;
+}
+.arc-btn--primary {
+  background: var(--arc-green);
+  border-color: var(--arc-green);
+  color: #fff;
+}
+.arc-btn--primary:hover {
+  background: #57bd5b;
+}
+.arc-btn--blue {
+  background: var(--arc-blue);
+  border-color: var(--arc-blue);
+  color: #fff;
+}
+.arc-btn--blue:hover {
+  background: #37a3fb;
+}
+.arc-btn--danger {
+  background: var(--arc-danger);
+  border-color: var(--arc-danger);
+  color: #fff;
+}
+.arc-btn--danger:hover {
+  background: #ec685f;
+}
+.arc-btn--ghost {
+  background: transparent;
+  color: #cdd6ea;
+  border-color: var(--arc-line-strong);
+}
+.arc-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.arcade-quit:hover {
+  border-color: var(--arc-danger);
+  color: #ffb9b3;
+}
+/* Wide, left-aligned list items with a selected inset bar. */
+.arc-btn--menu {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 0.98rem;
+}
+.arc-btn--menu[aria-current="true"] {
+  box-shadow: inset 4px 0 0 rgba(0, 0, 0, 0.35);
+}
+/* Inside the white cards: ghost must read on white. */
+.arcade-card .arc-btn--ghost {
+  color: #4b5563;
+  border-color: #d5dae3;
+}
+.arcade-card .arc-btn--ghost:hover {
+  background: #f2f4f8;
+  color: var(--arc-danger);
+  border-color: #f0bbb6;
+}
+
+/* --------------------------------------------------------------------------
+   9. Game-specific (the only place non-token colours belong)
+   -------------------------------------------------------------------------- */
+
+/* Snake: fixed-aspect grid letterboxed inside a full-surface root so the
+   difficulty menu can sit on top of the canvas. */
+.arcade-snake-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+}
+.arcade-canvas--snake {
+  /* Sized and positioned by the component's `layout` (whole-pixel offsets,
+     fixed 20px cells, uniform downscale only when the stage is smaller than
+     the board) — never stretched by CSS. */
+  width: auto;
+  height: auto;
+  image-rendering: pixelated;
+}
+.arcade-snake-menu {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #1a1a1a;
+  text-align: center;
+  padding: 16px;
+}
+.arcade-snake-menu-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #006400;
+}
+.arcade-snake-diff-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.arcade-snake-diff {
+  background: #f0f0f0;
+  color: #222;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+.arcade-snake-diff:hover {
+  border-color: #32cd32;
+}
+.arcade-snake-diff--selected {
+  background: #e8ffe8;
+  border-color: #006400;
+  color: #006400;
+}
+.arcade-snake-start {
+  margin-top: 4px;
+  background: #006400;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.arcade-snake-start:hover {
+  background: #0a7a0a;
+}
+
+/* --------------------------------------------------------------------------
+   10. Responsive
+   -------------------------------------------------------------------------- */
+/* Medium: the leaderboard becomes a horizontal strip above the stage. */
+@media (max-width: 1000px) {
   .arcade-body {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--arc-s3);
   }
   .arcade-leaderboard {
+    order: -1;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: var(--arc-s3);
+    padding: var(--arc-s2) var(--arc-s3);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .arcade-lb-title {
+    margin: 0;
     flex: 0 0 auto;
-    max-height: 30vh;
+  }
+  .arcade-yourbest {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .arcade-rows {
+    flex-direction: row;
+    gap: var(--arc-s2);
+  }
+  .arcade-row {
+    flex: 0 0 auto;
+  }
+  /* Only the podium fits in a strip. */
+  .arcade-row:nth-child(n + 4) {
+    display: none;
+  }
+  .arcade-lb-skeleton {
+    flex-direction: row;
+  }
+  .arcade-skel {
+    width: 90px;
+  }
+}
+@media (max-width: 720px) {
+  .arcade-overlay {
+    padding: var(--arc-s2) var(--arc-s3) var(--arc-s3);
+  }
+  .arcade-leaderboard {
+    max-height: 28dvh;
+  }
+  .arcade-stage {
+    padding: var(--arc-s2);
+  }
+  .arcade-tools {
+    gap: var(--arc-s2);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   11. Reduced motion — one block, kills every duration in this file
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .arcade-backdrop,
+  .arcade-backdrop *,
+  .arcade-backdrop *::before,
+  .arcade-backdrop *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+/* ── Per-game options + run feedback (issue #163) ──────────────────────────── */
+
+.arcade-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  flex: 0 0 auto;
+}
+.arcade-optgroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #10141f;
+  border: 1px solid #26304a;
+  border-radius: 8px;
+  padding: 3px 6px;
+}
+.arcade-optlabel {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7c88a6;
+  margin-right: 2px;
+}
+.arcade-opt {
+  background: transparent;
+  color: #aeb8d0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.arcade-opt:hover {
+  background: #24304a;
+  color: #e8ecf5;
+}
+.arcade-opt.is-on {
+  background: #7fd1b9;
+  border-color: #7fd1b9;
+  color: #10141f;
+  font-weight: 600;
+}
+.arcade-levelhint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #7c88a6;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.arcade-newbest {
+  color: #7fd1b9;
+  font-weight: 700;
+  font-size: 1.05rem !important;
+  letter-spacing: 0.02em;
+}
+.arcade-restart-hint {
+  color: #7c88a6;
+  font-size: 0.82rem !important;
+}
+
+@media (max-width: 720px) {
+  .arcade-levelhint {
+    display: none;
   }
 }
