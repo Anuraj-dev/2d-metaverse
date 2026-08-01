@@ -145,13 +145,16 @@ function deferred() {
   return { promise, resolve };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   netMock.net.selfId = "";
   reportReconnect.mockClear();
   for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
   for (const group of Object.values(media)) {
     for (const fn of Object.values(group)) if (vi.isMockFunction(fn)) fn.mockClear();
   }
+  // Consent-safe defaults between cases — setMic persists prefs across tests.
+  const { setMediaPrefs } = await import("./media/mediaPrefs");
+  setMediaPrefs({ micOn: false, camOn: false });
 });
 
 afterEach(() => cleanup());
