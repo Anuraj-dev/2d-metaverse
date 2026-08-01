@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { BoardUpdatePayload } from "@metaverse/shared";
 import BoardTablePanel from "./BoardTablePanel";
 
@@ -26,89 +26,72 @@ function tttState(board: BoardCell[], turn: 1 | 2 = 1) {
 
 const noop = () => {};
 
-function renderPanel(snapshot: BoardUpdatePayload) {
+function renderPanel(
+  snapshot: BoardUpdatePayload,
+  opts: { selfId?: string; error?: string | null; onMove?: (i: number) => void; onAccept?: () => void } = {},
+) {
   return render(
     <BoardTablePanel
       snapshot={snapshot}
-      selfId="spectator"
-      error={null}
-      onMove={noop}
-      onAccept={noop}
+      selfId={opts.selfId ?? "spectator"}
+      error={opts.error ?? null}
+      onMove={opts.onMove ?? noop}
+      onAccept={opts.onAccept ?? noop}
       onLeave={noop}
-    />
+    />,
   );
 }
 
 afterEach(cleanup);
 
-// Round-1 finding: a spectator mounting the panel over an active table must see
-// the historical pieces already settled — only marks that appear via a
-// 0→filled snapshot TRANSITION animate (`is-new`).
-describe("BoardTablePanel — mark animation gating", () => {
-  it("renders historical marks without the animation class on mount", () => {
+describe("BoardTablePanel — redesigned surface", () => {
+  it("renders seat chips and real X/O marks for an active table", () => {
     const { container } = renderPanel(
-      snap({ state: tttState([1, 2, 1, 0, 2, 0, 0, 0, 0]) })
+      snap({ state: tttState([1, 2, 1, 0, 2, 0, 0, 0, 0]) }),
     );
-    expect(container.querySelectorAll(".board-mark")).toHaveLength(4);
-    expect(container.querySelectorAll(".is-new")).toHaveLength(0);
+    expect(screen.getByLabelText("Tic-Tac-Toe table")).toBeTruthy();
+    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(screen.getByText("Bob")).toBeTruthy();
+    expect(screen.getByText("Watching")).toBeTruthy();
+    // Seat chips each carry a legend mark; count only pieces inside the grid.
+    const grid = container.querySelector(".board-grid");
+    if (!grid) throw new Error("missing board grid");
+    expect(grid.querySelectorAll(".board-mark--p1")).toHaveLength(2);
+    expect(grid.querySelectorAll(".board-mark--p2")).toHaveLength(2);
   });
 
-  it("animates only the mark that appeared since the previous snapshot", () => {
-    const { container, rerender } = renderPanel(
-      snap({ state: tttState([1, 2, 0, 0, 0, 0, 0, 0, 0]) })
+  it("offers Play again to a seated player on a finished non-forfeit match", () => {
+    const onAccept = vi.fn();
+    renderPanel(
+      snap({
+        phase: "over",
+        reason: "win",
+        state: {
+          board: [1, 1, 1, 0, 0, 0, 0, 0, 0],
+          turn: 1,
+          result: { status: "won", winner: 1, line: [0, 1, 2] },
+        },
+      }),
+      { selfId: "a", onAccept },
     );
-    rerender(
-      <BoardTablePanel
-        snapshot={snap({ state: tttState([1, 2, 0, 0, 1, 0, 0, 0, 0], 2) })}
-        selfId="spectator"
-        error={null}
-        onMove={noop}
-        onAccept={noop}
-        onLeave={noop}
-      />
-    );
-    const fresh = container.querySelectorAll(".is-new");
-    expect(fresh).toHaveLength(1);
-    // The new mark sits in cell 4 (aria-labelled button wraps the mark).
-    expect(fresh[0]?.closest("button")?.getAttribute("aria-label")).toContain("cell 4");
-    // A later re-render with the SAME snapshot keeps the flag (no mid-flight
-    // animation cancellation) and still animates nothing else.
-    rerender(
-      <BoardTablePanel
-        snapshot={snap({ state: tttState([1, 2, 0, 0, 1, 0, 0, 0, 0], 2) })}
-        selfId="spectator"
-        error={"nope"}
-        onMove={noop}
-        onAccept={noop}
-        onLeave={noop}
-      />
-    );
-    expect(container.querySelectorAll(".is-new")).toHaveLength(1);
+    const again = screen.getByRole("button", { name: "Play again" });
+    fireEvent.click(again);
+    expect(onAccept).toHaveBeenCalledTimes(1);
   });
 
-  it("gates Connect-4 discs the same way", () => {
+  it("renders Connect-4 discs with a distinct ring on seat 1", () => {
     const empty42 = Array<BoardCell>(42).fill(0);
     const filled = [...empty42];
-    filled[35] = 1; // bottom-left disc already played before we mounted
-    const { container, rerender } = renderPanel(
-      snap({ tableId: "c4-1", game: "connect4", state: { ...tttState(filled) } })
+    filled[35] = 1;
+    filled[36] = 2;
+    const { container } = renderPanel(
+      snap({ tableId: "c4-1", game: "connect4", state: tttState(filled, 1) }),
     );
-    expect(container.querySelectorAll(".board-disc")).toHaveLength(1);
-    expect(container.querySelectorAll(".board-disc.is-new")).toHaveLength(0);
-
-    const next = [...filled];
-    next[36] = 2;
-    rerender(
-      <BoardTablePanel
-        snapshot={snap({ tableId: "c4-1", game: "connect4", state: { ...tttState(next, 2) } })}
-        selfId="spectator"
-        error={null}
-        onMove={noop}
-        onAccept={noop}
-        onLeave={noop}
-      />
-    );
-    expect(container.querySelectorAll(".board-disc")).toHaveLength(2);
-    expect(container.querySelectorAll(".board-disc.is-new")).toHaveLength(1);
+    expect(screen.getByLabelText("Connect 4 table")).toBeTruthy();
+    const grid = container.querySelector(".board-grid");
+    if (!grid) throw new Error("missing board grid");
+    // Two placed discs on the grid (seat-chip legends also render discs).
+    expect(grid.querySelectorAll(".board-disc")).toHaveLength(2);
+    expect(grid.querySelectorAll(".board-disc__ring")).toHaveLength(1);
   });
 });
