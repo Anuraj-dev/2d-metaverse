@@ -14,6 +14,16 @@ import {
   type BoardUpdatePayload,
 } from "@metaverse/shared";
 
+/**
+ * The outcome of a finished match, seat-indexed so a renderer never has to
+ * re-derive winner identity from the raw 1-or-2 `BoardPlayer` numbering. A
+ * forfeit can leave no winner at all (both seats vacated at once).
+ */
+export type BoardOutcome =
+  | { kind: "won"; winnerSeat: 0 | 1 }
+  | { kind: "draw" }
+  | { kind: "forfeit"; winnerSeat: 0 | 1 | null };
+
 export interface BoardTableView {
   tableId: string;
   game: BoardGame;
@@ -35,6 +45,15 @@ export interface BoardTableView {
   status: string;
   /** Seat display names by index (null when empty). */
   seatNames: [string | null, string | null];
+  /**
+   * The seat whose move the match is waiting on, or null when no move is
+   * pending (idle, offer, or finished). Drives the turn indicator.
+   */
+  activeSeat: 0 | 1 | null;
+  /** The finished match's outcome, or null while it is still running. */
+  outcome: BoardOutcome | null;
+  /** Per-seat acceptance during an offer — false outside the offer phase. */
+  seatAccepted: [boolean, boolean];
 }
 
 /** Seat occupant ids for a table snapshot, by seat index (null when empty). */
@@ -77,6 +96,42 @@ function gridSize(game: BoardGame): { columns: number; rows: number } {
 export function clickToMove(game: BoardGame, cellIndex: number): number {
   if (game === "connect4") return cellIndex % CONNECT4_COLS;
   return cellIndex;
+}
+
+/** The row/column (both 0-based) of a flat row-major cell index. */
+export function cellPosition(index: number, columns: number): { row: number; column: number } {
+  return { row: Math.floor(index / columns), column: index % columns };
+}
+
+/**
+ * The cell a piece played at `cellIndex` would actually end up in, or null when
+ * that move is unavailable. Takes a clicked/hovered cell index — the same
+ * currency as {@link clickToMove} — so a renderer never has to know the
+ * per-game geometry.
+ *
+ * Connect 4 has gravity: any cell in a column plays that column, and the piece
+ * rests on the lowest empty row (scan upward from the bottom), or nowhere if
+ * the column is full. This drives the landing preview, which is the single most
+ * important affordance the game has — without it a player has to guess where
+ * their disc will come to rest.
+ *
+ * Tic-tac-toe has no gravity: a piece lands on the cell you picked, if empty.
+ */
+export function dropTarget(
+  game: BoardGame,
+  cells: readonly number[],
+  cellIndex: number,
+  columns: number,
+  rows: number,
+): number | null {
+  if (cellIndex < 0 || cellIndex >= columns * rows) return null;
+  if (game !== "connect4") return cells[cellIndex] === 0 ? cellIndex : null;
+  const column = cellIndex % columns;
+  for (let row = rows - 1; row >= 0; row--) {
+    const index = row * columns + column;
+    if (cells[index] === 0) return index;
+  }
+  return null;
 }
 
 function statusFor(snapshot: BoardUpdatePayload, mySeat: 0 | 1 | null): string {
@@ -130,6 +185,13 @@ export function boardTableView(snapshot: BoardUpdatePayload, selfId: string): Bo
     snapshot.state !== null &&
     snapshot.state.turn - 1 === mySeat;
 
+  const activeSeat: 0 | 1 | null =
+    snapshot.phase === "active" && snapshot.state
+      ? snapshot.state.turn === 1
+        ? 0
+        : 1
+      : null;
+
   return {
     tableId: snapshot.tableId,
     game: snapshot.game,
@@ -144,5 +206,20 @@ export function boardTableView(snapshot: BoardUpdatePayload, selfId: string): Bo
     interactive,
     status: statusFor(snapshot, mySeat),
     seatNames: [snapshot.seats[0]?.name ?? null, snapshot.seats[1]?.name ?? null],
+    activeSeat,
+    outcome: outcomeFor(snapshot),
+    seatAccepted: [snapshot.seats[0]?.accepted === true, snapshot.seats[1]?.accepted === true],
   };
+}
+
+function outcomeFor(snapshot: BoardUpdatePayload): BoardOutcome | null {
+  if (snapshot.phase !== "over") return null;
+  if (snapshot.reason === "forfeit") {
+    // The leaver's seat is emptied, so whoever is still seated took the win.
+    const winnerSeat = snapshot.seats[0] ? 0 : snapshot.seats[1] ? 1 : null;
+    return { kind: "forfeit", winnerSeat };
+  }
+  const result = snapshot.state?.result;
+  if (result?.status === "won") return { kind: "won", winnerSeat: result.winner === 1 ? 0 : 1 };
+  return { kind: "draw" };
 }

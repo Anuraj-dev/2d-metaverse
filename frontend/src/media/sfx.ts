@@ -45,6 +45,14 @@ const CLIPS = [
   "arcade_over",
   "arcade_flap",
   "arcade_hit",
+  // Board tables (see scripts/curate_audio.py → curate_board_sounds): wooden
+  // placement foley (near/far) + three distinct outcomes + a rejection thud.
+  "board_place",
+  "board_place_far",
+  "board_win",
+  "board_lose",
+  "board_draw",
+  "board_invalid",
   // Owner Snake-game port (see scripts/curate_audio.py → curate_snake_sounds).
   "arcade_eat",
   "arcade_bonus",

@@ -243,11 +243,27 @@ export const EVENT_SOUNDS: Readonly<Record<string, SoundCue>> = {
   "arcade-milestone": { clip: "arcade_milestone", channel: "arcade" },
   "arcade-highscore": { clip: "arcade_highscore", channel: "arcade" },
   "arcade-snake-over": { clip: "arcade_snake_over", channel: "arcade" },
-  // Board-game tables (PRD 11 phase 2): reuse the existing sit/arcade cues — the
-  // game stays audio-agnostic and emits these domain events; the mixer decides.
+  // Board-game tables (PRD 11 phase 2). These used to borrow the arcade chiptune
+  // blips, which was wrong twice over: a wooden board game on a plaza table is
+  // recorded foley, not a cabinet, and every outcome shared `arcade_over` — the
+  // descending "you died" motif played even when you WON. The cues are now
+  // curated wooden foley plus three distinct outcomes (scripts/curate_audio.py →
+  // curate_board_sounds). Which event fires is decided per viewer by the pure
+  // `game/boardSound.ts`; the game itself stays audio-agnostic.
   "board-sat": { clip: "sit", channel: "sfx" },
-  "board-move": { clip: "arcade_point", channel: "sfx" },
-  "board-win": { clip: "arcade_over", channel: "sfx" },
+  // Your own piece lands dry and close; anyone else's is duller and quieter, so
+  // you can tell who moved without looking at the panel.
+  "board-place": { clip: "board_place", channel: "sfx" },
+  "board-place-far": { clip: "board_place_far", channel: "sfx" },
+  "board-win": { clip: "board_win", channel: "sfx" },
+  "board-lose": { clip: "board_lose", channel: "sfx" },
+  "board-draw": { clip: "board_draw", channel: "sfx" },
+  // A rejected move (not your turn, occupied cell, full column).
+  "board-invalid": { clip: "board_invalid", channel: "sfx" },
+  // Match lifecycle reuses existing chimes rather than adding filler clips: the
+  // offer prompt is the soft `message` ping, the match start is the `join` rise.
+  "board-offer": { clip: "message", channel: "sfx" },
+  "board-match-start": { clip: "join", channel: "sfx" },
   // Room admin / knock (PRD 14): reuse existing clips — components emit these
   // domain events, the mixer decides the blip. The admin's incoming-knock cue is
   // notify-class so it obeys the notification toggle.

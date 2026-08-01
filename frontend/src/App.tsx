@@ -20,6 +20,7 @@ import { USE_MOCK } from "./net/auth";
 import { MISCONFIGURED } from "./net/config";
 import { sharedNet } from "./net/shared";
 import { bus } from "./game/eventBus";
+import { boardSoundEvents } from "./game/boardSound";
 import { worldAudio, roomVideo, stageVideo } from "./media/livekit";
 import {
   MEETING_NONE,
@@ -217,9 +218,9 @@ export default function App() {
     const offUpdate = net.on(SERVER_EVENTS.boardUpdate, (snap: BoardUpdatePayload) => {
       const before = prev.get(snap.tableId);
       prev.set(snap.tableId, snap);
-      const filled = (s?: BoardUpdatePayload) => s?.state?.board.filter((c) => c !== 0).length ?? 0;
-      if (snap.phase === "active" && filled(snap) > filled(before)) bus.emit("board-move");
-      if (snap.phase === "over" && before?.phase !== "over") bus.emit("board-win");
+      // Which cues this transition earns is a per-viewer decision (own move vs
+      // opponent's, win vs lose vs draw) — it lives in the pure boardSound module.
+      for (const ev of boardSoundEvents(before, snap, selfId)) bus.emit(ev);
       setBoardSnapshots((current) => ({ ...current, [snap.tableId]: snap }));
     });
     const offError = net.on(SERVER_EVENTS.boardError, (err: { tableId: string; reason: string }) => {
@@ -231,6 +232,7 @@ export default function App() {
         "no-match": "No match in progress",
       };
       setBoardError(messages[err.reason] ?? "Move rejected");
+      bus.emit("board-invalid");
       window.setTimeout(() => setBoardError(null), 1800);
     });
     const offSat = bus.on<{ tableId: string }>("board-sat", (p) => {
@@ -248,7 +250,7 @@ export default function App() {
       offNear();
       offLeaveNear();
     };
-  }, [entered]);
+  }, [entered, selfId]);
 
   // Real mode: world proximity audio + per-room video, driven by net + seat events.
   useEffect(() => {

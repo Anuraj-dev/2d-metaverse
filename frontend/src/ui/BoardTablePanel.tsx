@@ -1,13 +1,19 @@
 /**
  * Board-table HUD panel (PRD 11 phase 2). A thin renderer: it turns an
- * authoritative snapshot into a grid via the pure `boardTableView` module and
+ * authoritative snapshot into a view via the pure `boardTableView` module and
  * reports clicks/accept/leave upward. It does NOT sleep the world — players stay
  * seated in-world while it floats over the HUD. Lazy-loaded so the board code
  * stays out of the entry chunk.
+ *
+ * Composed from small pieces in `ui/board/` (seat chip, grid, mark, result
+ * banner) so no one file owns the whole surface.
  */
 import type { BoardUpdatePayload } from "@metaverse/shared";
-import { boardTableView, clickToMove } from "../game/boardTable";
-import "./BoardTablePanel.css";
+import { boardTableView } from "../game/boardTable";
+import BoardGrid from "./board/BoardGrid";
+import BoardResult from "./board/BoardResult";
+import SeatChip from "./board/SeatChip";
+import "./board/board.css";
 
 export interface BoardTablePanelProps {
   snapshot: BoardUpdatePayload;
@@ -21,61 +27,79 @@ export interface BoardTablePanelProps {
 
 const TABLE_TITLES: Record<string, string> = { tictactoe: "Tic-Tac-Toe", connect4: "Connect 4" };
 
-export default function BoardTablePanel({ snapshot, selfId, error, onMove, onAccept, onLeave }: BoardTablePanelProps) {
+export default function BoardTablePanel({
+  snapshot,
+  selfId,
+  error,
+  onMove,
+  onAccept,
+  onLeave,
+}: BoardTablePanelProps) {
   const view = boardTableView(snapshot, selfId);
-  const winning = new Set(view.winningLine);
+  const title = TABLE_TITLES[view.game] ?? "Board game";
+
+  const classes = [
+    "board-panel",
+    `board-panel--${view.game}`,
+    view.interactive ? "is-my-turn" : "",
+    view.outcome !== null ? "is-over" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className="board-panel" role="dialog" aria-label={`${TABLE_TITLES[view.game] ?? "Board game"} table`}>
-      <div className="board-panel__head">
-        <span className="board-panel__title">{TABLE_TITLES[view.game] ?? "Board game"}</span>
-        {view.spectating && <span className="board-panel__badge">Spectating</span>}
-      </div>
+    <section className={classes} aria-label={`${title} table`}>
+      <header className="board-panel__head">
+        <h2 className="board-panel__title">{title}</h2>
+        {view.spectating && <span className="board-panel__badge">Watching</span>}
+      </header>
 
       <div className="board-panel__seats">
-        <span className={`board-panel__seat board-panel__seat--p1${view.mySeat === 0 ? " is-me" : ""}`}>
-          {view.seatNames[0] ?? "Empty"}
+        <SeatChip
+          game={view.game}
+          seat={0}
+          name={view.seatNames[0]}
+          active={view.activeSeat === 0}
+          isMe={view.mySeat === 0}
+          accepted={view.seatAccepted[0]}
+          offering={view.phase === "offer"}
+        />
+        <span className="board-panel__vs" aria-hidden="true">
+          vs
         </span>
-        <span className="board-panel__vs">vs</span>
-        <span className={`board-panel__seat board-panel__seat--p2${view.mySeat === 1 ? " is-me" : ""}`}>
-          {view.seatNames[1] ?? "Empty"}
-        </span>
+        <SeatChip
+          game={view.game}
+          seat={1}
+          name={view.seatNames[1]}
+          active={view.activeSeat === 1}
+          isMe={view.mySeat === 1}
+          accepted={view.seatAccepted[1]}
+          offering={view.phase === "offer"}
+        />
       </div>
 
-      <div
-        className={`board-panel__grid board-panel__grid--${view.game}`}
-        style={{ gridTemplateColumns: `repeat(${view.columns}, 1fr)` }}
-      >
-        {view.cells.map((cell, i) => (
-          <button
-            key={i}
-            type="button"
-            className={`board-cell${cell === 1 ? " p1" : cell === 2 ? " p2" : ""}${winning.has(i) ? " win" : ""}`}
-            disabled={!view.interactive}
-            aria-label={`cell ${i}${cell === 0 ? " empty" : cell === 1 ? " player one" : " player two"}`}
-            onClick={() => view.interactive && onMove(clickToMove(view.game, i))}
-          >
-            {cell === 1 ? "●" : cell === 2 ? "●" : ""}
-          </button>
-        ))}
-      </div>
+      <BoardGrid view={view} onMove={onMove} />
 
-      <div className="board-panel__status" role="status">
-        {error ?? view.status}
-      </div>
+      {view.outcome !== null ? (
+        <BoardResult outcome={view.outcome} mySeat={view.mySeat} seatNames={view.seatNames} />
+      ) : (
+        <p className={`board-panel__status${error !== null ? " is-error" : ""}`} role="status">
+          {error ?? view.status}
+        </p>
+      )}
 
       <div className="board-panel__actions">
         {view.canAccept && (
-          <button type="button" className="board-panel__btn board-panel__btn--accept" onClick={onAccept}>
+          <button type="button" className="board-btn board-btn--accept" onClick={onAccept}>
             Accept match
           </button>
         )}
         {!view.spectating && (
-          <button type="button" className="board-panel__btn" onClick={onLeave}>
+          <button type="button" className="board-btn" onClick={onLeave}>
             Leave table
           </button>
         )}
       </div>
-    </div>
+    </section>
   );
 }

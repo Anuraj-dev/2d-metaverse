@@ -660,8 +660,22 @@ Unlike the arcade cabinets, board tables are **two-player and server-authoritati
   / `board-sat` / `board-stood` on the bus; `App.tsx` keeps the per-table snapshots
   and renders the lazy `ui/BoardTablePanel.tsx`.
 - **Client-side decisions** (view model, whose turn, offer prompt, spectator display,
-  grid click → move index) live in the pure `game/boardTable.ts` (+ vitest). Sounds
-  go through the `soundMixer` event→clip table (`board-sat`/`board-move`/`board-win`).
+  grid click → move index, and where a Connect-4 disc would land) live in the pure
+  `game/boardTable.ts` (+ vitest).
+- **Which sound a snapshot transition earns is its own pure module**,
+  `game/boardSound.ts` (+ vitest): the cues are per-viewer, so your own move
+  (`board-place`) sounds nearer than your opponent's (`board-place-far`), and a
+  finish is `board-win` / `board-lose` / `board-draw` depending on who is listening
+  — never one shared game-over sting. It also refuses to fire for the first
+  snapshot of a table you merely walked past, so a stranger's match never replays
+  its start or its result at you. `App.tsx` just emits whatever it returns; the
+  `soundMixer` event→clip table maps those to the curated board foley
+  (`scripts/curate_audio.py` → `curate_board_sounds`).
+- **The panel is composed, not monolithic**: `ui/BoardTablePanel.tsx` is the shell and
+  `ui/board/` holds the pieces (`SeatChip`, `BoardGrid`, `BoardMark`, `BoardResult`,
+  `board.css`). It follows the pixel-paper HUD direction in `docs/DESIGN.md` and reads
+  its tokens as `var(--hud-*, <DESIGN.md fallback>)`, so it renders correctly both
+  before and after the HUD token set lands.
 
 **Test coverage.** Board rules are covered exhaustively by the shared-package unit
 tests (`shared/src/games/*.test.ts`) and the match lifecycle by the backend socket-seam

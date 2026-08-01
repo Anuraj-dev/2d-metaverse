@@ -5,7 +5,9 @@ import {
   boardSeatOccupants,
   boardTableView,
   canTakeBoardSeat,
+  cellPosition,
   clickToMove,
+  dropTarget,
 } from "./boardTable";
 
 const board9 = (fill: 0 | 1 | 2 = 0): (0 | 1 | 2)[] => Array<0 | 1 | 2>(9).fill(fill);
@@ -33,6 +35,64 @@ describe("clickToMove", () => {
     expect(clickToMove("connect4", 0)).toBe(0);
     expect(clickToMove("connect4", 9)).toBe(2); // row 1, col 2 → column 2
     expect(clickToMove("connect4", 41)).toBe(6);
+  });
+});
+
+describe("cellPosition", () => {
+  it("maps a flat row-major index onto its row and column", () => {
+    expect(cellPosition(0, 3)).toEqual({ row: 0, column: 0 });
+    expect(cellPosition(4, 3)).toEqual({ row: 1, column: 1 });
+    expect(cellPosition(8, 3)).toEqual({ row: 2, column: 2 });
+    expect(cellPosition(9, 7)).toEqual({ row: 1, column: 2 });
+    expect(cellPosition(41, 7)).toEqual({ row: 5, column: 6 });
+  });
+});
+
+describe("dropTarget — where a piece actually lands", () => {
+  /** A 42-cell Connect-4 board with the listed indices occupied. */
+  const c4 = (...filled: number[]): (0 | 1 | 2)[] => {
+    const cells = Array<0 | 1 | 2>(42).fill(0);
+    for (const i of filled) cells[i] = 1;
+    return cells;
+  };
+
+  it("tic-tac-toe has no gravity: an empty cell is its own target", () => {
+    expect(dropTarget("tictactoe", board9(), 4, 3, 3)).toBe(4);
+  });
+
+  it("tic-tac-toe rejects an occupied cell", () => {
+    const cells = board9();
+    cells[4] = 1;
+    expect(dropTarget("tictactoe", cells, 4, 3, 3)).toBeNull();
+  });
+
+  it("Connect 4 drops to the bottom row of an empty column", () => {
+    // Column 0's bottom cell is index 35 on a 7-wide, 6-tall board.
+    expect(dropTarget("connect4", c4(), 0, 7, 6)).toBe(35);
+    expect(dropTarget("connect4", c4(), 35, 7, 6)).toBe(35);
+  });
+
+  it("Connect 4 stacks on top of the pieces already in the column", () => {
+    expect(dropTarget("connect4", c4(35), 0, 7, 6)).toBe(28);
+    expect(dropTarget("connect4", c4(35, 28), 0, 7, 6)).toBe(21);
+  });
+
+  it("any cell in a column resolves to the SAME landing cell", () => {
+    const cells = c4(35);
+    // Every cell of column 0: 0, 7, 14, 21, 28, 35.
+    for (const cell of [0, 7, 14, 21, 28, 35]) {
+      expect(dropTarget("connect4", cells, cell, 7, 6)).toBe(28);
+    }
+  });
+
+  it("a full Connect-4 column has no landing cell", () => {
+    expect(dropTarget("connect4", c4(0, 7, 14, 21, 28, 35), 0, 7, 6)).toBeNull();
+  });
+
+  it("rejects out-of-range indices for both games", () => {
+    expect(dropTarget("tictactoe", board9(), -1, 3, 3)).toBeNull();
+    expect(dropTarget("tictactoe", board9(), 9, 3, 3)).toBeNull();
+    expect(dropTarget("connect4", c4(), 42, 7, 6)).toBeNull();
   });
 });
 
@@ -120,6 +180,28 @@ describe("boardTableView — active turns", () => {
     expect(view.interactive).toBe(false);
     expect(view.status).toBe("Alice to move");
   });
+
+  it("names the seat the match is waiting on — the same for every viewer", () => {
+    // `activeSeat` drives the turn indicator, so it must be about the BOARD,
+    // not about who is looking at it (unlike `interactive`).
+    expect(boardTableView(active(1), "a").activeSeat).toBe(0);
+    expect(boardTableView(active(1), "b").activeSeat).toBe(0);
+    expect(boardTableView(active(1), "zzz").activeSeat).toBe(0);
+    expect(boardTableView(active(2), "a").activeSeat).toBe(1);
+  });
+
+  it("has no active seat while no move is pending", () => {
+    expect(boardTableView(snap({ phase: "waiting", seats: [alice, null] }), "a").activeSeat).toBeNull();
+    expect(boardTableView(snap({ phase: "offer", seats: [alice, bob] }), "a").activeSeat).toBeNull();
+  });
+
+  it("reports per-seat acceptance during an offer", () => {
+    const view = boardTableView(
+      snap({ phase: "offer", seats: [{ ...alice, accepted: true }, bob] }),
+      "a",
+    );
+    expect(view.seatAccepted).toEqual([true, false]);
+  });
 });
 
 describe("boardTableView — endings", () => {
@@ -161,5 +243,63 @@ describe("boardTableView — endings", () => {
     // The forfeiter's seat is emptied, so they (and any spectator) see the same.
     expect(boardTableView(forfeit, "a").status).toBe("Bob wins by forfeit");
     expect(boardTableView(forfeit, "spectator").status).toBe("Bob wins by forfeit");
+  });
+});
+
+describe("boardTableView — outcome (seat-indexed, for the result banner)", () => {
+  const seated: [BoardOccupant, BoardOccupant] = [
+    { ...alice, accepted: true },
+    { ...bob, accepted: true },
+  ];
+
+  it("is null while the match is unfinished", () => {
+    expect(boardTableView(snap({ phase: "waiting", seats: [alice, null] }), "a").outcome).toBeNull();
+    expect(boardTableView(snap({ phase: "offer", seats: seated }), "a").outcome).toBeNull();
+    expect(
+      boardTableView(
+        snap({
+          phase: "active",
+          seats: seated,
+          state: { board: board9(), turn: 1, result: { status: "in_progress" } },
+        }),
+        "a",
+      ).outcome,
+    ).toBeNull();
+  });
+
+  it("translates the winning BoardPlayer into a seat index", () => {
+    const won = (winner: 1 | 2) =>
+      snap({
+        phase: "over",
+        reason: "win",
+        seats: seated,
+        state: {
+          board: [winner, winner, winner, 0, 0, 0, 0, 0, 0],
+          turn: winner,
+          result: { status: "won", winner, line: [0, 1, 2] },
+        },
+      });
+    expect(boardTableView(won(1), "a").outcome).toEqual({ kind: "won", winnerSeat: 0 });
+    expect(boardTableView(won(2), "a").outcome).toEqual({ kind: "won", winnerSeat: 1 });
+  });
+
+  it("reports a draw", () => {
+    const draw = snap({
+      phase: "over",
+      reason: "draw",
+      seats: seated,
+      state: { board: board9(1), turn: 1, result: { status: "draw" } },
+    });
+    expect(boardTableView(draw, "a").outcome).toEqual({ kind: "draw" });
+  });
+
+  it("credits a forfeit to whichever seat is still occupied", () => {
+    const forfeit = snap({ phase: "over", reason: "forfeit", seats: [null, seated[1]] });
+    expect(boardTableView(forfeit, "b").outcome).toEqual({ kind: "forfeit", winnerSeat: 1 });
+  });
+
+  it("has no forfeit winner when both seats emptied", () => {
+    const abandoned = snap({ phase: "over", reason: "forfeit", seats: [null, null] });
+    expect(boardTableView(abandoned, "a").outcome).toEqual({ kind: "forfeit", winnerSeat: null });
   });
 });

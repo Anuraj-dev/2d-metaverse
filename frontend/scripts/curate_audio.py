@@ -25,6 +25,7 @@ stem is its dominant — everything that can sound at once is consonant.
 Requires: ffmpeg, sox, and the pack zip at repo-root Assets/ (untracked).
 Run:  python3 scripts/curate_audio.py
       python3 scripts/curate_audio.py synth-arcade   # arcade blips only (no pack needed)
+      python3 scripts/curate_audio.py board          # board-table cues only (needs the pack)
 """
 
 import json
@@ -271,6 +272,96 @@ def curate_snake_sounds() -> None:
         encode(peak_normalize(trimmed, f"{clip}_n", peak_db), clip)
 
 
+def curate_board_sounds(w: dict[str, str]) -> None:
+    """Curate the board-table cues (tic-tac-toe / Connect 4).
+
+    Board tables previously borrowed the arcade chiptune blips: every move was
+    `arcade_point` and EVERY outcome — win, loss and draw alike — was
+    `arcade_over`, a descending 8-bit "you died" motif. Wrong on two counts: a
+    wooden board game on a plaza table is recorded foley, not a cabinet, and
+    winning must not sound identical to losing.
+
+    Six cues cut from the same Cozy pack material as the rest of the foley:
+      board_place       your piece set down — bright wood knock + a little body
+      board_place_far   the opponent's move — duller, quieter, roomier, so you
+                        can tell WHO moved without looking at the panel
+      board_win         rising three-note flourish (G#4 C5 G#5)
+      board_lose        gentle falling two-note (D#5 G#4) — soft, not punishing
+      board_draw        the same note twice — deliberately even
+      board_invalid     dead low thud, no tail — "that piece won't go there"
+
+    Match-start reuses the existing `join` chime and the offer prompt reuses
+    `message`; no filler clips (locked audio direction: fewer, better).
+    """
+    click = slice_(w["drums2"], 97.330, 0.40, "b_click")
+    thump = slice_(w["drums6"], 10.060, 0.40, "b_thump")
+
+    def note(name: str, start: float, dur: float) -> str:
+        n = slice_(w["intro8"], start, dur, f"{name}_raw")
+        return fx(n, name, "pitch", "-100", "fade", "0.005", str(dur), str(min(dur * 0.6, 0.35)))
+
+    b_a4 = note("b_a4", 4.500, 0.51)     # → G#4
+    b_cs5 = note("b_cs5", 10.750, 0.50)  # → C5
+    b_e5 = note("b_e5", 1.750, 0.60)     # → D#5
+    b_a5 = note("b_a5", 9.750, 0.75)     # → G#5
+
+    # board_place: the knock leads, a shortened thump gives it weight. Dry — the
+    # piece lands right in front of you.
+    place_click = peak_normalize(
+        fx(click, "bp_click", "pitch", "100", "trim", "0", "0.14", "fade", "0", "0.14", "0.07"),
+        "bp_click_n", -11)
+    place_body = peak_normalize(
+        fx(thump, "bp_body", "pitch", "-150", "lowpass", "1500", "trim", "0", "0.13",
+           "fade", "0.001", "0.13", "0.08"),
+        "bp_body_n", -18)
+    encode(peak_normalize(mix("board_place_mix", (place_click, 0.0), (place_body, 0.01)),
+                          "board_place_n", -12), "board_place")
+
+    # board_place_far: the same gesture heard across the table — pitched down,
+    # low-passed, a little room on it, mixed clearly quieter.
+    far = fx(mix("board_far_mix",
+                 (peak_normalize(fx(click, "bf_click", "pitch", "-250", "lowpass", "2000",
+                                    "trim", "0", "0.15", "fade", "0", "0.15", "0.09"),
+                                 "bf_click_n", -14), 0.0),
+                 (peak_normalize(fx(thump, "bf_body", "pitch", "-250", "lowpass", "900",
+                                    "trim", "0", "0.14", "fade", "0.001", "0.14", "0.09"),
+                                 "bf_body_n", -21), 0.01)),
+             "board_far_fx", "reverb", "16", "50", "45")
+    encode(peak_normalize(far, "board_far_n", -18), "board_place_far")
+
+    # board_win: quick rising three-note flourish, light room. Faster and
+    # brighter than meeting_join's four-note arpeggio so the two never blur.
+    win = mix("board_win_mix",
+              (peak_normalize(fx(b_a4, "bw1", "trim", "0", "0.26"), "bw1_n", -16), 0.0),
+              (peak_normalize(fx(b_cs5, "bw2", "trim", "0", "0.26"), "bw2_n", -14), 0.09),
+              (peak_normalize(b_a5, "bw3_n", -11), 0.18))
+    encode(peak_normalize(fx(win, "board_win_fx", "reverb", "22", "50", "45"),
+                          "board_win_n", -11), "board_win")
+
+    # board_lose: mirrored fall, softer and slightly darkened. Losing a friendly
+    # plaza match should read as "ah, well" — not as a failure sting.
+    lose = fx(mix("board_lose_mix",
+                  (peak_normalize(fx(b_e5, "bl1", "trim", "0", "0.30"), "bl1_n", -17), 0.0),
+                  (peak_normalize(fx(b_a4, "bl2", "trim", "0", "0.42"), "bl2_n", -15), 0.13)),
+              "board_lose_fx", "lowpass", "3200", "reverb", "18", "50", "40")
+    encode(peak_normalize(lose, "board_lose_n", -16), "board_lose")
+
+    # board_draw: the same note twice — no rise, no fall. An even result should
+    # sound even.
+    draw = fx(mix("board_draw_mix",
+                  (peak_normalize(fx(b_cs5, "bd1", "trim", "0", "0.28"), "bd1_n", -16), 0.0),
+                  (peak_normalize(fx(b_cs5, "bd2", "trim", "0", "0.36"), "bd2_n", -16), 0.14)),
+              "board_draw_fx", "reverb", "18", "50", "40")
+    encode(peak_normalize(draw, "board_draw_n", -16), "board_draw")
+
+    # board_invalid: heavily low-passed, hard-gated thump. Short and dead — a
+    # rejection, not an alarm.
+    invalid = fx(thump, "board_invalid_fx",
+                 "pitch", "-450", "lowpass", "420", "trim", "0", "0.13",
+                 "fade", "0.002", "0.13", "0.10")
+    encode(peak_normalize(invalid, "board_invalid_n", -15), "board_invalid")
+
+
 def curate_music_pool() -> None:
     """Curate the PRD-21 calm-music pool (see MUSIC_STEMS above).
 
@@ -415,6 +506,11 @@ def main() -> None:
     # short, peak-normalized, and mixed low by the sfx channel like every cue.
     synth_arcade()
 
+    # ── Board tables: wooden foley + distinct win/lose/draw outcomes ────────
+    # NOT arcade blips — a plaza board game is recorded foley, and the outcome
+    # cues must differ from each other (see curate_board_sounds).
+    curate_board_sounds(w)
+
     # ── Snake port SFX (owner's standalone Snake-game wavs) ─────────────────
     # Machine-specific sibling-repo path (see SNAKE_GAME_SOUND); skipped with a
     # warning if that tree is not present. Flappy's synth clips above stay put.
@@ -443,6 +539,14 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "synth-arcade":
         os.makedirs(OUT_DIR, exist_ok=True)
         synth_arcade()
+        shutil.rmtree(TMP, ignore_errors=True)
+    elif len(sys.argv) > 1 and sys.argv[1] == "board":
+        # Board cues only — cut from the pack, so the (untracked) pack is
+        # required, but the rest of the soundscape is left untouched.
+        if not os.path.exists(PACK):
+            sys.exit(f"pack not found: {PACK}")
+        os.makedirs(OUT_DIR, exist_ok=True)
+        curate_board_sounds(decode_stems())
         shutil.rmtree(TMP, ignore_errors=True)
     else:
         main()
