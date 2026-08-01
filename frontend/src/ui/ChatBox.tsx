@@ -345,13 +345,9 @@ export default function ChatBox() {
   );
 
   // Keep the highlight inside the filtered list (e.g. ArrowUp to last, then type).
-  useEffect(() => {
-    if (commands.length === 0) {
-      setCommandIndex(0);
-      return;
-    }
-    setCommandIndex((index) => Math.min(index, commands.length - 1));
-  }, [commands]);
+  // Derived during render — avoids a setState-in-effect lint violation.
+  const safeCommandIndex =
+    commands.length === 0 ? 0 : Math.min(commandIndex, commands.length - 1);
 
   const chooseCommand = (command: ChatCommand) => {
     setText(commandInsertion(command));
@@ -371,7 +367,7 @@ export default function ChatBox() {
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        const command = commands[commandIndex];
+        const command = commands[safeCommandIndex];
         if (command) chooseCommand(command);
         return;
       }
@@ -679,8 +675,8 @@ export default function ChatBox() {
               id={`chat-command-${command.name.slice(1)}`}
               type="button"
               role="option"
-              aria-selected={index === commandIndex}
-              className={`mc-command-row ${index === commandIndex ? "active" : ""}`}
+              aria-selected={index === safeCommandIndex}
+              className={`mc-command-row ${index === safeCommandIndex ? "active" : ""}`}
               onMouseDown={(event) => {
                 event.preventDefault();
                 chooseCommand(command);
@@ -714,7 +710,7 @@ export default function ChatBox() {
           aria-expanded={commands.length > 0}
           aria-controls="chat-command-list"
           aria-activedescendant={
-            commands.length > 0 ? `chat-command-${commands[commandIndex]?.name.slice(1)}` : undefined
+            commands.length > 0 ? `chat-command-${commands[safeCommandIndex]?.name.slice(1)}` : undefined
           }
           placeholder={
             panel.tab === "room" ? "Message this area…" : "Message everyone…"
