@@ -680,7 +680,9 @@ export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver
       };
       dropRef.current = false;
       aimRef.current = null;
-      const next = prev.over ? prev : stepMergeDrop(prev, input);
+      // Always step — when over, the reducer returns the same state with events
+      // cleared so the finishing freeze cannot re-fire sound/particle bursts.
+      const next = stepMergeDrop(prev, input);
       stateRef.current = next;
 
       for (const event of next.events) {

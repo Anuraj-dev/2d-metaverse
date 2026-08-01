@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AREA_NAMES } from "@metaverse/shared";
+import { AREA_NAMES, ARCADE_GAMES } from "@metaverse/shared";
 import { MAPS, DEFAULT_MAP, activeMapKey, activeMap } from "./maps";
 import { roomAreasFromObjects, zoneAt, type TiledObjectLike } from "./audioZones";
 
@@ -224,13 +224,13 @@ describe("campus arcade cabinets (PRD 11)", () => {
     return o.properties?.find((p) => p.name === name)?.value;
   }
 
-  const ARCADE_GAMES = new Set(["snake", "flappy", "merge-drop"]);
+  const ARCADE_GAME_SET = new Set<string>(ARCADE_GAMES);
 
   it("places exactly three arcade interactables, each with a valid game id + label", () => {
     const arcades = objects("interactables").filter((o) => prop(o, "interactType") === "arcade");
-    expect(arcades).toHaveLength(ARCADE_GAMES.size);
+    expect(arcades).toHaveLength(ARCADE_GAME_SET.size);
     const games = arcades.map((o) => prop(o, "game"));
-    expect(new Set(games)).toEqual(ARCADE_GAMES);
+    expect(new Set(games)).toEqual(ARCADE_GAME_SET);
     for (const o of arcades) {
       expect(typeof prop(o, "label")).toBe("string");
       expect(String(prop(o, "label")).length).toBeGreaterThan(0);
@@ -239,7 +239,7 @@ describe("campus arcade cabinets (PRD 11)", () => {
 
   it("backs each cabinet interactable with a solid cabinet sprite", () => {
     const furniture = objects("furniture");
-    for (const game of ARCADE_GAMES) {
+    for (const game of ARCADE_GAME_SET) {
       const cabinet = furniture.find((o) => o.name === `f_arcade_${game}`);
       expect(cabinet, `missing cabinet sprite f_arcade_${game}`).toBeDefined();
       expect(prop(cabinet as TiledObject, "solid")).toBe(true);
