@@ -8,6 +8,7 @@
  * Composed from small pieces in `ui/board/` (seat chip, grid, mark, result
  * banner) so no one file owns the whole surface.
  */
+import { useState } from "react";
 import type { BoardUpdatePayload } from "@metaverse/shared";
 import { boardTableView } from "../game/boardTable";
 import BoardGrid from "./board/BoardGrid";
@@ -37,6 +38,30 @@ export default function BoardTablePanel({
 }: BoardTablePanelProps) {
   const view = boardTableView(snapshot, selfId);
   const title = TABLE_TITLES[view.game] ?? "Board game";
+
+  // Animate only 0→filled transitions observed while this panel is open so a
+  // spectator mounting mid-match does not redraw the whole historical board.
+  const [memory, setMemory] = useState(() => ({
+    tableId: snapshot.tableId,
+    cells: view.cells,
+    fresh: new Set<number>(),
+  }));
+  let current = memory;
+  if (memory.tableId !== snapshot.tableId) {
+    current = { tableId: snapshot.tableId, cells: view.cells, fresh: new Set<number>() };
+    setMemory(current);
+  } else if (
+    memory.cells.length !== view.cells.length ||
+    memory.cells.some((v, i) => v !== view.cells[i])
+  ) {
+    const fresh = new Set(memory.fresh);
+    for (let i = 0; i < view.cells.length; i++) {
+      if (view.cells[i] === 0) fresh.delete(i);
+      else if (memory.cells[i] === 0) fresh.add(i);
+    }
+    current = { tableId: snapshot.tableId, cells: view.cells, fresh };
+    setMemory(current);
+  }
 
   const classes = [
     "board-panel",
@@ -78,7 +103,7 @@ export default function BoardTablePanel({
         />
       </div>
 
-      <BoardGrid view={view} onMove={onMove} />
+      <BoardGrid view={view} onMove={onMove} fresh={current.fresh} />
 
       {view.outcome !== null ? (
         <BoardResult outcome={view.outcome} mySeat={view.mySeat} seatNames={view.seatNames} />

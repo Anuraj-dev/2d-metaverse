@@ -94,4 +94,24 @@ describe("BoardTablePanel — redesigned surface", () => {
     expect(grid.querySelectorAll(".board-disc")).toHaveLength(2);
     expect(grid.querySelectorAll(".board-disc__ring")).toHaveLength(1);
   });
+
+  it("animates only the newly placed mark after mount", () => {
+    const { container, rerender } = renderPanel(
+      snap({ state: tttState([1, 2, 0, 0, 0, 0, 0, 0, 0]) }),
+    );
+    const grid = container.querySelector(".board-grid");
+    if (!grid) throw new Error("missing board grid");
+    expect(grid.querySelectorAll(".is-new")).toHaveLength(0);
+    rerender(
+      <BoardTablePanel
+        snapshot={snap({ state: tttState([1, 2, 0, 0, 1, 0, 0, 0, 0], 2) })}
+        selfId="spectator"
+        error={null}
+        onMove={noop}
+        onAccept={noop}
+        onLeave={noop}
+      />,
+    );
+    expect(grid.querySelectorAll(".is-new")).toHaveLength(1);
+  });
 });

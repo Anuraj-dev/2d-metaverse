@@ -19,9 +19,11 @@ import BoardMark from "./BoardMark";
 export interface BoardGridProps {
   view: BoardTableView;
   onMove: (index: number) => void;
+  /** Cell indices that filled while the panel was already open — animate only these. */
+  fresh?: ReadonlySet<number>;
 }
 
-export default function BoardGrid({ view, onMove }: BoardGridProps) {
+export default function BoardGrid({ view, onMove, fresh }: BoardGridProps) {
   // The cell a piece would land in for the currently hovered/focused cell.
   const [preview, setPreview] = useState<number | null>(null);
   const winning = new Set(view.winningLine);
@@ -74,7 +76,14 @@ export default function BoardGrid({ view, onMove }: BoardGridProps) {
             onBlur={() => setPreview(null)}
             onClick={() => playable && onMove(clickToMove(view.game, i))}
           >
-            {owner !== null && <BoardMark key={`${i}-${cell}`} game={view.game} seat={owner} />}
+            {owner !== null && (
+              <BoardMark
+                key={`${i}-${cell}`}
+                game={view.game}
+                seat={owner}
+                animate={fresh?.has(i) === true}
+              />
+            )}
             {showGhost && view.mySeat !== null && (
               <BoardMark game={view.game} seat={view.mySeat} ghost />
             )}

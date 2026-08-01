@@ -70,9 +70,6 @@ def _furnish(ctx) -> None:
     for tx in (74, 75, 76):
         ctx.furn("f_lz_armchair", tx, 18, False)
 
-    # "Today's Agenda" is the hall's one justified object. It identifies the
-    # existing whiteboard interaction without turning open floor into clutter.
-    # Interactable owns 55-56, 19-20; board at y=17 so its 32px body (which
-    # reaches y+1) stays clear of the prompt rect, and the floor in front of
-    # the board stays empty so players can walk up to it.
-    ctx.furn("f_lz_whiteboard", 55, 17, True)
+    # "Today's Agenda" visual on the north wall row (wall-hung only). The
+    # interactable prompt stays at 55-56, 19-20 so players walk up on open floor.
+    ctx.furn("f_lz_whiteboard", 55, 12, False)

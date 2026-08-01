@@ -8,7 +8,7 @@ and an audience can sit and walk between the banks without snagging on props.
 Geometry it has to live with (all frozen):
   interior     x=82..117, y=2..43     door gap  x=98-99 on the south wall (y=44)
   presenter    x=90..110, y=2..15     (broadcast podium)
-  stage zone   x=82..117, y=16..43    (audience floor — broadcast-eligible too)
+  stage zone   x=82..117, y=16..43    (audience floor — presence/audio only)
   screen point tile (99, 5)           (visual anchor only)
   one local presenter seat, no doorZones / roomBounds (public walk-in hall)
 

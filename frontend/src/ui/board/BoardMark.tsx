@@ -18,10 +18,16 @@ export interface BoardMarkProps {
   seat: 0 | 1;
   /** Render as a translucent landing preview rather than a placed piece. */
   ghost?: boolean;
+  /**
+   * When true, play the place-in animation. Must be false for historical pieces
+   * already on the board when the panel mounts (spectators must not redraw the
+   * whole table).
+   */
+  animate?: boolean;
 }
 
-export default function BoardMark({ game, seat, ghost = false }: BoardMarkProps) {
-  const cls = `board-mark board-mark--p${seat + 1}${ghost ? " is-ghost" : ""}`;
+export default function BoardMark({ game, seat, ghost = false, animate = false }: BoardMarkProps) {
+  const cls = `board-mark board-mark--p${seat + 1}${ghost ? " is-ghost" : ""}${animate ? " is-new" : ""}`;
 
   if (game === "connect4") {
     return (

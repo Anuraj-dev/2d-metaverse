@@ -10,7 +10,7 @@ Frozen path arteries that cut the terrace (solid bodies must not land on them):
   park path x=29–30, hostel spur x=34–35 (see maps.test.ts PRD 25.33).
 
 Layout (named clusters only):
-  · service bay    — west edge benches + bin/lamp on the slate strip
+  · service bay    — west edge benches + bin/planter on the slate strip
   · seating        — NW (15,66), SE (41,75) benches with planters
   · park-path gate — a planter either side of the x=29–30 mouth
 """
@@ -36,14 +36,15 @@ def _paint_floor(ctx) -> None:
 
 
 def _furnish(ctx) -> None:
-    # Outdoor vocabulary only: benches, planters, a bin, and a lamp post.
+    # Outdoor vocabulary only: benches, planters, a bin, and planters.
     # Indoor counters/chairs/tables never ship on the open terrace.
 
     # ── Cluster: west service bay (slate strip) ─────────────────────────────
     ctx.furn("f_lz_bench_gold", 6, 68, True)
     ctx.furn("f_lz_bench_gold", 6, 71, True)
     ctx.furn("f_lz_bin", 8, 67, True)
-    ctx.furn("f_lz_floor_lamp", 8, 72, True)
+    # Outdoor vocabulary: planters only — no indoor floor lamps on the terrace.
+    ctx.furn("f_lz_plant_small", 8, 72, True)
 
     # ── Cluster: NW seating ─────────────────────────────────────────────────
     ctx.furn("f_lz_bench_gold", 15, 66, True)
