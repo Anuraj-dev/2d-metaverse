@@ -571,19 +571,17 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .board-panel,
-  .board-panel.is-my-turn,
-  .board-seat,
-  .board-btn,
-  .board-mark,
-  .board-mark.is-ghost,
-  .board-glyph__stroke,
-  .board-disc,
-  .board-cell.is-win .board-mark,
-  .board-result,
-  .board-panel__status.is-error {
-    animation: none;
-    transition: none;
-  }
+:root[data-reduced-motion="true"] .board-panel,
+:root[data-reduced-motion="true"] .board-panel.is-my-turn,
+:root[data-reduced-motion="true"] .board-seat,
+:root[data-reduced-motion="true"] .board-btn,
+:root[data-reduced-motion="true"] .board-mark,
+:root[data-reduced-motion="true"] .board-mark.is-ghost,
+:root[data-reduced-motion="true"] .board-glyph__stroke,
+:root[data-reduced-motion="true"] .board-disc,
+:root[data-reduced-motion="true"] .board-cell.is-win .board-mark,
+:root[data-reduced-motion="true"] .board-result,
+:root[data-reduced-motion="true"] .board-panel__status.is-error {
+  animation: none;
+  transition: none;
 }

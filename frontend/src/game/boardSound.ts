@@ -62,8 +62,14 @@ export function boardSoundEvents(
   const events: BoardSoundEvent[] = [];
   const mySeat = seatOf(after, selfId);
 
-  // A match offer that needs THIS viewer's acceptance — spectators get nothing.
-  if (after.phase === "offer" && before?.phase !== "offer" && mySeat !== null) {
+  // A match offer that needs THIS viewer's acceptance — spectators get nothing,
+  // and the rematch requester (already accepted) should not hear the ping.
+  if (
+    after.phase === "offer" &&
+    before?.phase !== "offer" &&
+    mySeat !== null &&
+    after.seats[mySeat]?.accepted !== true
+  ) {
     events.push("board-offer");
   }
 

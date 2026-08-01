@@ -174,6 +174,27 @@ describe("boardSoundEvents — match lifecycle", () => {
     expect(boardSoundEvents(offer, offer, "a")).toEqual([]);
   });
 
+  it("does not ping the rematch requester who is already accepted", () => {
+    const before = snap({
+      phase: "over",
+      seats: [
+        { ...alice, accepted: true },
+        { ...bob, accepted: true },
+      ],
+      reason: "win",
+    });
+    // Alice clicked Play again — her seat is already accepted on the new offer.
+    const after = snap({
+      phase: "offer",
+      seats: [
+        { ...alice, accepted: true },
+        { ...bob, accepted: false },
+      ],
+    });
+    expect(boardSoundEvents(before, after, "a")).toEqual([]);
+    expect(boardSoundEvents(before, after, "b")).toEqual(["board-offer"]);
+  });
+
   it("announces the match going live, to players and spectators alike", () => {
     const before = snap({ phase: "offer", seats: [alice, bob] });
     const after = active(1, board());

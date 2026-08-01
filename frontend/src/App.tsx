@@ -22,6 +22,7 @@ import { bus } from "./game/eventBus";
 import { boardSoundEvents } from "./game/boardSound";
 import { worldAudio, roomVideo, stageVideo } from "./media/livekit";
 import { setMic } from "./media/mediaControls";
+import { getMediaPrefs } from "./media/mediaPrefs";
 import { outcomeNeedsAttention } from "./media/publicationState";
 import {
   MEETING_NONE,
@@ -325,15 +326,18 @@ export default function App() {
       transition(async () => {
         // Clicking Go Live is the explicit microphone-enable gesture. Use the
         // shared fan-out so the control bar and every active publisher stay in sync.
+        // If the mic was already on for world proximity, do not disable it when
+        // a later stage-only failure occurs.
+        const micWasOn = getMediaPrefs().micOn;
         const mic = await setMic(true);
         if (outcomeNeedsAttention(mic.status)) {
-          await setMic(false);
+          if (!micWasOn) await setMic(false);
           bus.emit("stage-live-failed");
           return;
         }
         const live = await stageVideo.goLive(SPACE_ID, selfId);
         if (outcomeNeedsAttention(live.status)) {
-          await setMic(false);
+          if (!micWasOn) await setMic(false);
           bus.emit("stage-live-failed");
         }
       });
