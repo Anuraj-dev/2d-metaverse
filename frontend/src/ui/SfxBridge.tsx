@@ -11,7 +11,7 @@ import {
   setOutdoors,
   setVoiceActive,
 } from "../media/sfx";
-import { EVENT_SOUNDS, footstepDue, speechActive, type StepState } from "../media/soundMixer";
+import { cueRate, EVENT_SOUNDS, footstepDue, speechActive, type StepState } from "../media/soundMixer";
 import { speakingState } from "../media/speakingState";
 import { OUTDOOR_ZONE } from "../game/audioZones";
 
@@ -35,9 +35,15 @@ export default function SfxBridge() {
     offs.push(net.on("player-joined", () => playSfx("join")));
     offs.push(net.on("player-left", () => playSfx("leave")));
 
-    // Event → sound, straight from the pure mapping table.
+    // Event → sound, straight from the pure mapping table. The payload only
+    // ever feeds the pure `cueRate` decision (tier-pitched cues like the
+    // merge-drop fusion chime) — the bridge itself decides nothing.
     for (const [event, cue] of Object.entries(EVENT_SOUNDS)) {
-      offs.push(bus.on(event, () => playCue(cue.clip, cue.channel)));
+      offs.push(
+        bus.on(event, (payload: unknown) =>
+          playCue(cue.clip, cue.channel, { rate: cueRate(event, payload) })
+        )
+      );
     }
 
     // Speech-driven duck inputs: the active-speaker set (who is talking), the

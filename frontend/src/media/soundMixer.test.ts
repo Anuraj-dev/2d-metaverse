@@ -6,6 +6,10 @@ import {
   speechActive,
   duckStep,
   cueForEvent,
+  cueRate,
+  mergePitchRate,
+  PITCH_MIN,
+  PITCH_MAX,
   EVENT_SOUNDS,
   footstepDue,
   fadeStep,
@@ -166,10 +170,15 @@ describe("cueForEvent", () => {
       channel: "sfx",
     });
     expect(cueForEvent("arcade-point")).toEqual({ clip: "arcade_point", channel: "arcade" });
-    expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
-    expect(cueForEvent("arcade-flap")).toEqual({ clip: "arcade_flap", channel: "arcade" });
-    expect(cueForEvent("arcade-hit")).toEqual({ clip: "arcade_hit", channel: "arcade" });
     expect(cueForEvent("arcade-eat")).toEqual({ clip: "arcade_eat", channel: "arcade" });
+    expect(cueForEvent("arcade-near")).toEqual({ clip: "arcade_near", channel: "arcade" });
+    expect(cueForEvent("arcade-flap")).toEqual({ clip: "arcade_flap", channel: "arcade" });
+    expect(cueForEvent("arcade-over")).toEqual({ clip: "arcade_over", channel: "arcade" });
+    expect(cueForEvent("arcade-best")).toEqual({ clip: "arcade_best", channel: "arcade" });
+    expect(cueForEvent("open-arcade")).toEqual({ clip: "arcade_start", channel: "arcade" });
+    expect(cueForEvent("board-move")).toEqual({ clip: "board_place", channel: "sfx" });
+    expect(cueForEvent("board-win")).toEqual({ clip: "board_win", channel: "sfx" });
+    expect(cueForEvent("arcade-hit")).toEqual({ clip: "arcade_hit", channel: "arcade" });
     expect(cueForEvent("arcade-bonus")).toEqual({ clip: "arcade_bonus", channel: "arcade" });
     expect(cueForEvent("arcade-milestone")).toEqual({
       clip: "arcade_milestone",
@@ -197,6 +206,42 @@ describe("cueForEvent", () => {
     for (const cue of Object.values(EVENT_SOUNDS)) {
       expect(["music", "sfx", "ambient", "arcade"]).toContain(cue.channel);
     }
+  });
+  it("maps the merge-drop cabinet's domain events onto the arcade channel", () => {
+    expect(cueForEvent("arcade-drop")).toEqual({ clip: "door_close", channel: "arcade" });
+    expect(cueForEvent("arcade-merge")).toEqual({ clip: "arcade_merge", channel: "arcade" });
+    expect(cueForEvent("arcade-nova")).toEqual({ clip: "arcade_nova", channel: "arcade" });
+  });
+});
+
+describe("mergePitchRate / cueRate (tier-pitched merge chime)", () => {
+  it("climbs monotonically with the tier", () => {
+    for (let tier = 1; tier < 10; tier++) {
+      expect(mergePitchRate(tier)).toBeGreaterThan(mergePitchRate(tier - 1));
+    }
+  });
+  it("stays inside the playable rate window at both extremes", () => {
+    for (const tier of [-100, 0, 5, 9, 10_000]) {
+      expect(mergePitchRate(tier)).toBeGreaterThanOrEqual(PITCH_MIN);
+      expect(mergePitchRate(tier)).toBeLessThanOrEqual(PITCH_MAX);
+    }
+  });
+  it("leaves every other event unpitched", () => {
+    expect(cueRate("arcade-point", undefined)).toBe(1);
+    expect(cueRate("door-open", { tier: 9 })).toBe(1);
+    expect(cueRate("open-arcade", null)).toBe(1);
+  });
+  it("reads the tier off the merge payload", () => {
+    expect(cueRate("arcade-merge", { tier: 4 })).toBe(mergePitchRate(4));
+    expect(cueRate("arcade-merge", { tier: 9 })).toBe(mergePitchRate(9));
+  });
+  it("falls back to the base rate for a missing or malformed payload", () => {
+    const base = mergePitchRate(0);
+    expect(cueRate("arcade-merge", undefined)).toBe(base);
+    expect(cueRate("arcade-merge", null)).toBe(base);
+    expect(cueRate("arcade-merge", {})).toBe(base);
+    expect(cueRate("arcade-merge", { tier: "nine" })).toBe(base);
+    expect(cueRate("arcade-merge", { tier: Number.NaN })).toBe(base);
   });
 });
 

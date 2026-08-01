@@ -15,10 +15,15 @@ export type ArcadeBusEvent =
   | "arcade-flap"
   | "arcade-hit"
   | "arcade-eat"
+  | "arcade-near"
+  | "arcade-best"
   | "arcade-bonus"
   | "arcade-milestone"
   | "arcade-highscore"
-  | "arcade-snake-over";
+  | "arcade-snake-over"
+  | "arcade-drop"
+  | "arcade-merge"
+  | "arcade-nova";
 
 class EventBus {
   // Stored loosely (handlers carry their own payload type); on()/emit() are the typed surface.
@@ -46,10 +51,13 @@ class EventBus {
  *  'board-sat'{tableId,seat,game,label} | 'board-stood' | 'board-move' | 'board-win'
  *  Arcade (see ArcadeBusEvent): 'open-arcade' | 'close-arcade' | 'arcade-point' | 'arcade-over' |
  *  'arcade-flap' | 'arcade-hit' | 'arcade-eat' | 'arcade-bonus' | 'arcade-milestone' |
- *  'arcade-highscore' | 'arcade-snake-over' (sound mixer maps these; games stay audio-agnostic)
+ *  'arcade-highscore' | 'arcade-snake-over' | 'arcade-drop' | 'arcade-merge' | 'arcade-nova' (sound mixer maps these; games stay audio-agnostic)
  *  Meeting (PRD 10): the server meeting-lifecycle events are mirrored here by the
  *  app shell, incl. 'meeting-chat'{roomId,id,name,text} (participant-scoped chat).
  *  UI -> Game: 'do-sit' | 'do-stand' | 'locate'{id} | 'move-axis'{x,y} | 'do-interact'
+ *  Arcade (PRD 11 / issue #163): 'open-arcade'{game,label} | 'arcade-eat' | 'arcade-point' |
+ *  'arcade-near' | 'arcade-flap' | 'arcade-over' | 'arcade-best' | 'arcade-drop' | 'arcade-merge' | 'arcade-nova' — domain events only; the
+ *  sound mixer's event->clip table decides what (if anything) they sound like.
  *  UI <-> UI: 'chat-visibility'{open} | 'focus-chat' |
  *  Global control bar (PRD 20): 'mic-toggle'{on} | 'cam-toggle'{on} (sound mixer blip)
  *  Screen share (PRD 23): 'screen-share-on' | 'screen-share-off' (control bar intent; sound blip + e2e hook)

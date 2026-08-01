@@ -119,7 +119,7 @@ export function boardTableView(snapshot: BoardUpdatePayload, selfId: string): Bo
   const mySeat: 0 | 1 | null =
     snapshot.seats[0]?.id === selfId ? 0 : snapshot.seats[1]?.id === selfId ? 1 : null;
   const { columns, rows } = gridSize(snapshot.game);
-  const cells = snapshot.state?.board ?? Array<number>(columns * rows).fill(0);
+  const cells = boardCells(snapshot);
   const winningLine = snapshot.state?.result.status === "won" ? snapshot.state.result.line : [];
 
   const canAccept =
@@ -145,4 +145,35 @@ export function boardTableView(snapshot: BoardUpdatePayload, selfId: string): Bo
     status: statusFor(snapshot, mySeat),
     seatNames: [snapshot.seats[0]?.name ?? null, snapshot.seats[1]?.name ?? null],
   };
+}
+
+/**
+ * Flat row-major cells for a snapshot (0 empty, 1 seat-0, 2 seat-1), zero-filled
+ * when there is no live match. Split out of {@link boardTableView} so the panel's
+ * animation layer can read the same array without rebuilding the whole view.
+ */
+export function boardCells(snapshot: BoardUpdatePayload): readonly number[] {
+  const { columns, rows } = gridSize(snapshot.game);
+  return snapshot.state?.board ?? Array<number>(columns * rows).fill(0);
+}
+
+/**
+ * Row index of a flat cell index on a `columns`-wide grid. Connect-4 uses it as
+ * the drop distance: a piece landing on row 3 falls three rows into place.
+ * Out-of-range/degenerate input clamps to row 0 (no drop) rather than throwing —
+ * an animation must never be able to break the board.
+ */
+export function cellRow(index: number, columns: number): number {
+  if (columns <= 0 || index < 0) return 0;
+  return Math.floor(index / columns);
+}
+
+/**
+ * Position of `index` within the winning line (0-based), or null when the cell
+ * is not part of it. The panel turns this into a staggered animation delay so
+ * the win line lights up along its length instead of all at once.
+ */
+export function winLineStep(winningLine: readonly number[], index: number): number | null {
+  const at = winningLine.indexOf(index);
+  return at === -1 ? null : at;
 }

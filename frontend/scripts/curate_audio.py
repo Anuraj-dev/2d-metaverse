@@ -22,9 +22,16 @@ pack's stem 6 — historically the shipped music bed (`music_bed.ogg`, retired
 by PRD 21 and replaced by the calm pool below); the ambient bed's slowed D#
 stem is its dominant — everything that can sound at once is consonant.
 
-Requires: ffmpeg, sox, and the pack zip at repo-root Assets/ (untracked).
-Run:  python3 scripts/curate_audio.py
-      python3 scripts/curate_audio.py synth-arcade   # arcade blips only (no pack needed)
+Requires: ffmpeg, sox, and the pack zip at repo-root Assets/ (untracked). Point
+COZY_PACK at the zip if it lives elsewhere on your machine.
+
+Run:  python3 scripts/curate_audio.py                 # regenerate everything
+      python3 scripts/curate_audio.py --only arcade   # just one step
+      python3 scripts/curate_audio.py --only arcade,board
+
+`--only` exists so a change that adds a few clips (e.g. issue #163's per-event
+arcade cues and board-table foley) does not have to re-encode — and therefore
+re-commit — every already-shipped clip. Known steps: see STEPS at the bottom.
 """
 
 import json
@@ -36,7 +43,9 @@ import tempfile
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PACK = os.path.join(HERE, "..", "..", "Assets", "Cozy Game Sound Pack 1.zip")
+PACK = os.environ.get(
+    "COZY_PACK", os.path.join(HERE, "..", "..", "Assets", "Cozy Game Sound Pack 1.zip")
+)
 OUT_DIR = os.path.join(HERE, "..", "public", "assets", "audio")
 PREFIX = "Cozy Game Sound Pack 1/"
 
@@ -140,12 +149,16 @@ def encode(src: str, clip: str, quality: str = "3") -> None:
 def synth_arcade() -> None:
     """Synthesize the arcade cabinet blips (square-wave chiptune).
 
-    Five cues: cabinet open, score, game over, plus the two in-game ones the
-    flappy port needs — a soft wing flap (frequent, so it is normalized far
-    quieter than the rest) and the crash thud that lands before the game-over
-    descend. Same project-original chiptune family, no third-party source.
+    Every meaningful beat gets its own cue. The common cabinet/score/death,
+    near-miss, and best cues use the square-wave family; Flappy's frequently
+    repeated wing/crash pair uses the softer sine/noise treatment from the
+    current arcade renderer. `arcade_merge` and `arcade_nova` belong to the
+    Stellar Forge merge-drop cabinet: the merge chime is deliberately short and
+    mid-register because the mixer REPITCHES it per tier
+    (soundMixer.mergePitchRate), so one clip covers the whole evolution ladder
+    instead of ten near-identical files.
     """
-    def blip(name: str, *segs: tuple[float, int], fade: float) -> str:
+    def blip(name: str, *segs: tuple[float, int], fade: float, peak: float = -3.0) -> str:
         parts = []
         for i, (dur, freq) in enumerate(segs):
             p = os.path.join(TMP, f"{name}_s{i}.wav")
@@ -154,7 +167,7 @@ def synth_arcade() -> None:
         joined = os.path.join(TMP, f"{name}_joined.wav")
         run(["sox", *parts, joined])
         out = os.path.join(TMP, f"{name}.wav")
-        run(["sox", joined, out, "fade", "h", "0.005", str(fade), "0.03", "gain", "-n", "-3"])
+        run(["sox", joined, out, "fade", "h", "0.005", str(fade), "0.03", "gain", "-n", str(peak)])
         return out
 
     def sweep(name: str, wave: str, f0: int, f1: int, dur: float, peak_db: float) -> str:
@@ -172,18 +185,77 @@ def synth_arcade() -> None:
                   str(dur * 0.8), "gain", "-n", str(peak_db))
 
     encode(blip("arcade_point", (0.09, 880), (0.05, 1180), fade=0.14), "arcade_point")
+    # Near miss: a fast descending whip — a warning, so quiet and out of the way.
+    encode(
+        blip("arcade_near", (0.04, 1760), (0.035, 1318), (0.035, 988), fade=0.11, peak=-13.0),
+        "arcade_near",
+    )
     encode(blip("arcade_start", (0.08, 523), (0.08, 659), (0.12, 784), fade=0.28), "arcade_start")
     encode(blip("arcade_over", (0.14, 440), (0.14, 349), (0.22, 262), fade=0.5), "arcade_over")
+    # New personal best: the only rising four-note fanfare in the set.
+    encode(
+        blip("arcade_best", (0.08, 659), (0.08, 784), (0.08, 988), (0.20, 1319), fade=0.42),
+        "arcade_best",
+    )
+    # Stellar Forge merge chime (repitched per tier by soundMixer.mergePitchRate)
+    # and supernova fanfare.
+    encode(blip("arcade_merge", (0.045, 659), (0.075, 988), fade=0.13), "arcade_merge")
+    encode(
+        blip("arcade_nova", (0.08, 392), (0.07, 523), (0.07, 784), (0.09, 1046), (0.26, 1568), fade=0.62),
+        "arcade_nova",
+    )
+
     # Wingbeat: a short downward blip with a breath of air under it. Quiet by
     # design — it fires several times a second.
     encode(mix("arcade_flap",
                (sweep("flap_tone", "sine", 560, 210, 0.09, -13), 0.0),
                (puff("flap_air", 1300, 0.07, -20), 0.0)), "arcade_flap")
-    # Crash: a low body thud with a fast pitch drop, no tail (the game-over
-    # descend follows it a moment later once the bird settles).
+    # Crash: a low body thud with a fast pitch drop, no tail.
     encode(mix("arcade_hit",
                (sweep("hit_tone", "sine", 200, 52, 0.26, -5), 0.0),
                (puff("hit_body", 420, 0.14, -11), 0.0)), "arcade_hit")
+
+
+def curate_board() -> None:
+    """Board-table place/win foley from the Cozy pack (issue #163).
+
+    The board tables used to borrow the arcade chiptune for their move/win cues,
+    which read as the wrong room — they are wooden tables in the plaza, not a
+    cabinet. These are cut from the same recorded pack as the rest of the world
+    foley: a dry wooden knock for placing a piece, and a warm rising G#4-C5-G#5
+    pluck (the shipped chime key family) with a metallic shine for the win.
+    """
+    if not os.path.exists(PACK):
+        sys.exit(f"pack not found: {PACK}")
+    w = decode_stems()
+    click = slice_(w["drums2"], 97.330, 0.40, "b_click")      # dry mid-range knock
+    shimmer = slice_(w["drums2"], 94.670, 0.40, "b_shimmer")  # bright metallic hit
+
+    def note(name: str, start: float, dur: float) -> str:
+        n = slice_(w["intro8"], start, dur, f"{name}_raw")
+        return fx(n, name, "pitch", "-100", "fade", "0.005", str(dur), str(min(dur * 0.6, 0.35)))
+
+    # board_place: a short, dry wooden tap with a hint of table room. Quiet —
+    # it fires on every move of every visible match.
+    place = fx(click, "board_place_fx",
+               "pitch", "-250", "lowpass", "3200", "trim", "0", "0.15",
+               "fade", "0", "0.15", "0.08", "reverb", "8", "50", "20")
+    encode(peak_normalize(place, "board_place_n", -16), "board_place")
+
+    # board_win: rising G#4 → C5 → G#5 pluck with a soft shine on the last note.
+    b_a4 = note("b_a4", 4.500, 0.51)
+    b_cs5 = note("b_cs5", 10.750, 0.50)
+    b_a5 = note("b_a5", 9.750, 0.75)
+    shine = peak_normalize(
+        fx(shimmer, "b_shine", "trim", "0", "0.35", "fade", "0", "0.35", "0.24"),
+        "b_shine_n", -21)
+    win = mix("board_win_mix",
+              (peak_normalize(fx(b_a4, "bw1", "trim", "0", "0.30"), "bw1_n", -16), 0.0),
+              (peak_normalize(fx(b_cs5, "bw2", "trim", "0", "0.32"), "bw2_n", -15), 0.10),
+              (peak_normalize(b_a5, "bw3_n", -13), 0.20),
+              (shine, 0.20))
+    encode(peak_normalize(fx(win, "board_win_fx", "reverb", "20", "50", "45"), "board_win_n", -13),
+           "board_win")
 
 
 def curate_portal_transitions() -> None:
@@ -408,6 +480,9 @@ def main() -> None:
         os.remove(old_bed)
         print("  removed music_bed.ogg (retired — replaced by the curated pool)")
 
+    # ── Board-table foley (issue #163) ──────────────────────────────────────
+    curate_board()
+
     # ── Arcade cabinet blips (PRD 11) ───────────────────────────────────────
     # Diegetic 8-bit chiptune: the cabinets are retro arcade machines, so their
     # blips are square-wave synth — intentionally a DIFFERENT family from the
@@ -437,12 +512,30 @@ def main() -> None:
     shutil.rmtree(TMP, ignore_errors=True)
 
 
+# Individually runnable steps for `--only` (see the module docstring).
+STEPS = {
+    "arcade": synth_arcade,
+    "board": curate_board,
+    "portal": curate_portal_transitions,
+    "music": curate_music_pool,
+    "snake": curate_snake_sounds,
+}
+
+
 if __name__ == "__main__":
-    # The arcade blips are project-original oscillator/noise synthesis, so they
-    # can be regenerated on their own without the (untracked) source packs.
-    if len(sys.argv) > 1 and sys.argv[1] == "synth-arcade":
+    argv = sys.argv[1:]
+    if argv and argv[0] == "--only":
+        if len(argv) < 2:
+            sys.exit(f"--only needs a step list (known: {', '.join(sorted(STEPS))})")
         os.makedirs(OUT_DIR, exist_ok=True)
-        synth_arcade()
+        for step in argv[1].split(","):
+            fn = STEPS.get(step)
+            if fn is None:
+                sys.exit(f"unknown step {step!r} (known: {', '.join(sorted(STEPS))})")
+            print(f"step: {step}")
+            fn()
         shutil.rmtree(TMP, ignore_errors=True)
+    elif argv:
+        sys.exit(f"unknown arguments: {' '.join(argv)}")
     else:
         main()

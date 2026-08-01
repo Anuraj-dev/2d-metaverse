@@ -244,9 +244,8 @@ export const arcadeScoreEntrySchema = z.object({
 export type ArcadeScoreEntry = z.infer<typeof arcadeScoreEntrySchema>;
 
 /**
- * `GET /api/v1/arcade/scores/:game` and the `POST` success response: the top-N
- * leaderboard for a cabinet plus the requesting player's personal best (null if
- * they have never scored).
+ * `GET /api/v1/arcade/scores/:game`: the top-N leaderboard for a cabinet plus
+ * the requesting player's personal best (null if they have never scored).
  */
 export const arcadeLeaderboardSchema = z.object({
   game: z.enum(ARCADE_GAMES),
@@ -254,6 +253,16 @@ export const arcadeLeaderboardSchema = z.object({
   best: z.number().int().nullable(),
 });
 export type ArcadeLeaderboard = z.infer<typeof arcadeLeaderboardSchema>;
+
+/**
+ * `POST /api/v1/arcade/scores` success response. `newBest` is decided
+ * atomically with the score write so clients never infer it from racing
+ * leaderboard requests.
+ */
+export const arcadeScoreResultSchema = arcadeLeaderboardSchema.extend({
+  newBest: z.boolean(),
+});
+export type ArcadeScoreResult = z.infer<typeof arcadeScoreResultSchema>;
 
 /**
  * One entry in the pilot community schedule (PRD 25.26). The schedule is a

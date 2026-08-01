@@ -46,7 +46,7 @@ export default class BootScene extends Phaser.Scene {
     // furniture (office interior)
     const furniture = [
       "chair", "chair_side", "table_round", "table_small", "desk", "plant_big", "plant_small",
-      "sofa_small", "water", "clock", "arcade_snake", "arcade_flappy",
+      "sofa_small", "water", "clock", "arcade_snake", "arcade_flappy", "arcade_merge-drop",
       // LimeZu interior props (scripts/gen_limezu_sprites.py). Catalog: docs/art/limezu-catalog.md
       // Only keys the map or WorldScene actually uses are preloaded; maps.test.ts guards both directions.
       "lz_ac", "lz_armchair", "lz_armchair_side", "lz_bench_gold", "lz_bin", "lz_board", "lz_bookshelf",

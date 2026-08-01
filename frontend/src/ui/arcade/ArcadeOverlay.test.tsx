@@ -44,6 +44,14 @@ const board: ArcadeLeaderboard = {
   best: 17,
 };
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 /** Panels stay mounted for their exit animation — openness is an attribute. */
 function panelOpen(name: "pause" | "over" | "auto"): boolean {
   return document.querySelector(`[data-panel="${name}"]`)?.getAttribute("data-open") === "true";
@@ -87,7 +95,7 @@ function stubFullscreen() {
 
 beforeEach(() => {
   net.fetchLeaderboard.mockResolvedValue(board);
-  net.submitScore.mockResolvedValue(board);
+  net.submitScore.mockResolvedValue({ ...board, newBest: false });
   // jsdom has no canvas backend; renderers guard a null context.
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
@@ -345,6 +353,53 @@ describe("ArcadeOverlay auto-pause", () => {
 });
 
 describe("ArcadeOverlay run lifecycle", () => {
+  it("submits immediately, holds terminal feedback, then trusts the server's best verdict", async () => {
+    vi.useFakeTimers();
+    snakeCtl.stub = true;
+    net.submitScore.mockResolvedValue({ ...board, best: 21, newBest: true });
+    const bestEvents: number[] = [];
+    const off = bus.on("arcade-best", () => bestEvents.push(1));
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("stub-game-over"));
+    expect(net.submitScore).toHaveBeenCalledWith("snake", 21);
+    expect(panelOpen("over")).toBe(false);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(bestEvents).toHaveLength(1);
+    act(() => {
+      vi.advanceTimersByTime(449);
+    });
+    expect(panelOpen("over")).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(panelOpen("over")).toBe(true);
+    expect(screen.getByText("New best!")).toBeTruthy();
+    off();
+  });
+
+  it("does not celebrate a late result from a run that was restarted", async () => {
+    snakeCtl.stub = true;
+    const pending = deferred<ArcadeLeaderboard & { newBest: boolean }>();
+    net.submitScore.mockReturnValue(pending.promise);
+    const bestEvents: number[] = [];
+    const off = bus.on("arcade-best", () => bestEvents.push(1));
+    render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("stub-game-over"));
+    fireEvent.click(screen.getByRole("button", { name: "Chill" }));
+    await act(async () => {
+      pending.resolve({ ...board, best: 21, newBest: true });
+    });
+
+    expect(bestEvents).toHaveLength(0);
+    expect(screen.queryByText("New best!")).toBeNull();
+    off();
+  });
+
   it("submits the score and shows the game-over card; Play again restarts", async () => {
     vi.useFakeTimers();
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
@@ -390,6 +445,9 @@ describe("ArcadeOverlay run lifecycle", () => {
     const onClose = vi.fn();
     render(<ArcadeOverlay game="snake" label="Snake" onClose={onClose} />);
     fireEvent.click(screen.getByTestId("stub-game-over"));
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
     expect(panelOpen("over")).toBe(true);
 
     fireEvent.click(screen.getByLabelText("Quit arcade"));
@@ -404,6 +462,7 @@ describe("ArcadeOverlay run lifecycle", () => {
   });
 
   it("does not claim a new best while the previous best is unknown (slow GET)", async () => {
+    vi.useFakeTimers();
     snakeCtl.stub = true;
     let resolveBoard: (b: ArcadeLeaderboard) => void = () => {};
     net.fetchLeaderboard.mockReturnValue(
@@ -415,6 +474,9 @@ describe("ArcadeOverlay run lifecycle", () => {
     // Game over (score 21) lands before the leaderboard GET has resolved:
     // with no KNOWN previous best there must be no "New best!" claim.
     fireEvent.click(screen.getByTestId("stub-game-over"));
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
     expect(panelOpen("over")).toBe(true);
     expect(screen.queryByText("New best!")).toBeNull();
 
@@ -426,11 +488,17 @@ describe("ArcadeOverlay run lifecycle", () => {
     expect(screen.queryByText("New best!")).toBeNull();
   });
 
-  it("claims a new best only against a known previous best", async () => {
+  it("shows a new best only when the submit response says it is authoritative", async () => {
     snakeCtl.stub = true;
+    net.submitScore.mockResolvedValue({ ...board, best: 21, newBest: true });
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
-    await screen.findByText("ada"); // board loaded — best is a known 17
-    fireEvent.click(screen.getByTestId("stub-game-over")); // score 21 > 17
+    await screen.findByText("ada");
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId("stub-game-over"));
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(450);
+    });
     expect(screen.getByText("New best!")).toBeTruthy();
   });
 });
@@ -495,5 +563,24 @@ describe("ArcadeOverlay chrome", () => {
     fireEvent.change(slider, { target: { value: "20" } });
     expect(getSettings().arcadeVolume).toBeCloseTo(0.2);
     expect(getSettings().muteArcade).toBe(false);
+  });
+});
+
+describe("ArcadeOverlay merge-drop registry", () => {
+  // Arcade 2.0: the merge-drop cabinet is registered like any other game — the
+  // overlay resolves it from the shared registry and its renderer mounts on a
+  // canvas, with its own leaderboard fetched for the same REST resource.
+  it("mounts the merge-drop cabinet from the shared registry", async () => {
+    net.fetchLeaderboard.mockResolvedValue({
+      game: "merge-drop",
+      top: [{ username: "ada", score: 42 }],
+      best: 17,
+    });
+    render(<ArcadeOverlay game="merge-drop" label="Stellar Forge" onClose={() => {}} />);
+    expect(await screen.findByText("Your best")).toBeTruthy();
+    expect(screen.getByText("Your best").nextElementSibling?.textContent).toBe("17");
+    expect(net.fetchLeaderboard).toHaveBeenCalledWith("merge-drop");
+    expect(document.querySelector("canvas.arcade-canvas")).toBeTruthy();
+    expect(screen.getByLabelText("Stellar Forge arcade")).toBeTruthy();
   });
 });

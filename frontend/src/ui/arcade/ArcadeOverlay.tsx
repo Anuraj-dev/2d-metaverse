@@ -6,13 +6,17 @@ import {
   type ComponentType,
   type CSSProperties,
 } from "react";
-import { Maximize, Minimize, Volume2, VolumeX, X } from "lucide-react";
+import { Maximize, Minimize, Vibrate, VibrateOff, Volume2, VolumeX, X } from "lucide-react";
 import type { ArcadeGame, ArcadeLeaderboard } from "@metaverse/shared";
 import { toSeed } from "../../game/arcade/prng";
+import type { SnakeLevelId, SnakeSpeedId } from "../../game/arcade/snake";
+import { bus } from "../../game/eventBus";
 import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
+import MergeDropGame from "./MergeDropGame";
+import SnakeOptions from "./SnakeOptions";
 import {
   exitFullscreen,
   fullscreenAvailable,
@@ -26,6 +30,7 @@ import "./arcade.css";
 const GAMES: Record<ArcadeGame, ComponentType<ArcadeGameProps>> = {
   snake: SnakeGame,
   flappy: FlappyGame,
+  "merge-drop": MergeDropGame,
 };
 
 /** Fade-out budget before the parent unmounts us (matches the CSS transition). */
@@ -44,10 +49,13 @@ const CLOSE_FADE_MS = 140;
 type Phase =
   | { k: "playing" }
   | { k: "paused"; reason: "user" | "fs-escape" | "auto" }
+  | { k: "finishing"; score: number }
   | { k: "over"; score: number }
   | { k: "closing" };
 
 const MENU_LENGTH = 3;
+/** Let terminal particles/shake read before the game-over card covers them. */
+const DEATH_FREEZE_MS = 450;
 
 export interface ArcadeOverlayProps {
   game: ArcadeGame;
@@ -104,10 +112,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
    */
   const wantsFullscreenRef = useRef(false);
   const closeTimerRef = useRef<number | null>(null);
-  /** Latest board, read inside callbacks (new-best check) without re-binding. */
-  const boardRef = useRef<ArcadeLeaderboard | null>(null);
-
-  const [seed, setSeed] = useState(() => toSeed(Date.now()));
+  const [run, setRun] = useState(() => ({ id: 1, seed: toSeed(Date.now()) }));
   const [score, setScore] = useState(0);
   const [scoreBump, setScoreBump] = useState(false);
   const [phase, setPhase] = useState<Phase>({ k: "playing" });
@@ -123,29 +128,20 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   // Arcade sound settings (own volume + mute), mirrored from the shared store.
   const [arcadeVolume, setArcadeVolume] = useState(() => getSettings().arcadeVolume);
   const [muteArcade, setMuteArcade] = useState(() => getSettings().muteArcade);
-
-  useEffect(() => {
-    boardRef.current = board;
-  }, [board]);
+  const [arcadeShake, setArcadeShake] = useState(() => getSettings().arcadeShake);
+  const [snakeSpeed, setSnakeSpeed] = useState<SnakeSpeedId>(() => getSettings().snakeSpeed);
+  const [snakeLevel, setSnakeLevel] = useState<SnakeLevelId>(() => getSettings().snakeLevel);
+  const activeRunIdRef = useRef(run.id);
+  const aliveRef = useRef(true);
+  const reqSeqRef = useRef(0);
+  const lastAbsorbedRef = useRef(0);
+  const finishTimerRef = useRef<number | null>(null);
 
   // Brief scale bump on the score number: flip a data attribute alongside the
   // value so the CSS animation restarts even when the score jumps by >1.
   const onScore = useCallback((s: number) => {
     setScore(s);
     setScoreBump((b) => !b);
-  }, []);
-
-  const onGameOver = useCallback((s: number) => {
-    // Only claim a new best against a KNOWN previous best: a loaded board with
-    // `best: null` means "no previous score", so any positive score is a first
-    // best; a still-loading/failed board (`boardRef.current === null`) means we
-    // simply don't know — omit the chip rather than false-flag every score.
-    // (The submit response can't disambiguate either: `best === s` afterwards
-    // could be a new best or a tie with the unseen old one.)
-    const b = boardRef.current;
-    setNewBest(b !== null && (b.best === null ? s > 0 : s > b.best));
-    setLastFinal(s);
-    setPhase({ k: "over", score: s });
   }, []);
 
   // Keep the local sound-control mirror in sync with the shared settings store
@@ -155,6 +151,9 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
       subscribeSettings((s) => {
         setArcadeVolume(s.arcadeVolume);
         setMuteArcade(s.muteArcade);
+        setArcadeShake(s.arcadeShake);
+        setSnakeSpeed(s.snakeSpeed);
+        setSnakeLevel(s.snakeLevel);
       }),
     []
   );
@@ -181,12 +180,14 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     containerRef.current?.focus();
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
-    },
-    []
-  );
+      if (finishTimerRef.current !== null) window.clearTimeout(finishTimerRef.current);
+    };
+  }, []);
 
   const requestFs = useCallback(() => {
     const el = backdropRef.current;
@@ -278,6 +279,10 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     // Set before any teardown so the resulting fullscreenchange cannot
     // resurrect a panel.
     closingRef.current = true;
+    if (finishTimerRef.current !== null) {
+      window.clearTimeout(finishTimerRef.current);
+      finishTimerRef.current = null;
+    }
     setPhase({ k: "closing" });
     if (fullscreenElement() === backdropRef.current) {
       void exitFullscreen().catch(() => {});
@@ -297,19 +302,29 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   }, [requestFs]);
 
   const restart = useCallback(() => {
+    if (finishTimerRef.current !== null) {
+      window.clearTimeout(finishTimerRef.current);
+      finishTimerRef.current = null;
+    }
     setScore(0);
     setScoreBump((b) => !b);
     setNewBest(false);
-    setSeed(toSeed(Date.now()));
+    setRun((current) => {
+      const next = { id: current.id + 1, seed: toSeed(Date.now() + current.id) };
+      activeRunIdRef.current = next.id;
+      return next;
+    });
     setPhase({ k: "playing" });
   }, []);
 
   const openMenu = useCallback((index: number) => {
     setMenuIndex(index);
-    // Never replace `over` with the pause menu: Resume would then "resume" a
+    // Never replace a terminal phase with the pause menu: Resume would then "resume" a
     // terminal game that already fired onGameOver (dead screen).
     setPhase((p) =>
-      p.k === "closing" || p.k === "over" ? p : { k: "paused", reason: "user" }
+      p.k === "closing" || p.k === "finishing" || p.k === "over"
+        ? p
+        : { k: "paused", reason: "user" }
     );
   }, []);
 
@@ -322,31 +337,59 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
     [resume, restart, beginClose]
   );
 
+  /** Ignore responses older than the newest board already shown. */
+  const absorbBoard = useCallback((next: ArcadeLeaderboard, reqId: number) => {
+    if (!aliveRef.current || reqId < lastAbsorbedRef.current) return;
+    lastAbsorbedRef.current = reqId;
+    setBoard(next);
+    setBoardError(false);
+  }, []);
+
   // Load the leaderboard for this cabinet. `board === null` with no error flag
   // is the loading state; a rejected fetch flips the flag.
   const refresh = useCallback(() => {
+    const reqId = ++reqSeqRef.current;
     fetchLeaderboard(game)
-      .then((b) => {
-        setBoard(b);
-        setBoardError(false);
-      })
+      .then((next) => absorbBoard(next, reqId))
       .catch(() => {
+        if (!aliveRef.current || reqId < lastAbsorbedRef.current) return;
         setBoard(null);
         setBoardError(true);
       });
-  }, [game]);
+  }, [game, absorbBoard]);
   useEffect(refresh, [refresh]);
 
-  // On game over, submit the run's score and refresh the board.
-  useEffect(() => {
-    if (phase.k !== "over") return;
-    submitScore(game, phase.score)
-      .then((b) => {
-        setBoard(b);
-        setBoardError(false);
-      })
-      .catch(() => refresh());
-  }, [phase, game, refresh]);
+  const onGameOver = useCallback(
+    (finalScore: number) => {
+      const completedRunId = activeRunIdRef.current;
+      setLastFinal(finalScore);
+      setPhase({ k: "finishing", score: finalScore });
+
+      // Persist immediately. The 450ms terminal hold is presentation only and
+      // cannot lose a score if the player restarts or quits during it.
+      const reqId = ++reqSeqRef.current;
+      submitScore(game, finalScore)
+        .then((result) => {
+          if (!aliveRef.current) return;
+          absorbBoard(result, reqId);
+          if (activeRunIdRef.current !== completedRunId) return;
+          setNewBest(result.newBest);
+          if (result.newBest) bus.emit("arcade-best");
+        })
+        .catch(() => {
+          if (aliveRef.current) refresh();
+        });
+
+      if (finishTimerRef.current !== null) window.clearTimeout(finishTimerRef.current);
+      finishTimerRef.current = window.setTimeout(() => {
+        if (aliveRef.current && activeRunIdRef.current === completedRunId) {
+          setPhase({ k: "over", score: finalScore });
+        }
+        finishTimerRef.current = null;
+      }, DEATH_FREEZE_MS);
+    },
+    [game, absorbBoard, refresh]
+  );
 
   const menuOpen = phase.k === "paused" && phase.reason !== "auto";
   const autoPaused = phase.k === "paused" && phase.reason === "auto";
@@ -368,7 +411,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
           setPhase({ k: "paused", reason: "user" });
         } else if (menuOpen) {
           resume();
-        } else if (phase.k === "over") {
+        } else if (phase.k === "finishing" || phase.k === "over") {
           beginClose();
         }
         // auto-pause: ignored — it clears itself on refocus.
@@ -498,6 +541,19 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
             </div>
             <button
               className="icon-btn arcade-icon-btn"
+              onClick={() => setSettings({ arcadeShake: !arcadeShake })}
+              title="Screen shake"
+              aria-label={arcadeShake ? "Turn screen shake off" : "Turn screen shake on"}
+              aria-pressed={arcadeShake}
+            >
+              {arcadeShake ? (
+                <Vibrate size={16} aria-hidden="true" />
+              ) : (
+                <VibrateOff size={16} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              className="icon-btn arcade-icon-btn"
               onClick={toggleFullscreen}
               disabled={fsPending || !fsAvailable}
               title={
@@ -521,7 +577,9 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
               // The run is already over on the game-over card — there is
               // nothing to lose, so header Quit closes directly instead of
               // raising the pause menu (whose Resume has nothing to resume).
-              onClick={() => (phase.k === "over" ? beginClose() : openMenu(2))}
+              onClick={() =>
+                phase.k === "finishing" || phase.k === "over" ? beginClose() : openMenu(2)
+              }
               aria-label="Quit arcade"
             >
               Quit <X size={16} aria-hidden="true" />
@@ -531,6 +589,20 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
 
         <div className="arcade-body">
           <div className="arcade-stage">
+            {game === "snake" && (
+              <SnakeOptions
+                speed={snakeSpeed}
+                level={snakeLevel}
+                onPickSpeed={(id) => {
+                  setSettings({ snakeSpeed: id });
+                  restart();
+                }}
+                onPickLevel={(id) => {
+                  setSettings({ snakeLevel: id });
+                  restart();
+                }}
+              />
+            )}
             <div className="arcade-scorebar">
               <div className="arcade-scorecell">
                 <span className="arcade-scorelabel">Score</span>
@@ -552,11 +624,12 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
             </div>
 
             <div className="arcade-surface">
-              {/* key=seed remounts the game for a fresh, deterministic run. */}
+              {/* The monotonic id remounts even for same-millisecond restarts. */}
               <Game
-                key={seed}
-                seed={seed}
-                paused={phase.k !== "playing"}
+                key={run.id}
+                seed={run.seed}
+                paused={phase.k !== "playing" && phase.k !== "finishing"}
+                shake={arcadeShake}
                 onScore={onScore}
                 onGameOver={onGameOver}
                 bestScore={best}

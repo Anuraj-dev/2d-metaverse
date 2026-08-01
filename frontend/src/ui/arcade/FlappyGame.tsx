@@ -12,6 +12,8 @@ import {
 import { buildClouds, type Cloud } from "./flappy/scenery";
 import { createFx, stepFx, hitFx, emitFlapPuff, type FlappyFx } from "./flappy/fx";
 import { renderFlappy } from "./flappy/render";
+import { useReducedMotion } from "../reducedMotionBridge";
+import { flappyNearMiss } from "../../game/arcade/feedback";
 import type { ArcadeGameProps } from "./gameTypes";
 
 const {
@@ -39,17 +41,26 @@ const MAX_STEPS_PER_FRAME = 60;
  * height and takes its width from the surface's aspect (clamped), so the game
  * runs true full-screen inside the fullscreen overlay with no letterboxing.
  */
-export default function FlappyGame({ seed, paused, onScore, onGameOver }: ArcadeGameProps) {
+export default function FlappyGame({
+  seed,
+  paused,
+  shake,
+  onScore,
+  onGameOver,
+}: ArcadeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<FlappyState>(initFlappy(seed));
   const fxRef = useRef<FlappyFx>(createFx());
   const overRef = useRef(false);
+  const nearRef = useRef(false);
   const scaleRef = useRef(1);
   /** Mirrors `paused` for the input handlers (same pattern as SnakeGame). */
   const pausedRef = useRef(paused);
   // Seeded from the design size (not stateRef — refs must not be read during
   // render); `fit` rebuilds them for the real surface on mount.
   const cloudsRef = useRef<readonly Cloud[]>(buildClouds(BASE_W, BASE_H - GROUND_H));
+  const reducedMotion = useReducedMotion();
+  const shakeEnabled = shake && !reducedMotion;
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -58,8 +69,15 @@ export default function FlappyGame({ seed, paused, onScore, onGameOver }: Arcade
   const draw = useCallback(() => {
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
-    renderFlappy(ctx, stateRef.current, fxRef.current, cloudsRef.current, scaleRef.current);
-  }, []);
+    renderFlappy(
+      ctx,
+      stateRef.current,
+      fxRef.current,
+      cloudsRef.current,
+      scaleRef.current,
+      shakeEnabled
+    );
+  }, [shakeEnabled]);
 
   /** Fit the world (and the backing store) to the canvas's on-screen box. */
   const fit = useCallback(() => {
@@ -116,6 +134,9 @@ export default function FlappyGame({ seed, paused, onScore, onGameOver }: Arcade
       // rest are the regular point blip.
       bus.emit(next.score % 100 === 0 ? "arcade-milestone" : "arcade-point");
     }
+    const near = flappyNearMiss(next);
+    if (near && !nearRef.current) bus.emit("arcade-near");
+    nearRef.current = near;
     // Crash: thud + flash + shake, then the bird tumbles before the run is
     // reported (the game-over cue lands when it settles, below).
     if (prev.phase === "play" && next.phase !== "play") {

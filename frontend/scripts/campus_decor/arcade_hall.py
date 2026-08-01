@@ -1,15 +1,17 @@
 """Game Arcade hall — LimeZu art pass (games room).
 
-The room is small (19x13 interior) and holds three things, nothing else: the
-two arcade cabinets on the north wall, the two board tables on a parquet mat
-in the south-west, and a minimal snack point against the east wall. Two wall
-sprites dress the cabinet line. The middle is deliberately empty spectator
-floor.
+The room is small (19x13 interior) and holds four things, nothing else: the
+three arcade cabinets on the north wall (Snake, Flappy, Stellar Forge), the two
+board tables on a parquet mat in the south-west, and a minimal snack point
+against the east wall. Two wall sprites dress the cabinet line. The middle is
+deliberately empty spectator floor.
 
 Geometry it has to live with (all frozen):
   interior  x=68..86, y=95..107      door gap  x=78-81 on the north wall (y=94)
-  cabinets  f_arcade_snake @ (71,96), f_arcade_flappy @ (76,96)
-            each pairs with a 2x4 interactable (snake 71-72 / flappy 76-77, y=96-99)
+  cabinets  f_arcade_snake @ (71,96), f_arcade_flappy @ (76,96),
+            f_arcade_merge-drop @ (82,96)
+            each pairs with a 2x4 interactable (snake 71-72 / flappy 76-77 /
+            merge-drop 82-83, y=96-99)
   board     ttt table (72,102) seats (70,102)(74,102);
             c4  table (72,105) seats (70,105)(74,105)
   stage     arcade_zone covers the full interior (not a placement constraint)

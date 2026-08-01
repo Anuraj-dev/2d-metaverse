@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AREA_NAMES } from "@metaverse/shared";
+import { AREA_NAMES, ARCADE_GAMES } from "@metaverse/shared";
 import { MAPS, DEFAULT_MAP, activeMapKey, activeMap } from "./maps";
 import { roomAreasFromObjects, zoneAt, type TiledObjectLike } from "./audioZones";
 
@@ -227,13 +227,13 @@ describe("campus arcade cabinets (PRD 11)", () => {
     return o.properties?.find((p) => p.name === name)?.value;
   }
 
-  const ARCADE_GAMES = new Set(["snake", "flappy"]);
+  const ARCADE_GAME_SET = new Set<string>(ARCADE_GAMES);
 
-  it("places exactly two arcade interactables, each with a valid game id + label", () => {
+  it("places exactly three arcade interactables, each with a valid game id + label", () => {
     const arcades = objects("interactables").filter((o) => prop(o, "interactType") === "arcade");
-    expect(arcades).toHaveLength(2);
+    expect(arcades).toHaveLength(ARCADE_GAME_SET.size);
     const games = arcades.map((o) => prop(o, "game"));
-    expect(new Set(games)).toEqual(ARCADE_GAMES);
+    expect(new Set(games)).toEqual(ARCADE_GAME_SET);
     for (const o of arcades) {
       expect(typeof prop(o, "label")).toBe("string");
       expect(String(prop(o, "label")).length).toBeGreaterThan(0);
@@ -242,7 +242,7 @@ describe("campus arcade cabinets (PRD 11)", () => {
 
   it("backs each cabinet interactable with a solid cabinet sprite", () => {
     const furniture = objects("furniture");
-    for (const game of ARCADE_GAMES) {
+    for (const game of ARCADE_GAME_SET) {
       const cabinet = furniture.find((o) => o.name === `f_arcade_${game}`);
       expect(cabinet, `missing cabinet sprite f_arcade_${game}`).toBeDefined();
       expect(prop(cabinet as TiledObject, "solid")).toBe(true);
@@ -285,7 +285,8 @@ describe("campus arcade hall (PRD 16)", () => {
 
   it("relocates the cabinets together into the southern hall (well clear of the plaza)", () => {
     const cabinets = objects("furniture").filter((o) => o.name.startsWith("f_arcade_"));
-    expect(cabinets.length).toBe(2);
+    // One solid cabinet sprite per registered game (Arcade 2.0 added a third).
+    expect(cabinets.length).toBe(3);
     for (const c of cabinets) {
       // Deep south of spawn (row 44 = 704px) — the cabinets moved out of the
       // old plaza cluster (~row 50) into the far-south hall (row 96 = 1536px).
@@ -890,7 +891,7 @@ describe("furniture texture registration", () => {
     const src = readFileSync(BOOT, "utf-8");
     const block = /const furniture[^=]*=\s*\[([\s\S]*?)\];/.exec(src);
     if (!block?.[1]) throw new Error("BootScene furniture key list not found");
-    return new Set([...block[1].matchAll(/"([a-z0-9_]+)"/g)].map((m) => `f_${m[1] as string}`));
+    return new Set([...block[1].matchAll(/"([a-z0-9_-]+)"/g)].map((m) => `f_${m[1] as string}`));
   };
 
   const mapKeys = (): string[] => {

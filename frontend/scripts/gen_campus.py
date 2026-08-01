@@ -503,7 +503,8 @@ interactables_objs = [
                  "  Cafe (SW)               — social lounge\n"
                  "  Coworking (SE)          — open desk pods\n"
                  "  Mandakini Hostel (south)— Rooms 1, 2, 3\n"
-                 "  Game Arcade (south)     — Snake, Flappy\n"
+                 "  Game Arcade (south)     — Snake, Flappy,\n"
+                 "                            Stellar Forge\n"
                  "                            + Tic-Tac-Toe & Connect 4\n\n"
                  "Tip: head south past coworking for\n"
                  "the Game Arcade — or portal across the park!"
@@ -534,7 +535,7 @@ interactables_objs = [
     # tiles below it: the 32px solid cabinet body clears by row 98, so rows 98-99
     # give a collision-free approach strip that is still inside the findNear rect.
     # `game` selects the module. Snake/Flappy sit west of the north doorway
-    # (x=79-80). (2048 was retired — PRD 25.36.)
+    # (x=79-80), Stellar Forge east of it. (2048 was retired — PRD 25.36.)
     {
         "id": 40010, "name": "arcade_snake",
         "x": 71 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
@@ -553,6 +554,20 @@ interactables_objs = [
             {"name": "interactType", "type": "string", "value": "arcade"},
             {"name": "label",        "type": "string", "value": "Flappy"},
             {"name": "game",         "type": "string", "value": "flappy"},
+        ],
+    },
+    # Stellar Forge (Arcade 2.0) — the flagship cabinet, EAST of the north
+    # doorway (x=79-80) so it gets its own wall run and the doorway descent
+    # stays clear. Same zone shape as its neighbours: the cabinet tile plus the
+    # three open tiles below it (rows 96-99), collision-free from row 98.
+    {
+        "id": 40012, "name": "arcade_merge_drop",
+        "x": 82 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "arcade"},
+            {"name": "label",        "type": "string", "value": "Stellar Forge"},
+            {"name": "game",         "type": "string", "value": "merge-drop"},
         ],
     },
 ]
@@ -673,8 +688,11 @@ campus_decor.apply_district_furniture(_decor_furn_ctx)
 # Arcade Room (south) — solid cabinets lining the north wall; each pairs with an
 # arcade interactable zone at the same tile (see interactables_objs). Plus a
 # little themed dressing so the hall doesn't read empty.
-furn("f_arcade_snake",  71, 96, True)
-furn("f_arcade_flappy", 76, 96, True)
+furn("f_arcade_snake",      71, 96, True)
+furn("f_arcade_flappy",     76, 96, True)
+# Stellar Forge — east of the doorway (cols 78-81 free), west of the snack
+# corner dressing in campus_decor/arcade_hall.py. Same wall run as its neighbours.
+furn("f_arcade_merge-drop", 82, 96, True)
 # Arcade dressing: re-authored in scripts/campus_decor/ (LimeZu art pass).
 
 
