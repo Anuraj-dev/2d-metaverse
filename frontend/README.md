@@ -638,9 +638,11 @@ has two opposite seats: walk up to a seat and press **E** to sit down. Once both
 seats are taken, each player gets a **match offer** — click *Accept match* in the
 HUD panel; when both accept, the match starts. Click a cell (tic-tac-toe) or a
 column (Connect-4) on your turn to play. Standing up (or disconnecting) forfeits
-a live match to the opponent. Passers-by who walk up to a table in progress see
+a live match to the opponent. When a match ends, both players get *Play again* —
+one click re-opens the offer, the opponent accepts, and a fresh board starts
+without anyone standing up. Passers-by who walk up to a table in progress see
 the same board panel read-only (spectating). The world does **not** sleep — you
-stay seated in-world while the panel floats over the HUD.
+stay seated in-world while the panel sits centred over the HUD.
 
 Unlike the arcade cabinets, board tables are **two-player and server-authoritative**:
 
@@ -653,7 +655,9 @@ Unlike the arcade cabinets, board tables are **two-player and server-authoritati
   (`backend/src/boardMatch.ts`) + a side-effect shell (`board-manager.ts`), modeled
   on the meeting machine. The server broadcasts an authoritative `board-update`
   snapshot on every change and rejects illegal/out-of-turn moves with a typed
-  `board-error`.
+  `board-error`. A **rematch is an accept on a finished match** — the same
+  `board-accept` event, one extra branch in the machine, no rematch lifecycle of
+  its own; it needs both seats still held, so a forfeit offers no *Play again*.
 - **Seats reuse the sit mechanics but are their own map layer** (`board_seats`) and
   `WorldScene.boardSeats` array — public plaza seats, ungated by room entry, so they
   never trigger meetings or the minimap room list. The scene emits `near-board-seat`

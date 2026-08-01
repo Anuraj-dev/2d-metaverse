@@ -52,7 +52,9 @@ export default function BoardGrid({ view, onMove }: BoardGridProps) {
           owner !== null ? `is-p${owner + 1}` : "is-empty",
           winning.has(i) ? "is-win" : "",
           isLanding && view.interactive ? "is-landing" : "",
-          view.outcome !== null && owner !== null && !winning.has(i) ? "is-faded" : "",
+          // Recede only to make a winning line stand out. A draw or a forfeit
+          // has no line, so fading every piece there just greys out the board.
+          winning.size > 0 && owner !== null && !winning.has(i) ? "is-faded" : "",
         ]
           .filter(Boolean)
           .join(" ");

@@ -14,6 +14,8 @@
  *     an offer ⇒ the offer is simply canceled.
  *   - A win/draw ⇒ the match is OVER; the finished board stays visible until a
  *     player stands. When both seats empty the table returns to waiting.
+ *   - An accept while OVER (with both seats still held) is a REMATCH: it
+ *     re-opens the offer with the asker already accepted.
  *   - A disconnect is a stand after a grace window (the shell schedules it).
  */
 import type { BoardEndReason, BoardMoveRejection, BoardPlayer, BoardRules, BoardState } from "@metaverse/shared";
@@ -128,6 +130,22 @@ export function boardMatchTransition(
     }
 
     case "accept": {
+      // A rematch: "accept" on a finished match means play again. The first
+      // request re-opens an offer carrying its asker's acceptance, so the
+      // opponent's own accept starts a fresh board down the normal path — one
+      // rule, one event, no separate rematch lifecycle. Needs both seats still
+      // held: a forfeit leaves one empty, and that is a walk-away, not a game.
+      if (match.phase === "over") {
+        const seat = seatOf(occupants, event.playerId);
+        if (seat === null) return reject(state, event.playerId, "not-seated");
+        if (!bothFilled(occupants)) return reject(state, event.playerId, "no-match");
+        const accepted: [boolean, boolean] = [false, false];
+        accepted[seat] = true;
+        return {
+          state: { occupants, match: { phase: "offer", accepted } },
+          effects: [{ type: "changed" }],
+        };
+      }
       if (match.phase !== "offer") return reject(state, event.playerId, "no-match");
       const seat = seatOf(occupants, event.playerId);
       if (seat === null) return reject(state, event.playerId, "not-seated");

@@ -27,23 +27,24 @@
   --board-wood-deep: #6d4523;
 
   position: absolute;
-  /* Parked in the free band along the bottom edge, to the LEFT of the minimap
-     (right: 16px, ~168px wide) and to the right of the chat box — the one
-     region of the HUD nothing else claims. Sitting bottom-aligned rather than
-     stacked above the minimap also keeps the panel entirely clear of the
-     roster's column in the top-right, at any window height. Narrower windows
-     are re-placed at the bottom of this file. */
-  right: 196px;
-  bottom: 16px;
-  max-height: calc(100dvh - 120px);
+  /* Dead centre of the viewport. While you are seated at a table the board IS
+     what you are doing, so it takes the middle of the screen instead of hiding
+     in a corner — and the centre is the one region the HUD leaves free, since
+     the roster, minimap, chat box and control bar all hug the edges. */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-height: calc(100dvh - 32px);
   z-index: 30;
 
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: fit-content;
-  /* Wide enough that two player names sit side by side without truncating. */
-  min-width: 300px;
+  /* Wide enough that two player names sit side by side without truncating.
+     Costs nothing now that the panel sits in open space rather than wedged
+     between the HUD rails. */
+  min-width: 380px;
   max-width: min(92vw, 460px);
   padding: 14px 16px 16px;
 
@@ -551,25 +552,22 @@
 
 /* ── Narrow / short viewports ────────────────────────────────────────────── */
 
-/* Below roughly this width the bottom band is no longer wide enough to hold the
-   panel, the chat box and the control bar side by side — stack it above the
-   minimap in the right rail instead. */
-@media (max-width: 1180px) {
+/* The panel stays centred at every size — only its breathing room changes. On a
+   phone the side rails are gone, so it may use nearly the full width. */
+@media (max-width: 640px) {
   .board-panel {
-    right: 16px;
-    bottom: 184px;
-    max-height: calc(100dvh - 250px);
+    max-width: 94vw;
   }
 }
 
-/* On a phone the right rail is gone entirely: centre the panel above the
-   control bar and let it use the width. */
-@media (max-width: 640px) {
+/* A short window (a laptop with browser chrome, or landscape phone): trim the
+   panel's own padding so the cell clamp — which is already vh-based — keeps the
+   board, the seat chips and the buttons all on screen together. */
+@media (max-height: 620px) {
   .board-panel {
-    right: 50%;
-    bottom: 88px;
-    transform: translateX(50%);
-    max-height: calc(100dvh - 150px);
+    gap: 7px;
+    padding: 10px 12px 12px;
+    max-height: calc(100dvh - 16px);
   }
 }
 

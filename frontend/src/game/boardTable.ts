@@ -54,6 +54,12 @@ export interface BoardTableView {
   outcome: BoardOutcome | null;
   /** Per-seat acceptance during an offer — false outside the offer phase. */
   seatAccepted: [boolean, boolean];
+  /**
+   * The viewer may ask for a rematch: the match is finished and both players
+   * are still seated. False after a forfeit — the opponent already walked, so
+   * there is nobody to play again with.
+   */
+  canReplay: boolean;
 }
 
 /** Seat occupant ids for a table snapshot, by seat index (null when empty). */
@@ -179,6 +185,11 @@ export function boardTableView(snapshot: BoardUpdatePayload, selfId: string): Bo
 
   const canAccept =
     snapshot.phase === "offer" && mySeat !== null && snapshot.seats[mySeat]?.accepted === false;
+  const canReplay =
+    snapshot.phase === "over" &&
+    mySeat !== null &&
+    snapshot.seats[0] != null &&
+    snapshot.seats[1] != null;
   const interactive =
     snapshot.phase === "active" &&
     mySeat !== null &&
@@ -209,6 +220,7 @@ export function boardTableView(snapshot: BoardUpdatePayload, selfId: string): Bo
     activeSeat,
     outcome: outcomeFor(snapshot),
     seatAccepted: [snapshot.seats[0]?.accepted === true, snapshot.seats[1]?.accepted === true],
+    canReplay,
   };
 }
 

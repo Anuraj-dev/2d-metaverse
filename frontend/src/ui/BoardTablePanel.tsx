@@ -94,6 +94,13 @@ export default function BoardTablePanel({
             Accept match
           </button>
         )}
+        {/* A rematch IS an acceptance — the server re-opens the offer from a
+            finished match, so this rides the same event as the accept above. */}
+        {view.canReplay && (
+          <button type="button" className="board-btn board-btn--accept" onClick={onAccept}>
+            Play again
+          </button>
+        )}
         {!view.spectating && (
           <button type="button" className="board-btn" onClick={onLeave}>
             Leave table

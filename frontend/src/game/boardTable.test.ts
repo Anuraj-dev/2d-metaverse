@@ -303,3 +303,40 @@ describe("boardTableView — outcome (seat-indexed, for the result banner)", () 
     expect(boardTableView(abandoned, "a").outcome).toEqual({ kind: "forfeit", winnerSeat: null });
   });
 });
+
+describe("boardTableView — canReplay (the play-again offer)", () => {
+  const seated: [BoardOccupant, BoardOccupant] = [
+    { ...alice, accepted: true },
+    { ...bob, accepted: true },
+  ];
+  const finished = snap({
+    phase: "over",
+    reason: "win",
+    seats: seated,
+    state: { board: [1, 1, 1, 0, 0, 0, 0, 0, 0], turn: 1, result: { status: "won", winner: 1, line: [0, 1, 2] } },
+  });
+
+  it("is offered to both players of a finished match — winner and loser alike", () => {
+    expect(boardTableView(finished, "a").canReplay).toBe(true);
+    expect(boardTableView(finished, "b").canReplay).toBe(true);
+  });
+
+  it("is never offered to a spectator, who has no seat to replay from", () => {
+    expect(boardTableView(finished, "watcher").canReplay).toBe(false);
+  });
+
+  it("is withheld after a forfeit: the opponent already left the table", () => {
+    const forfeit = snap({ phase: "over", reason: "forfeit", seats: [null, seated[1]] });
+    expect(boardTableView(forfeit, "b").canReplay).toBe(false);
+  });
+
+  it("is withheld while a match is still running or being offered", () => {
+    expect(boardTableView(snap({ phase: "offer", seats: seated }), "a").canReplay).toBe(false);
+    const live = snap({
+      phase: "active",
+      seats: seated,
+      state: { board: board9(), turn: 1, result: { status: "in_progress" } },
+    });
+    expect(boardTableView(live, "a").canReplay).toBe(false);
+  });
+});

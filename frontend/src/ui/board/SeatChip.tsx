@@ -45,7 +45,11 @@ export default function SeatChip({
         <BoardMark game={game} seat={seat} />
       </span>
       <span className="board-seat__body">
-        <span className="board-seat__name">{name ?? "Open seat"}</span>
+        {/* A long display name still ellipsizes at the chip's width; the title
+            keeps the whole thing reachable on hover. */}
+        <span className="board-seat__name" title={name ?? undefined}>
+          {name ?? "Open seat"}
+        </span>
         {isMe && name !== null && <span className="board-seat__you">you</span>}
         {offering && name !== null && (
           <span className={`board-seat__ready${accepted ? " is-ready" : ""}`}>
