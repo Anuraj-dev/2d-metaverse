@@ -2,9 +2,9 @@
 > **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-08-01
 
 ## 🚧 In progress / next
-- Campus art restyle and the approved pixel-paper HUD are implemented locally on `art/hostel-room-proof`, with the final dirty changes not yet committed or pushed.
-- Two older Arcade 2.0 PRs are banked and now conflict with `main`: #167 first, then #168. A separate conflict worker is merging current `main` into #167; #168 must wait because the branches overlap arcade/media surfaces.
-- After #167 and #168 are reviewed, green, and merged: merge updated `main` into `art/hostel-room-proof`, resolve its generator/map overlap, push, open the campus/UI PR, request cloud Codex review, and merge only after current-head review plus all required CI including E2E.
+- Campus art restyle and the approved pixel-paper HUD are implemented and committed locally on `art/hostel-room-proof`; the branch is not pushed.
+- Banked Arcade PR #167 is merged as `f766ec1` after exact-head Codex review and fully green CI. PR #168 remains open and conflicts with the new `main`; Raja is handing the audited resolution prompt to a separate Claude worker and will ping when that branch is pushed.
+- After #168 is reviewed, green, and merged: merge updated `main` into `art/hostel-room-proof`, resolve its generator/map overlap, push, open the campus/UI PR, request cloud Codex review, and merge only after current-head review plus all required CI including E2E.
 - Then resume spec 27 tickets #165–#166 (`docs/specs/27-arcade-2.md`, parent #162). Parked: remaining PRD 25 frontier (#107, #117, #108, #118–#121, #124/#125, #127–#132).
 
 ## Status
@@ -35,7 +35,7 @@
 - Full local gates are prohibited on Raja's machine; current-head cloud review plus green GitHub CI (including E2E) are the merge gates.
 
 ## Gotchas
-- PRs #167 and #168 are sibling branches, not a clean stack. Reconcile/merge #167 before resolving #168, then update the campus branch from the resulting `main`.
+- PR #168 must merge current `origin/main` (`f766ec1` at this checkpoint) into its branch without force-pushing. Preserve #167's authoritative `newBest`, Snake rework, live shake/reduced-motion, and board foley while transplanting Stellar Forge.
 - A solid prop body is bottom-anchored and extends above its authored tile. Connectivity is not enough: E2E helpers walk straight swept corridors, so map changes require the real E2E job.
 - `WorldScene` draws a fallback room table only when no authored solid occupies the seat centroid; preserve that guard.
 - Generated campus artifacts must come from `cd frontend && python3 scripts/gen_campus.py`, never hand edits.
