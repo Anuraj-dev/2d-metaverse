@@ -308,6 +308,29 @@ describe("danger line and game over", () => {
     expect(high.stackHeight).toBe(1);
   });
 
+  it("does not spike the heat meter while a fresh drop is still falling", () => {
+    // A real release starts at holdY, above the danger line. Counting it would
+    // clamp stackHeight to 1 for the whole fall and then recede on landing.
+    let s = stepMergeDrop(initMergeDrop(3), drop(130));
+    expect(s.bodies).toHaveLength(1);
+    let sawFallingExclusion = false;
+    // While the fresh (non-fused) body is still falling, the meter stays empty.
+    for (let i = 0; i < 40; i++) {
+      s = stepMergeDrop(s);
+      const b = at(s.bodies, 0);
+      const vy = b.y - b.py;
+      if (!b.fused && vy > 0.8) {
+        expect(s.stackHeight).toBe(0);
+        sawFallingExclusion = true;
+      }
+    }
+    expect(sawFallingExclusion).toBe(true);
+    // Once it has settled onto the floor the meter reflects the low pile.
+    s = fastForward(s, 30);
+    expect(s.stackHeight).toBeGreaterThan(0);
+    expect(s.stackHeight).toBeLessThan(0.25);
+  });
+
   it("grows the stack-height readout monotonically as the column fills", () => {
     let s = initMergeDrop(5);
     let previous = 0;

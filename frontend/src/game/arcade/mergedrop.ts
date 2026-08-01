@@ -246,10 +246,11 @@ export interface MergeDropState {
   readonly over: boolean;
   readonly nextId: number;
   /**
-   * 0..1 — how full the well is: the tallest body's top edge measured from the
-   * floor toward the danger line (1 = the stack has reached the line). This is
-   * the readout the heat meter shows, so the player gets continuous feedback
-   * long before `danger` starts ticking.
+   * 0..1 — how full the well is: the tallest piled body's top edge measured
+   * from the floor toward the danger line (1 = the pile has reached the line).
+   * Bodies still falling through the upper well (fresh drops) are excluded so
+   * a release cannot flash the heat meter full. Continuous feedback still
+   * arrives long before `danger` starts ticking.
    */
   readonly stackHeight: number;
   /** 0..1 — how close the tallest danger-zone body is to ending the run. */
@@ -696,10 +697,19 @@ export function stepMergeDrop(
   // ── 6. Danger line / game over ────────────────────────────────────────────
   let over = false;
   let danger = 0;
+  // Heat meter: only bodies that have joined the pile. A fresh drop starts at
+  // holdY (above the danger line); counting it would spike the meter to full
+  // for the whole fall and then recede on landing. Exclude bodies that are
+  // still falling through the upper well (downward velocity + top still above
+  // the danger line). Merged/settled bodies always count.
   let stackTop = config.height;
   for (const b of survivors) {
     const top = b.y - b.r;
-    if (top < stackTop) stackTop = top;
+    const vy = b.y - b.py;
+    // Fresh drops only: merged bodies spawn mid-pile and should count at once.
+    // Any non-fused body still moving downward is still joining the pile.
+    const fallingThrough = !b.fused && vy > 0.8;
+    if (!fallingThrough && top < stackTop) stackTop = top;
     const settled = tick - b.bornTick >= config.settleTicks;
     if (settled && top < config.dangerY) b.aboveTicks = b.aboveTicks + 1;
     else b.aboveTicks = 0;

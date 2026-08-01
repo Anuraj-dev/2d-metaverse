@@ -207,6 +207,7 @@ export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<MergeDropState>(initMergeDrop(seed));
   const overRef = useRef(false);
+  const pausedRef = useRef(paused);
   // Live shake preference × reduced-motion — same contract as Snake/Flappy: a
   // mid-run settings change must suppress canvas shake without remounting.
   const reducedMotion = useReducedMotion();
@@ -741,6 +742,17 @@ export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver
     shakeEnabledRef.current = shakeEnabled;
   }, [shakeEnabled]);
 
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (!paused) return;
+    // A release that arrives while the pause menu is up must not bank aim
+    // remainder for the resume; drop any held/queued movement immediately.
+    heldKeysRef.current.left.clear();
+    heldKeysRef.current.right.clear();
+    latchRef.current = tapBlur();
+    dropRef.current = false;
+  }, [paused]);
+
   // Live preference: kill residual shake energy the moment the toggle or
   // reduced-motion preference flips, then repaint so the offset disappears
   // without waiting for the next tick.
@@ -754,6 +766,7 @@ export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver
     const dirFor = (key: string): -1 | 1 | 0 =>
       key === "arrowleft" || key === "a" ? -1 : key === "arrowright" || key === "d" ? 1 : 0;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (pausedRef.current) return;
       const key = e.key.toLowerCase();
       const dir = dirFor(key);
       if (dir !== 0) {
@@ -767,12 +780,13 @@ export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver
       e.preventDefault();
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      // Always clear physical-key tracking, but never bank remainder while
+      // paused — the pause effect already wiped the latch.
       const key = e.key.toLowerCase();
       const dir = dirFor(key);
       if (dir === 0) return;
-      // Release edge only when the LAST held alias comes up.
       const held = dir === -1 ? heldKeysRef.current.left : heldKeysRef.current.right;
-      if (held.delete(key) && held.size === 0) {
+      if (held.delete(key) && held.size === 0 && !pausedRef.current) {
         latchRef.current = tapKeyUp(latchRef.current, dir);
       }
     };
