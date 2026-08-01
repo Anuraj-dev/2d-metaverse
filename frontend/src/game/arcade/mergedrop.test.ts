@@ -313,18 +313,17 @@ describe("danger line and game over", () => {
     // clamp stackHeight to 1 for the whole fall and then recede on landing.
     let s = stepMergeDrop(initMergeDrop(3), drop(130));
     expect(s.bodies).toHaveLength(1);
-    let sawFallingExclusion = false;
-    // While the fresh (non-fused) body is still falling, the meter stays empty.
+    // Collect stackHeight samples only while the fresh body is still falling;
+    // assert them outside the loop (no conditional expects).
+    const fallingHeights: number[] = [];
     for (let i = 0; i < 40; i++) {
       s = stepMergeDrop(s);
       const b = at(s.bodies, 0);
       const vy = b.y - b.py;
-      if (!b.fused && vy > 0.8) {
-        expect(s.stackHeight).toBe(0);
-        sawFallingExclusion = true;
-      }
+      if (!b.fused && vy > 0.8) fallingHeights.push(s.stackHeight);
     }
-    expect(sawFallingExclusion).toBe(true);
+    expect(fallingHeights.length).toBeGreaterThan(0);
+    expect(fallingHeights.every((h) => h === 0)).toBe(true);
     // Once it has settled onto the floor the meter reflects the low pile.
     s = fastForward(s, 30);
     expect(s.stackHeight).toBeGreaterThan(0);
