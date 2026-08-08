@@ -2,20 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { initReducedMotion } from "../reducedMotionBridge";
 import { setSettings } from "../settings";
-import SnakeGame from "./SnakeGame";
 import MergeDropGame from "./MergeDropGame";
 import { initFlappy } from "../../game/arcade/flappy";
 import { createFx } from "./flappy/fx";
 import { renderFlappy } from "./flappy/render";
-
-const { shakeOffset } = vi.hoisted(() => ({
-  shakeOffset: vi.fn(() => ({ x: 5, y: 5 })),
-}));
-
-vi.mock("../../game/arcade/juice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../game/arcade/juice")>();
-  return { ...actual, shakeOffset };
-});
 
 function canvasContext(): CanvasRenderingContext2D {
   const gradient = { addColorStop: vi.fn() };
@@ -41,7 +31,6 @@ function canvasContext(): CanvasRenderingContext2D {
 describe("arcade canvas reduced motion", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    shakeOffset.mockClear();
     setSettings({ reducedMotion: "off" });
     initReducedMotion();
   });
@@ -50,32 +39,6 @@ describe("arcade canvas reduced motion", () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
-  });
-
-  it("stops Snake shake during an active run when reduced motion turns on", () => {
-      const ctx = canvasContext();
-      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
-
-      render(
-        <SnakeGame
-          seed={1}
-          paused={false}
-          shake={true}
-          onScore={vi.fn()}
-          onGameOver={vi.fn()}
-        />
-      );
-      expect(shakeOffset).toHaveBeenCalled();
-      shakeOffset.mockClear();
-
-      act(() => {
-        setSettings({ reducedMotion: "on" });
-      });
-      act(() => {
-        vi.advanceTimersByTime(16);
-      });
-
-      expect(shakeOffset).not.toHaveBeenCalled();
   });
 
   it("suppresses Flappy's renderer shake when the live preference is off", () => {

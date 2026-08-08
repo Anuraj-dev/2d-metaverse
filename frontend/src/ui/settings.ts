@@ -4,8 +4,6 @@
  * read one source of truth. No backend.
  */
 import type { ReducedMotionSetting } from "../game/reducedMotion";
-// Type-only: erased at build, so the arcade module never enters the entry chunk.
-import type { SnakeLevelId, SnakeSpeedId } from "../game/arcade/snake";
 
 export interface Settings {
   masterVolume: number; // 0..1, master gain over every channel
@@ -23,10 +21,8 @@ export interface Settings {
   reducedMotion: ReducedMotionSetting;
   // Issue #163 (arcade juice). The shake toggle is an explicit off switch for
   // the mini-games' screen kick, independent of `reducedMotion` (which also
-  // suppresses it); the two Snake fields persist the cabinet's option pickers.
+  // suppresses it).
   arcadeShake: boolean;
-  snakeSpeed: SnakeSpeedId;
-  snakeLevel: SnakeLevelId;
 }
 
 const KEY = "mv:settings";
@@ -47,8 +43,6 @@ const DEFAULTS: Settings = {
   tabFlash: true,
   reducedMotion: "system",
   arcadeShake: true,
-  snakeSpeed: "normal",
-  snakeLevel: "open",
 };
 
 function load(): Settings {

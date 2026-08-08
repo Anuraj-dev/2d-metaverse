@@ -382,6 +382,7 @@ describe("ArcadeOverlay run lifecycle", () => {
   });
 
   it("does not celebrate a late result from a run that was restarted", async () => {
+    vi.useFakeTimers();
     snakeCtl.stub = true;
     const pending = deferred<ArcadeLeaderboard & { newBest: boolean }>();
     net.submitScore.mockReturnValue(pending.promise);
@@ -390,7 +391,10 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
 
     fireEvent.click(screen.getByTestId("stub-game-over"));
-    fireEvent.click(screen.getByRole("button", { name: "Chill" }));
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Play again" }));
     await act(async () => {
       pending.resolve({ ...board, best: 21, newBest: true });
     });
@@ -405,8 +409,8 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
     // Snake sits in a difficulty menu until started — clicking a difficulty starts the run.
     fireEvent.click(screen.getByRole("button", { name: /normal/i }));
-    // Heading right on the default board walks into the wall, then the death
-    // animation (~0.83s) settles before the overlay shows Game over.
+    // Heading right on the default board walks into the wall; the renderer
+    // submits immediately and the overlay holds its terminal card briefly.
     await act(async () => {
       vi.advanceTimersByTime(10_000);
     });

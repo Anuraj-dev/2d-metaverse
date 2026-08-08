@@ -9,14 +9,12 @@ import {
 import { Maximize, Minimize, Vibrate, VibrateOff, Volume2, VolumeX, X } from "lucide-react";
 import type { ArcadeGame, ArcadeLeaderboard } from "@metaverse/shared";
 import { toSeed } from "../../game/arcade/prng";
-import type { SnakeLevelId, SnakeSpeedId } from "../../game/arcade/snake";
 import { bus } from "../../game/eventBus";
 import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
 import MergeDropGame from "./MergeDropGame";
-import SnakeOptions from "./SnakeOptions";
 import {
   exitFullscreen,
   fullscreenAvailable,
@@ -129,8 +127,6 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const [arcadeVolume, setArcadeVolume] = useState(() => getSettings().arcadeVolume);
   const [muteArcade, setMuteArcade] = useState(() => getSettings().muteArcade);
   const [arcadeShake, setArcadeShake] = useState(() => getSettings().arcadeShake);
-  const [snakeSpeed, setSnakeSpeed] = useState<SnakeSpeedId>(() => getSettings().snakeSpeed);
-  const [snakeLevel, setSnakeLevel] = useState<SnakeLevelId>(() => getSettings().snakeLevel);
   const activeRunIdRef = useRef(run.id);
   const aliveRef = useRef(true);
   const reqSeqRef = useRef(0);
@@ -152,8 +148,6 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
         setArcadeVolume(s.arcadeVolume);
         setMuteArcade(s.muteArcade);
         setArcadeShake(s.arcadeShake);
-        setSnakeSpeed(s.snakeSpeed);
-        setSnakeLevel(s.snakeLevel);
       }),
     []
   );
@@ -589,20 +583,6 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
 
         <div className="arcade-body">
           <div className="arcade-stage">
-            {game === "snake" && (
-              <SnakeOptions
-                speed={snakeSpeed}
-                level={snakeLevel}
-                onPickSpeed={(id) => {
-                  setSettings({ snakeSpeed: id });
-                  restart();
-                }}
-                onPickLevel={(id) => {
-                  setSettings({ snakeLevel: id });
-                  restart();
-                }}
-              />
-            )}
             <div className="arcade-scorebar">
               <div className="arcade-scorecell">
                 <span className="arcade-scorelabel">Score</span>
