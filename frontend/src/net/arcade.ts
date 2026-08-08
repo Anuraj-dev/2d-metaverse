@@ -7,11 +7,16 @@
  * rather than throwing — the games are fully playable offline, scores just do
  * not persist.
  */
-import type { ArcadeGame, ArcadeLeaderboard, ArcadeScoreResult } from "@metaverse/shared";
+import {
+  scoreGameForArcadeGame,
+  type ArcadeGame,
+  type ArcadeLeaderboard,
+  type ArcadeScoreResult,
+} from "@metaverse/shared";
 import { authToken, serverBase, USE_MOCK } from "./auth";
 
 function emptyBoard(game: ArcadeGame): ArcadeLeaderboard {
-  return { game, top: [], best: null };
+  return { game: scoreGameForArcadeGame(game), top: [], best: null };
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T | null> {
@@ -29,7 +34,8 @@ async function request<T>(path: string, init: RequestInit): Promise<T | null> {
 
 /** Fetch the top-N leaderboard for a cabinet plus the caller's personal best. */
 export async function fetchLeaderboard(game: ArcadeGame): Promise<ArcadeLeaderboard> {
-  const board = await request<ArcadeLeaderboard>(`/api/v1/arcade/scores/${game}`, { method: "GET" });
+  const scoreGame = scoreGameForArcadeGame(game);
+  const board = await request<ArcadeLeaderboard>(`/api/v1/arcade/scores/${scoreGame}`, { method: "GET" });
   return board ?? emptyBoard(game);
 }
 
@@ -38,9 +44,10 @@ export async function submitScore(
   game: ArcadeGame,
   score: number
 ): Promise<ArcadeScoreResult> {
+  const scoreGame = scoreGameForArcadeGame(game);
   const board = await request<ArcadeScoreResult>(`/api/v1/arcade/scores`, {
     method: "POST",
-    body: JSON.stringify({ game, score }),
+    body: JSON.stringify({ game: scoreGame, score }),
   });
   return board ?? { ...emptyBoard(game), best: score, newBest: score > 0 };
 }

@@ -3,7 +3,7 @@ import rateLimit, { type RateLimitInfo } from "express-rate-limit";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { z } from "zod";
 import {
-  ARCADE_GAMES,
+  ARCADE_SCORE_GAMES,
   LIMITS,
   RATE_LIMITS,
   arcadeScoreSchema,
@@ -12,7 +12,7 @@ import {
   credentialsSchema,
   liveKitSchema,
   reportCreateSchema,
-  type ArcadeGame,
+  type ArcadeScoreGame,
   type ArcadeLeaderboard,
   type ArcadeScoreResult,
   type BlockAck,
@@ -151,8 +151,8 @@ const blockLimiter = rateLimit({
   },
 });
 
-function isArcadeGame(value: string): value is ArcadeGame {
-  return (ARCADE_GAMES as readonly string[]).includes(value);
+function isArcadeScoreGame(value: string): value is ArcadeScoreGame {
+  return (ARCADE_SCORE_GAMES as readonly string[]).includes(value);
 }
 
 api.post("/signup", authLimiter, async (request, response) => {
@@ -247,7 +247,7 @@ api.post("/arcade/scores", arcadeScoreLimiter, requireAuth, async (request, resp
 api.get("/arcade/scores/:game", arcadeLeaderboardLimiter, requireAuth, async (request, response) => {
   const raw = Array.isArray(request.params.game) ? request.params.game[0] : request.params.game;
   const game = raw ?? "";
-  if (!isArcadeGame(game)) {
+  if (!isArcadeScoreGame(game)) {
     response.status(404).json({ error: "unknown-game" });
     return;
   }

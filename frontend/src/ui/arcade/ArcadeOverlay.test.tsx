@@ -34,6 +34,7 @@ vi.mock("./SnakeGame", async (importOriginal) => {
 });
 
 import ArcadeOverlay from "./ArcadeOverlay";
+import { TERMINAL_HOLD_MS } from "./terminalHold";
 import { bus } from "../../game/eventBus";
 import { getSettings, setSettings } from "../settings";
 import type { ArcadeGameProps } from "./gameTypes";
@@ -370,7 +371,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     });
     expect(bestEvents).toHaveLength(1);
     act(() => {
-      vi.advanceTimersByTime(449);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake - 1);
     });
     expect(panelOpen("over")).toBe(false);
     act(() => {
@@ -381,7 +382,25 @@ describe("ArcadeOverlay run lifecycle", () => {
     off();
   });
 
+  it("shows the terminal card immediately when reduced motion is enabled", () => {
+    vi.useFakeTimers();
+    snakeCtl.stub = true;
+    setSettings({ reducedMotion: "on" });
+    try {
+      render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+      fireEvent.click(screen.getByTestId("stub-game-over"));
+      expect(panelOpen("over")).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      expect(panelOpen("over")).toBe(true);
+    } finally {
+      setSettings({ reducedMotion: "system" });
+    }
+  });
+
   it("does not celebrate a late result from a run that was restarted", async () => {
+    vi.useFakeTimers();
     snakeCtl.stub = true;
     const pending = deferred<ArcadeLeaderboard & { newBest: boolean }>();
     net.submitScore.mockReturnValue(pending.promise);
@@ -390,7 +409,10 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
 
     fireEvent.click(screen.getByTestId("stub-game-over"));
-    fireEvent.click(screen.getByRole("button", { name: "Chill" }));
+    act(() => {
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Play again" }));
     await act(async () => {
       pending.resolve({ ...board, best: 21, newBest: true });
     });
@@ -405,8 +427,8 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
     // Snake sits in a difficulty menu until started — clicking a difficulty starts the run.
     fireEvent.click(screen.getByRole("button", { name: /normal/i }));
-    // Heading right on the default board walks into the wall, then the death
-    // animation (~0.83s) settles before the overlay shows Game over.
+    // Heading right on the default board walks into the wall; the renderer
+    // submits immediately and the overlay holds its terminal card briefly.
     await act(async () => {
       vi.advanceTimersByTime(10_000);
     });
@@ -446,7 +468,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={onClose} />);
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     expect(panelOpen("over")).toBe(true);
 
@@ -475,7 +497,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     // with no KNOWN previous best there must be no "New best!" claim.
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     expect(panelOpen("over")).toBe(true);
     expect(screen.queryByText("New best!")).toBeNull();
@@ -497,7 +519,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     fireEvent.click(screen.getByTestId("stub-game-over"));
     await act(async () => {
       await Promise.resolve();
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     expect(screen.getByText("New best!")).toBeTruthy();
   });

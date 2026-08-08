@@ -29,6 +29,25 @@ export const ARCADE_GAMES = ["snake", "flappy", "merge-drop"] as const;
 export type ArcadeGame = (typeof ARCADE_GAMES)[number];
 
 /**
+ * Score namespaces accepted by REST. `snake-v2` is separate from legacy
+ * `snake` rows so independent frontend/backend deployments cannot mix the
+ * restored cabinet's 10-point scale with historical 1-point scores.
+ */
+export const ARCADE_SCORE_GAMES = ["snake", "snake-v2", "flappy", "merge-drop"] as const;
+export type ArcadeScoreGame = (typeof ARCADE_SCORE_GAMES)[number];
+
+export const SCORE_GAME_BY_ARCADE_GAME: Readonly<Record<ArcadeGame, ArcadeScoreGame>> = {
+  snake: "snake-v2",
+  flappy: "flappy",
+  "merge-drop": "merge-drop",
+};
+
+/** Resolve the current score namespace for a cabinet without changing its map id. */
+export function scoreGameForArcadeGame(game: ArcadeGame): ArcadeScoreGame {
+  return SCORE_GAME_BY_ARCADE_GAME[game];
+}
+
+/**
  * Board-game tables (PRD 11 phase 2). Each table is a two-seat, server-
  * authoritative match of one board game. This registry is the single source of
  * truth for which tables exist and which game each runs: the campus map authors

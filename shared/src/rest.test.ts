@@ -291,6 +291,7 @@ describe("operational report", () => {
 describe("arcade score submission", () => {
   it("accepts a valid score for a known game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake", score: 12 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "snake-v2", score: 12 }).success).toBe(true);
     expect(arcadeScoreSchema.safeParse({ game: "flappy", score: 0 }).success).toBe(true);
     expect(arcadeScoreSchema.safeParse({ game: "merge-drop", score: 4096 }).success).toBe(true);
   });
@@ -360,6 +361,7 @@ describe("arcade leaderboard response", () => {
   it("requires an authoritative improvement verdict on score submissions", () => {
     const result = { game: "snake", top: [], best: 9, newBest: true };
     expect(arcadeScoreResultSchema.safeParse(result).success).toBe(true);
+    expect(arcadeScoreResultSchema.safeParse({ ...result, game: "snake-v2" }).success).toBe(true);
     expect(arcadeScoreResultSchema.safeParse({ ...result, newBest: "yes" }).success).toBe(false);
     const { newBest: _newBest, ...missingVerdict } = result;
     expect(arcadeScoreResultSchema.safeParse(missingVerdict).success).toBe(false);
