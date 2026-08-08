@@ -56,13 +56,13 @@ describe("Snake renderer interpolation", () => {
     expect(interpolateSnakeBody(previous, current, 0.25, true)).toBe(current);
   });
 
-  it("turns the rendered heading to the newest legal queued direction", () => {
+  it("turns the rendered heading to the reducer's next legal queued direction", () => {
     expect(renderHeading("right", [])).toBe("right");
     expect(renderHeading("right", ["up"])).toBe("up");
-    expect(renderHeading("right", ["up", "left"])).toBe("left");
+    expect(renderHeading("right", ["up", "left"])).toBe("up");
     // A queued 180 is ignored — the reducer will discard it too.
     expect(renderHeading("right", ["left"])).toBe("right");
-    expect(renderHeading("up", ["left", "down"])).toBe("down");
+    expect(renderHeading("up", ["left", "down"])).toBe("left");
   });
 
   it("clamps interpolation alpha to the renderable range", () => {

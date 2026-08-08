@@ -13,12 +13,12 @@ import { createFoodAnim } from "./snake/food";
 import { createFx, startGameOverFx, stepGameOverFx } from "./snake/fx";
 import {
   GLIDE_MS,
-  OPPOSITE,
   interpolateSnakeBody,
   isSingleTickBodyTransition,
   renderHeading,
 } from "./snake/interp";
 import { renderSnake } from "./snake/render";
+import { useReducedMotion } from "../reducedMotionBridge";
 import type { ArcadeGameProps } from "./gameTypes";
 
 const MAX_DPR = 2;
@@ -112,9 +112,8 @@ export default function SnakeGame({
   onGameOver,
   bestScore = null,
 }: ArcadeGameProps) {
-  // The faithful white renderer has no screen-shake layer. Keep accepting the
-  // live shared prop so the overlay can pass one contract to every cabinet.
-  void shake;
+  const reducedMotion = useReducedMotion();
+  const shakeEnabled = shake && !reducedMotion;
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<SnakeState | null>(null);
@@ -189,9 +188,10 @@ export default function SnakeGame({
       performance.now(),
       cellRef.current,
       body,
-      renderHeading(motion?.dir ?? s.dir, s.dirQueue)
+      renderHeading(motion?.dir ?? s.dir, s.dirQueue),
+      shakeEnabled,
     );
-  }, [seed, difficulty, board]);
+  }, [seed, difficulty, board, shakeEnabled]);
 
   /**
    * Place the canvas inside the stage box. Two jobs:
@@ -464,16 +464,7 @@ export default function SnakeGame({
       if (!dir || !stateRef.current) return;
       e.preventDefault();
       const st = stateRef.current;
-      const heading = renderHeading(st.dir, st.dirQueue);
       stateRef.current = snakeInput(st, dir);
-      // A real turn commits on the very next frame instead of waiting out the
-      // rest of the tick — that input-to-movement gap read as control lag.
-      if (st.alive && dir !== heading && dir !== OPPOSITE[heading]) {
-        accMsRef.current = Math.max(
-          accMsRef.current,
-          1000 / Math.max(0.5, st.speed)
-        );
-      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

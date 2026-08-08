@@ -184,6 +184,36 @@ function refreshBonus(cell: Cell, remainingMs: number): BonusFood {
   };
 }
 
+/** Find the first queued input that is a genuine turn from the current heading. */
+function firstQueuedTurnIndex(dir: Dir, dirQueue: readonly Dir[]): number {
+  for (let index = 0; index < dirQueue.length; index += 1) {
+    const queued = dirQueue[index];
+    if (queued !== undefined && queued !== dir && queued !== OPPOSITE[dir]) return index;
+  }
+  return -1;
+}
+
+/** Preview the first actionable queued direction without changing state. */
+export function previewSnakeDir(
+  dir: Dir,
+  dirQueue: readonly Dir[]
+): Dir {
+  const index = firstQueuedTurnIndex(dir, dirQueue);
+  return index >= 0 ? (dirQueue[index] ?? dir) : dir;
+}
+
+/** Drop leading queued inputs that are not actionable for an immediate turn. */
+function discardLeadingQueuedNoops(state: SnakeState): SnakeState {
+  const index = firstQueuedTurnIndex(state.dir, state.dirQueue);
+  if (index <= 0) return state;
+  return { ...state, dirQueue: state.dirQueue.slice(index) };
+}
+
+/** Whether a queued input should make the next frame commit a movement step. */
+function hasQueuedTurn(state: SnakeState): boolean {
+  return firstQueuedTurnIndex(state.dir, state.dirQueue) >= 0;
+}
+
 /** Free cells of the board in row-major order (the seeded pick indexes this). */
 function freeCells(
   width: number,
@@ -211,19 +241,19 @@ function placeFood(
   height: number,
   occupied: readonly Cell[],
   seed: number
-): { food: Cell; rngSeed: number } {
+): { food: Cell; rngSeed: number; exhausted: boolean } {
   const free = freeCells(width, height, occupied);
   if (free.length === 0) {
     const head = occupied[0] ?? { x: 0, y: 0 };
-    return { food: head, rngSeed: seed };
+    return { food: head, rngSeed: seed, exhausted: true };
   }
   const { value, seed: rngSeed } = nextInt(seed, free.length);
   const food = free[value];
   if (!food) {
     const fallback = free[0] ?? { x: 0, y: 0 };
-    return { food: fallback, rngSeed };
+    return { food: fallback, rngSeed, exhausted: false };
   }
-  return { food, rngSeed };
+  return { food, rngSeed, exhausted: false };
 }
 
 function placeBonus(
@@ -429,7 +459,10 @@ export function snakeTick(state: SnakeState): SnakeStep {
         foodOccupied(body, bonus),
         rngSeed
       );
-      food = placed.food;
+      // If the active bonus owns the only remaining free cell, keep the normal
+      // food there too. The overlap path awards both, and after bonus expiry the
+      // normal food remains visible instead of being hidden inside the body.
+      food = placed.exhausted && bonus ? bonus.cell : placed.food;
       rngSeed = placed.rngSeed;
     }
   } else {
@@ -504,6 +537,7 @@ export function snakeFrame(
   let s = state;
   let acc = Math.max(0, accMs);
   let remaining = dtMs;
+  let immediateTurnCommitted = false;
   // Bound catch-up so a multi-second stall cannot spin for hundreds of ticks.
   let ticks = 0;
   const maxTicks = 60;
@@ -513,10 +547,12 @@ export function snakeFrame(
 
     // Movement tick is already due — apply it before more wall time so a
     // pickup sees the value at tick time (not after end-of-frame decay).
-    if (acc + 1e-9 >= interval) {
+    const turnReady = !immediateTurnCommitted && hasQueuedTurn(s);
+    if (turnReady || acc + 1e-9 >= interval) {
+      if (turnReady) immediateTurnCommitted = true;
       acc -= interval;
       if (acc < 0) acc = 0;
-      const stepped = snakeTick(s);
+      const stepped = snakeTick(turnReady ? discardLeadingQueuedNoops(s) : s);
       s = stepped.state;
       for (const e of stepped.events) events.push(e);
       ticks += 1;

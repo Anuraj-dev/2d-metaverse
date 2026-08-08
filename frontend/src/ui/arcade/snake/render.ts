@@ -27,7 +27,8 @@ export function renderSnake(
   nowMs: number,
   cell: number,
   body: readonly Cell[] = state.body,
-  dir: Dir = state.dir
+  dir: Dir = state.dir,
+  shakeEnabled = true,
 ): void {
   const boardW = state.width * cell;
   const boardH = state.height * cell;
@@ -38,7 +39,7 @@ export function renderSnake(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, boardW, boardH);
 
-  const shake = shakeOffset(fx, cell);
+  const shake = shakeOffset(fx, cell, shakeEnabled);
   ctx.save();
   ctx.translate(shake.x, shake.y);
 

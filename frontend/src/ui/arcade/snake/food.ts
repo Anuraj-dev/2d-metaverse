@@ -70,7 +70,7 @@ export function drawBonusFood(
   // to the live cell, but keep the orb inside the ONE cell its eat-hitbox
   // occupies — a spill-over orb reads as edible from the side when it isn't.
   const size = Math.min(
-    cell * 0.7,
+    cell * 0.45,
     Math.max(cell * 0.2, (bonus.size / DESIGN_CELL) * cell * 0.45)
   );
 

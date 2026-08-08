@@ -1,4 +1,4 @@
-import type { Cell, Dir } from "../../../game/arcade/snake";
+import { previewSnakeDir, type Cell, type Dir } from "../../../game/arcade/snake";
 
 export function clampUnit(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -11,25 +11,12 @@ export function clampUnit(value: number): number {
  */
 export const GLIDE_MS = 60;
 
-export const OPPOSITE: Readonly<Record<Dir, Dir>> = {
-  up: "down",
-  down: "up",
-  left: "right",
-  right: "left",
-};
-
 /**
- * Heading for the head/eyes: resolve the queued turns the same way the reducer
- * will (each applies unless it 180s the one before it), so the face answers a
- * keypress on the very next frame instead of waiting for the tick that commits
- * the turn.
+ * Heading for the head/eyes: use the pure reducer's queued-turn preview so the
+ * face answers a keypress on the very next frame without duplicating rule logic.
  */
 export function renderHeading(dir: Dir, dirQueue: readonly Dir[]): Dir {
-  let heading = dir;
-  for (const queued of dirQueue) {
-    if (queued !== OPPOSITE[heading]) heading = queued;
-  }
-  return heading;
+  return previewSnakeDir(dir, dirQueue);
 }
 
 /**

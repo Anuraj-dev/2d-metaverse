@@ -657,6 +657,16 @@ describe("snakeTick — bonus spawn", () => {
 });
 
 describe("snakeFrame — interleaved time vs ticks", () => {
+  it("commits a queued turn immediately instead of waiting for the tick interval", () => {
+    let s = state({ body: [{ x: 5, y: 5 }] });
+    s = snakeInput(s, "left");
+    s = snakeInput(s, "up");
+    const result = snakeFrame(s, 0, 1);
+    expect(result.state.body[0]).toEqual({ x: 5, y: 4 });
+    expect(result.state.dir).toBe("up");
+    expect(result.state.dirQueue).toEqual([]);
+  });
+
   it("a movement tick due before bonus expiry can still collect the bonus", () => {
     // Tick interval at speed 10 = 100ms. Bonus has 30ms left.
     // Frame dt=100 with acc=0: advance 100ms would expire first if batched,
@@ -742,6 +752,32 @@ describe("snakeFrame — interleaved time vs ticks", () => {
       speed: 7,
     });
     expect(snakeFrame(s, 30, 80)).toEqual(snakeFrame(s, 30, 80));
+  });
+
+  it("keeps food visible on the bonus cell when it is the only free cell", () => {
+    const s = state({
+      width: 2,
+      height: 2,
+      body: [
+        { x: 0, y: 0 },
+        { x: 0, y: 1 },
+      ],
+      dir: "right",
+      food: { x: 1, y: 0 },
+      bonus: {
+        cell: { x: 1, y: 1 },
+        remainingMs: 100,
+        value: 10,
+        size: 10,
+      },
+    });
+    const eaten = snakeTick(s).state;
+    expect(eaten.food).toEqual({ x: 1, y: 1 });
+    expect(eaten.bonus).not.toBeNull();
+
+    const expired = snakeAdvanceTime(eaten, 100).state;
+    expect(expired.bonus).toBeNull();
+    expect(expired.food).toEqual({ x: 1, y: 1 });
   });
 });
 

@@ -62,9 +62,10 @@ function progress(fx: SnakeFx): number {
  */
 export function shakeOffset(
   fx: SnakeFx,
-  cell: number
+  cell: number,
+  enabled = true,
 ): { x: number; y: number } {
-  if (!fx.animating) return { x: 0, y: 0 };
+  if (!enabled || !fx.animating) return { x: 0, y: 0 };
   const p = progress(fx);
   if (p >= SHAKE_END) return { x: 0, y: 0 };
   const maxShake = cell * 0.75;
