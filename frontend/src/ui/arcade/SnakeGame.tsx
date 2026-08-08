@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bus, type ArcadeBusEvent } from "../../game/eventBus";
 import {
+  DEFAULT_SNAKE_HEIGHT,
+  DEFAULT_SNAKE_WIDTH,
   initSnake,
   snakeInput,
   snakeFrame,
@@ -54,6 +56,8 @@ interface SnakeMotion {
 }
 
 const INITIAL_BOARD: Board = { cols: MIN_COLS, rows: MIN_ROWS };
+/** Fixed dimensions keep globally ranked Snake runs comparable. */
+const SCORE_BOARD: Board = { cols: DEFAULT_SNAKE_WIDTH, rows: DEFAULT_SNAKE_HEIGHT };
 
 /** Reducer domain event → bus event name (glue only — no game rules). */
 const BUS_FOR_EVENT: Readonly<Partial<Record<SnakeEvent, ArcadeBusEvent>>> = {
@@ -286,14 +290,13 @@ export default function SnakeGame({
       if (pausedRef.current) return;
       writeStoredDifficulty(d);
       setDifficulty(d);
-      // The board is fixed for the whole run from the stage size at start — a
-      // later resize re-centres it but never re-inits the game.
-      const stage = measuredRef.current;
-      setBoard(stage);
+      // Scored runs always use one board size; CSS layout handles letterboxing
+      // on narrow/fullscreen surfaces without changing leaderboard potential.
+      setBoard(SCORE_BOARD);
       stateRef.current = initSnake(seed, {
         difficulty: d,
-        width: stage.cols,
-        height: stage.rows,
+        width: SCORE_BOARD.cols,
+        height: SCORE_BOARD.rows,
       });
       const initial = stateRef.current;
       motionRef.current = {

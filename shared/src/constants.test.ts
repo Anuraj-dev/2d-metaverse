@@ -7,6 +7,7 @@ import {
   roomDisplayName,
   BOARD_TABLES,
   gameForTable,
+  scoreGameForArcadeGame,
 } from "./constants.js";
 
 /** Every private room the world gates behind a door (seeded ids 1-6). */
@@ -62,5 +63,13 @@ describe("AREA_NAMES registry", () => {
     for (const table of BOARD_TABLES) {
       expect(gameForTable(table.id), `table ${table.id} has a game`).toBeDefined();
     }
+  });
+});
+
+describe("arcade score namespaces", () => {
+  it("keeps the cabinet id stable while versioning Snake scores", () => {
+    expect(scoreGameForArcadeGame("snake")).toBe("snake-v2");
+    expect(scoreGameForArcadeGame("flappy")).toBe("flappy");
+    expect(scoreGameForArcadeGame("merge-drop")).toBe("merge-drop");
   });
 });

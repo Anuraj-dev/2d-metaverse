@@ -506,21 +506,21 @@ describe("arcade high scores", () => {
     const zero = await api(base, "/api/v1/arcade/scores", { token, body: { game: "flappy", score: 0 } });
     expect(zero.json.best).toBe(0);
     expect(zero.json.newBest).toBe(false);
-    const first = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 12 } });
+    const first = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake-v2", score: 12 } });
     expect(first.status).toBe(200);
     expect(first.json.best).toBe(12);
     expect(first.json.newBest).toBe(true);
-    expect(first.json.game).toBe("snake");
+    expect(first.json.game).toBe("snake-v2");
     // A lower score does not lower the stored best.
-    const lower = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 5 } });
+    const lower = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake-v2", score: 5 } });
     expect(lower.json.best).toBe(12);
     expect(lower.json.newBest).toBe(false);
     // Matching the standing best is not an improvement either.
-    const equal = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 12 } });
+    const equal = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake-v2", score: 12 } });
     expect(equal.json.best).toBe(12);
     expect(equal.json.newBest).toBe(false);
     // A higher score raises it.
-    const higher = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: 20 } });
+    const higher = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake-v2", score: 20 } });
     expect(higher.json.best).toBe(20);
     expect(higher.json.newBest).toBe(true);
     // The leaderboard lists this user's best with their username.
@@ -530,7 +530,7 @@ describe("arcade high scores", () => {
 
   it("atomically identifies only one of two identical first submissions as the new best", async () => {
     const { token } = await createPlayer("arc-race");
-    const body = { game: "snake", score: 9 };
+    const body = { game: "snake-v2", score: 9 };
     const [left, right] = await Promise.all([
       api(base, "/api/v1/arcade/scores", { token, body }),
       api(base, "/api/v1/arcade/scores", { token, body }),
@@ -557,7 +557,7 @@ describe("arcade high scores", () => {
   it("rejects an unknown game and a malformed score", async () => {
     const { token } = await createPlayer("arc3");
     expect((await api(base, "/api/v1/arcade/scores/pong", { token })).status).toBe(404);
-    const bad = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake", score: -1 } });
+    const bad = await api(base, "/api/v1/arcade/scores", { token, body: { game: "snake-v2", score: -1 } });
     expect(bad.status).toBe(400);
     expect(bad.json.error).toBe("invalid-score");
   });

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { dirSchema } from "./socket.js";
 import {
   ACTIVE_SPACE_KINDS,
-  ARCADE_GAMES,
+  ARCADE_SCORE_GAMES,
   AUTH_TRANSPORT_REASONS,
   BLOCK_ACK_STATUSES,
   LIMITS,
@@ -75,9 +75,9 @@ export const operationalReportSchema = z.discriminatedUnion("category", [
 ]);
 export type OperationalReport = z.infer<typeof operationalReportSchema>;
 
-/** `POST /api/v1/arcade/scores` body: a client-reported score for one cabinet. */
+/** `POST /api/v1/arcade/scores` body: a client-reported score namespace. */
 export const arcadeScoreSchema = z.object({
-  game: z.enum(ARCADE_GAMES),
+  game: z.enum(ARCADE_SCORE_GAMES),
   score: z.number().int().min(0).max(LIMITS.arcadeScoreMax),
 });
 export type ArcadeScoreSubmission = z.infer<typeof arcadeScoreSchema>;
@@ -244,11 +244,11 @@ export const arcadeScoreEntrySchema = z.object({
 export type ArcadeScoreEntry = z.infer<typeof arcadeScoreEntrySchema>;
 
 /**
- * `GET /api/v1/arcade/scores/:game`: the top-N leaderboard for a cabinet plus
- * the requesting player's personal best (null if they have never scored).
+ * `GET /api/v1/arcade/scores/:game`: the top-N leaderboard for a score namespace
+ * plus the requesting player's personal best (null if they have never scored).
  */
 export const arcadeLeaderboardSchema = z.object({
-  game: z.enum(ARCADE_GAMES),
+  game: z.enum(ARCADE_SCORE_GAMES),
   top: z.array(arcadeScoreEntrySchema),
   best: z.number().int().nullable(),
 });
