@@ -126,3 +126,21 @@ lists are empty during the floor phase). `frontend/src/game/maps.test.ts` is the
 
 ## 2026-08-01 — Stage broadcast is one explicit live session
 **Why:** Separate “Go on air” and “Go Live (video)” paths produced overlapping prompts and two competing transport lifecycles. The presenter now gets one explicit `Go Live` action that enables microphone audio and starts the stage session; the existing global camera control adds or removes video from that same session, and `Stop Live` ends it. User-facing state is `LIVE` / `NOT LIVE`. This supersedes the 2026-07-07 “muted preference wins when going on air” choice: the new explicit Go Live click is itself consent to start audio, while camera consent remains independent.
+
+## 2026-08-01 — Prefer Claude residual review over Codex cloud review
+**Why:** Codex cloud PR review limits are exhausted. Merge gate remains exact-head green CI (incl. E2E) plus a Claude residual review for actionable P0–P2; do not burn or invoke `@codex review` until limits reset.
+
+## 2026-08-08 — Preserve Snake leaderboard comparability during the faithful restore
+**Why:** The restored Snake changes ordinary food from 1 point to 10 and adds timed bonuses. Migration `007_snake_score_scale.sql` multiplies existing `snake` bests by 10 before the new reducer runs, preserving the public cabinet ID and keeping historical ordinary-food scores on the same unit instead of silently mixing incompatible values.
+
+## 2026-08-08 — Keep instant Snake steering inside the pure frame reducer
+**Why:** Renderer-side accumulator forcing could schedule a valid turn behind an illegal reversal while `snakeTick` consumed only the reversal. `snakeFrame` now owns immediate-turn scheduling and uses the pure queued-input preview; the renderer only forwards input and draws the result.
+
+## 2026-08-08 — Version Snake score namespaces instead of rescaling live rows
+**Why:** A migration that multiplied `snake` rows could race an independently deployed frontend and backend, double-scaling a new 10-point score. Current Snake therefore submits to `snake-v2`; legacy `snake` remains accepted for old clients, and historical rows are left untouched.
+
+## 2026-08-08 — Stage the backend namespace before the Snake frontend switch
+**Why:** Frontend Vercel and backend production deploys run independently. The backend accepting `snake-v2` was deployed at PR head `09f39f0` before the frontend can merge, eliminating the window where new clients would submit to an unknown score namespace and lose runs.
+
+## 2026-08-08 — Keep Snake bonus scoring tick-based and reduced-motion terminal state immediate
+**Why:** Difficulty changes movement speed while all Snake modes share one leaderboard, so wall-clock bonus decay made identical movement paths earn different values. Bonus decay now advances once per movement tick, and reduced-motion users see the terminal card immediately because decorative effects are disabled. The alternative of preserving the visual delay would violate the reduced-motion contract.
