@@ -171,6 +171,7 @@ export default function SnakeGame({
     const interpolate =
       phaseRef.current === "play" &&
       !pausedRef.current &&
+      !reducedMotion &&
       s.alive &&
       !s.won &&
       !fxRef.current.animating;
@@ -194,8 +195,9 @@ export default function SnakeGame({
       body,
       renderHeading(motion?.dir ?? s.dir, s.dirQueue),
       shakeEnabled,
+      !reducedMotion,
     );
-  }, [seed, difficulty, board, shakeEnabled]);
+  }, [seed, difficulty, board, reducedMotion, shakeEnabled]);
 
   /**
    * Place the canvas inside the stage box. Two jobs:

@@ -29,6 +29,7 @@ export function renderSnake(
   body: readonly Cell[] = state.body,
   dir: Dir = state.dir,
   shakeEnabled = true,
+  motionEnabled = true,
 ): void {
   const boardW = state.width * cell;
   const boardH = state.height * cell;
@@ -46,7 +47,7 @@ export function renderSnake(
   drawBoard(ctx, state.width, state.height, cell);
 
   // Pulse food only while the run is live (not during death settle).
-  if (state.alive && !state.won && !fx.animating) {
+  if (motionEnabled && state.alive && !state.won && !fx.animating) {
     stepFoodAnim(foodAnim);
   }
 
@@ -57,7 +58,7 @@ export function renderSnake(
   drawFood(ctx, state.food, foodAnim, cell);
 
   if (state.bonus) {
-    drawBonusFood(ctx, state.bonus, nowMs, cell);
+    drawBonusFood(ctx, state.bonus, nowMs, cell, motionEnabled);
   }
 
   drawSnake(ctx, body, dir, cell, deathSnakeAlpha(fx));

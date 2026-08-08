@@ -52,8 +52,8 @@ type Phase =
   | { k: "closing" };
 
 const MENU_LENGTH = 3;
-/** Let terminal particles/shake read before the game-over card covers them. */
-const DEATH_FREEZE_MS = 450;
+/** Let Snake's full 830ms terminal FX settle before the game-over card covers it. */
+export const DEATH_FREEZE_MS = 830;
 
 export interface ArcadeOverlayProps {
   game: ArcadeGame;

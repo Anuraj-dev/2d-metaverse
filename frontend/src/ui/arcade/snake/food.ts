@@ -62,7 +62,8 @@ export function drawBonusFood(
   ctx: CanvasRenderingContext2D,
   bonus: BonusFood,
   nowMs: number,
-  cell: number
+  cell: number,
+  motionEnabled = true,
 ): void {
   const cx = bonus.cell.x * cell + cell / 2;
   const cy = bonus.cell.y * cell + cell / 2;
@@ -87,7 +88,7 @@ export function drawBonusFood(
   ctx.lineWidth = Math.max(1, cell * 0.1);
   ctx.stroke();
 
-  const sparkleAngle = (nowMs / 200) % (Math.PI * 2);
+  const sparkleAngle = motionEnabled ? (nowMs / 200) % (Math.PI * 2) : 0;
   const sparkleX = cx + Math.cos(sparkleAngle) * size * 0.7;
   const sparkleY = cy + Math.sin(sparkleAngle) * size * 0.7;
   ctx.beginPath();

@@ -33,7 +33,7 @@ vi.mock("./SnakeGame", async (importOriginal) => {
   return { default: SnakeGameSwitch };
 });
 
-import ArcadeOverlay from "./ArcadeOverlay";
+import ArcadeOverlay, { DEATH_FREEZE_MS } from "./ArcadeOverlay";
 import { bus } from "../../game/eventBus";
 import { getSettings, setSettings } from "../settings";
 import type { ArcadeGameProps } from "./gameTypes";
@@ -370,7 +370,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     });
     expect(bestEvents).toHaveLength(1);
     act(() => {
-      vi.advanceTimersByTime(449);
+      vi.advanceTimersByTime(DEATH_FREEZE_MS - 1);
     });
     expect(panelOpen("over")).toBe(false);
     act(() => {
@@ -392,7 +392,7 @@ describe("ArcadeOverlay run lifecycle", () => {
 
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(DEATH_FREEZE_MS);
     });
     fireEvent.click(screen.getByRole("button", { name: "Play again" }));
     await act(async () => {
@@ -450,7 +450,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={onClose} />);
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(DEATH_FREEZE_MS);
     });
     expect(panelOpen("over")).toBe(true);
 
@@ -479,7 +479,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     // with no KNOWN previous best there must be no "New best!" claim.
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(DEATH_FREEZE_MS);
     });
     expect(panelOpen("over")).toBe(true);
     expect(screen.queryByText("New best!")).toBeNull();
@@ -501,7 +501,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     fireEvent.click(screen.getByTestId("stub-game-over"));
     await act(async () => {
       await Promise.resolve();
-      vi.advanceTimersByTime(450);
+      vi.advanceTimersByTime(DEATH_FREEZE_MS);
     });
     expect(screen.getByText("New best!")).toBeTruthy();
   });
