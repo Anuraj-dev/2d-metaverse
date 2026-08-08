@@ -15,6 +15,7 @@ import { getSettings, setSettings, subscribeSettings } from "../settings";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
 import MergeDropGame from "./MergeDropGame";
+import { TERMINAL_HOLD_MS } from "./terminalHold";
 import {
   exitFullscreen,
   fullscreenAvailable,
@@ -52,8 +53,6 @@ type Phase =
   | { k: "closing" };
 
 const MENU_LENGTH = 3;
-/** Let Snake's full 830ms terminal FX settle before the game-over card covers it. */
-export const DEATH_FREEZE_MS = 830;
 
 export interface ArcadeOverlayProps {
   game: ArcadeGame;
@@ -380,7 +379,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
           setPhase({ k: "over", score: finalScore });
         }
         finishTimerRef.current = null;
-      }, DEATH_FREEZE_MS);
+      }, TERMINAL_HOLD_MS[game]);
     },
     [game, absorbBoard, refresh]
   );

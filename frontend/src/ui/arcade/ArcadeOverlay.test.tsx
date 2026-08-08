@@ -33,7 +33,8 @@ vi.mock("./SnakeGame", async (importOriginal) => {
   return { default: SnakeGameSwitch };
 });
 
-import ArcadeOverlay, { DEATH_FREEZE_MS } from "./ArcadeOverlay";
+import ArcadeOverlay from "./ArcadeOverlay";
+import { TERMINAL_HOLD_MS } from "./terminalHold";
 import { bus } from "../../game/eventBus";
 import { getSettings, setSettings } from "../settings";
 import type { ArcadeGameProps } from "./gameTypes";
@@ -370,7 +371,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     });
     expect(bestEvents).toHaveLength(1);
     act(() => {
-      vi.advanceTimersByTime(DEATH_FREEZE_MS - 1);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake - 1);
     });
     expect(panelOpen("over")).toBe(false);
     act(() => {
@@ -392,7 +393,7 @@ describe("ArcadeOverlay run lifecycle", () => {
 
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(DEATH_FREEZE_MS);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     fireEvent.click(screen.getByRole("button", { name: "Play again" }));
     await act(async () => {
@@ -450,7 +451,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     render(<ArcadeOverlay game="snake" label="Snake" onClose={onClose} />);
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(DEATH_FREEZE_MS);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     expect(panelOpen("over")).toBe(true);
 
@@ -479,7 +480,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     // with no KNOWN previous best there must be no "New best!" claim.
     fireEvent.click(screen.getByTestId("stub-game-over"));
     act(() => {
-      vi.advanceTimersByTime(DEATH_FREEZE_MS);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     expect(panelOpen("over")).toBe(true);
     expect(screen.queryByText("New best!")).toBeNull();
@@ -501,7 +502,7 @@ describe("ArcadeOverlay run lifecycle", () => {
     fireEvent.click(screen.getByTestId("stub-game-over"));
     await act(async () => {
       await Promise.resolve();
-      vi.advanceTimersByTime(DEATH_FREEZE_MS);
+      vi.advanceTimersByTime(TERMINAL_HOLD_MS.snake);
     });
     expect(screen.getByText("New best!")).toBeTruthy();
   });
