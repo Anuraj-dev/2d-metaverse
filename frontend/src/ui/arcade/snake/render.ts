@@ -63,7 +63,7 @@ export function renderSnake(
 
   drawSnake(ctx, body, dir, cell, deathSnakeAlpha(fx));
 
-  const flash = flashOpacity(fx);
+  const flash = flashOpacity(fx, motionEnabled);
   if (flash > 0.001) {
     ctx.fillStyle = `rgba(255, 0, 0, ${flash})`;
     ctx.fillRect(0, 0, boardW, boardH);

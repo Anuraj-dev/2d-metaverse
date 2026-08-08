@@ -16,6 +16,7 @@ import {
   BONUS_MIN_VALUE,
   BONUS_MAX_SIZE,
   BONUS_MIN_SIZE,
+  BONUS_FREQUENCY,
   SPEED_CAP,
   SPEED_STEP_POINTS,
   DEFAULT_SNAKE_WIDTH,
@@ -129,9 +130,9 @@ describe("difficulty tuning", () => {
     speedIncrement: number;
     bonusFrequency: number;
   }> = [
-    { difficulty: "easy", initialSpeed: 5, speedIncrement: 0.5, bonusFrequency: 150 },
-    { difficulty: "normal", initialSpeed: 7, speedIncrement: 1, bonusFrequency: 180 },
-    { difficulty: "hard", initialSpeed: 10, speedIncrement: 1.5, bonusFrequency: 220 },
+    { difficulty: "easy", initialSpeed: 5, speedIncrement: 0.5, bonusFrequency: BONUS_FREQUENCY },
+    { difficulty: "normal", initialSpeed: 7, speedIncrement: 1, bonusFrequency: BONUS_FREQUENCY },
+    { difficulty: "hard", initialSpeed: 10, speedIncrement: 1.5, bonusFrequency: BONUS_FREQUENCY },
   ];
   for (const c of cases) {
     it(`${c.difficulty}: initial ${c.initialSpeed}, step ${c.speedIncrement}, bonus every ${c.bonusFrequency}`, () => {

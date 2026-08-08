@@ -78,7 +78,8 @@ export function shakeOffset(
 }
 
 /** Red flash opacity for the current death progress (0 = none). */
-export function flashOpacity(fx: SnakeFx): number {
+export function flashOpacity(fx: SnakeFx, enabled = true): number {
+  if (!enabled) return 0;
   if (!fx.animating && !fx.settled) return 0;
   if (!fx.animating) return 0;
   const p = progress(fx);

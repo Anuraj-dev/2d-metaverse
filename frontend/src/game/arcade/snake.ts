@@ -60,11 +60,15 @@ export interface DifficultyConfig {
   readonly bonusFrequency: number;
 }
 
+/** One ranked bonus cadence shared by every difficulty. */
+export const BONUS_FREQUENCY = 180;
+
 /** Original game tuning: ticks-per-second, speed step, bonus spawn period. */
 export const DIFFICULTIES: Readonly<Record<Difficulty, DifficultyConfig>> = {
-  easy: { initialSpeed: 5, speedIncrement: 0.5, bonusFrequency: 150 },
-  normal: { initialSpeed: 7, speedIncrement: 1, bonusFrequency: 180 },
-  hard: { initialSpeed: 10, speedIncrement: 1.5, bonusFrequency: 220 },
+  // Difficulty changes movement pressure, not leaderboard scoring cadence.
+  easy: { initialSpeed: 5, speedIncrement: 0.5, bonusFrequency: BONUS_FREQUENCY },
+  normal: { initialSpeed: 7, speedIncrement: 1, bonusFrequency: BONUS_FREQUENCY },
+  hard: { initialSpeed: 10, speedIncrement: 1.5, bonusFrequency: BONUS_FREQUENCY },
 };
 
 export const SPEED_CAP = 15;
