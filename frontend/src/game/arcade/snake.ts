@@ -43,10 +43,10 @@ export interface Cell {
   readonly y: number;
 }
 
-/** Live bonus food: position + wall-clock lifetime (ms remaining). */
+/** Live bonus food: position + movement-tick-based score lifetime. */
 export interface BonusFood {
   readonly cell: Cell;
-  /** Milliseconds of life remaining (starts at BONUS_LIFETIME_MS). */
+  /** Score-time remaining; one movement tick consumes BONUS_TICK_DECAY_MS. */
   readonly remainingMs: number;
   /** Current point value (decays 100 → 10, rounded to tens). */
   readonly value: number;
@@ -75,6 +75,13 @@ export const SPEED_CAP = 15;
 export const FOOD_SCORE = 10;
 export const SPEED_STEP_POINTS = 50;
 export const BONUS_LIFETIME_MS = 10_000;
+/**
+ * Bonus decay is movement-tick based so difficulty changes pressure without
+ * changing the value awarded for the same sequence of moves. Seventy ticks
+ * matches the old ten-second lifetime at Normal's seven ticks per second.
+ */
+export const BONUS_LIFETIME_TICKS = 70;
+export const BONUS_TICK_DECAY_MS = BONUS_LIFETIME_MS / BONUS_LIFETIME_TICKS;
 export const BONUS_MAX_VALUE = 100;
 export const BONUS_MIN_VALUE = 10;
 export const BONUS_MAX_SIZE = 30;
@@ -340,28 +347,6 @@ export function snakeInput(state: SnakeState, dir: Dir): SnakeState {
 }
 
 /**
- * Advance bonus-food wall time deterministically. Pure: given state + dt, the
- * next bonus remaining/value/size is fixed. Emits `bonus-expired` when the
- * timer elapses.
- */
-export function snakeAdvanceTime(state: SnakeState, dtMs: number): SnakeStep {
-  if (!state.alive || state.won || !state.bonus || dtMs <= 0) {
-    return { state, events: [] };
-  }
-  const remainingMs = state.bonus.remainingMs - dtMs;
-  if (remainingMs <= 0) {
-    return { state: { ...state, bonus: null }, events: ["bonus-expired"] };
-  }
-  return {
-    state: {
-      ...state,
-      bonus: refreshBonus(state.bonus.cell, remainingMs),
-    },
-    events: [],
-  };
-}
-
-/**
  * Resolve the front of the direction queue against the last actually-moved
  * direction. Returns the new dir and the remaining queue (front always consumed
  * when present — invalid 180s are discarded, not re-queued).
@@ -473,6 +458,18 @@ export function snakeTick(state: SnakeState): SnakeStep {
     body = [next, ...state.body.slice(0, -1)];
   }
 
+  // Bonus value decays once per movement tick, not by wall-clock time. This
+  // keeps an identical movement path worth the same score on every difficulty.
+  if (bonus) {
+    const remainingMs = bonus.remainingMs - BONUS_TICK_DECAY_MS;
+    if (remainingMs <= 0) {
+      bonus = null;
+      events.push("bonus-expired");
+    } else {
+      bonus = refreshBonus(bonus.cell, remainingMs);
+    }
+  }
+
   // Bonus spawn counter (per movement tick), only when still alive and not won.
   // Cadence matches the owner's original game (Snake-game/game.js): once the
   // counter passes `bonusFrequency` it re-rolls the 15% chance EVERY tick — a
@@ -521,10 +518,9 @@ export function snakeTick(state: SnakeState): SnakeStep {
 }
 
 /**
- * One animation-frame of pure scheduling: interleave wall-clock bonus decay
- * with movement ticks in chronological order so a bonus due to expire mid-frame
- * cannot vanish before a movement tick that was due earlier, and a pickup
- * awards the value at tick time (not end-of-frame).
+ * One animation-frame of pure scheduling. Bonus decay is applied by
+ * `snakeTick`, so it is tied to movement ticks rather than render-frame timing.
+ * A pickup therefore awards the value at the start of its movement tick.
  *
  * `accMs` is ms accumulated since the last movement tick (carried across frames).
  */
@@ -567,9 +563,6 @@ export function snakeFrame(
     const step = Math.min(timeToTick, remaining);
     if (step <= 0) break;
 
-    const advanced = snakeAdvanceTime(s, step);
-    s = advanced.state;
-    for (const e of advanced.events) events.push(e);
     acc += step;
     remaining -= step;
   }

@@ -382,6 +382,23 @@ describe("ArcadeOverlay run lifecycle", () => {
     off();
   });
 
+  it("shows the terminal card immediately when reduced motion is enabled", () => {
+    vi.useFakeTimers();
+    snakeCtl.stub = true;
+    setSettings({ reducedMotion: "on" });
+    try {
+      render(<ArcadeOverlay game="snake" label="Snake" onClose={() => {}} />);
+      fireEvent.click(screen.getByTestId("stub-game-over"));
+      expect(panelOpen("over")).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      expect(panelOpen("over")).toBe(true);
+    } finally {
+      setSettings({ reducedMotion: "system" });
+    }
+  });
+
   it("does not celebrate a late result from a run that was restarted", async () => {
     vi.useFakeTimers();
     snakeCtl.stub = true;

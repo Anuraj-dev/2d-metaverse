@@ -3,7 +3,6 @@ import {
   initSnake,
   snakeInput,
   snakeTick,
-  snakeAdvanceTime,
   snakeFrame,
   speedForScore,
   bonusValueFromRemaining,
@@ -12,6 +11,8 @@ import {
   DIR_QUEUE_MAX,
   FOOD_SCORE,
   BONUS_LIFETIME_MS,
+  BONUS_LIFETIME_TICKS,
+  BONUS_TICK_DECAY_MS,
   BONUS_MAX_VALUE,
   BONUS_MIN_VALUE,
   BONUS_MAX_SIZE,
@@ -539,7 +540,7 @@ describe("bonus food — value/size decay helpers", () => {
   });
 });
 
-describe("snakeAdvanceTime — bonus decay / expiry", () => {
+describe("snakeTick — bonus decay / expiry", () => {
   const liveBonus = {
     cell: { x: 2, y: 2 },
     remainingMs: BONUS_LIFETIME_MS,
@@ -547,32 +548,52 @@ describe("snakeAdvanceTime — bonus decay / expiry", () => {
     size: BONUS_MAX_SIZE,
   };
 
-  it("decays remaining/value/size by dt", () => {
-    const { state: next, events } = snakeAdvanceTime(state({ bonus: liveBonus }), 2_500);
+  it("keeps the nominal lifetime aligned with its fixed tick budget", () => {
+    expect(BONUS_LIFETIME_TICKS * BONUS_TICK_DECAY_MS).toBe(BONUS_LIFETIME_MS);
+  });
+
+  it("decays remaining/value/size by one fixed amount per movement tick", () => {
+    const { state: next, events } = snakeTick(state({ bonus: liveBonus }));
     expect(events).toEqual([]);
     expect(next.bonus).not.toBeNull();
     if (!next.bonus) return;
-    expect(next.bonus.remainingMs).toBe(7_500);
-    expect(next.bonus.value).toBe(bonusValueFromRemaining(7_500));
-    expect(next.bonus.size).toBe(bonusSizeFromRemaining(7_500));
+    expect(next.bonus.remainingMs).toBe(BONUS_LIFETIME_MS - BONUS_TICK_DECAY_MS);
+    expect(next.bonus.value).toBe(
+      bonusValueFromRemaining(BONUS_LIFETIME_MS - BONUS_TICK_DECAY_MS)
+    );
+    expect(next.bonus.size).toBe(
+      bonusSizeFromRemaining(BONUS_LIFETIME_MS - BONUS_TICK_DECAY_MS)
+    );
   });
 
-  it("expires bonus when remaining hits 0 and emits bonus-expired", () => {
-    const { state: next, events } = snakeAdvanceTime(
+  it("decays by the same amount on every difficulty", () => {
+    const make = (difficulty: Difficulty) =>
       state({
-        bonus: { ...liveBonus, remainingMs: 100, value: 10, size: 10 },
-      }),
-      150
+        difficulty,
+        speed: DIFFICULTIES[difficulty].initialSpeed,
+        bonus: liveBonus,
+      });
+    const easy = snakeTick(make("easy"));
+    const hard = snakeTick(make("hard"));
+
+    expect(easy.state.bonus?.remainingMs).toBe(hard.state.bonus?.remainingMs);
+    expect(easy.state.bonus?.value).toBe(hard.state.bonus?.value);
+    expect(easy.state.bonus?.size).toBe(hard.state.bonus?.size);
+  });
+
+  it("expires bonus when the final tick consumes its lifetime", () => {
+    const { state: next, events } = snakeTick(
+      state({
+        bonus: {
+          ...liveBonus,
+          remainingMs: BONUS_TICK_DECAY_MS,
+          value: BONUS_MIN_VALUE,
+          size: BONUS_MIN_SIZE,
+        },
+      })
     );
     expect(next.bonus).toBeNull();
     expect(events).toEqual(["bonus-expired"]);
-  });
-
-  it("is a no-op without an active bonus or when dead/won", () => {
-    const plain = state({});
-    expect(snakeAdvanceTime(plain, 100).state).toBe(plain);
-    const dead = state({ alive: false, bonus: liveBonus });
-    expect(snakeAdvanceTime(dead, 100).state).toBe(dead);
   });
 });
 
@@ -669,20 +690,15 @@ describe("snakeFrame — interleaved time vs ticks", () => {
   });
 
   it("a movement tick due before bonus expiry can still collect the bonus", () => {
-    // Tick interval at speed 10 = 100ms. Bonus has 30ms left.
-    // Frame dt=100 with acc=0: advance 100ms would expire first if batched,
-    // but interleaving advances only to the tick (100ms) then ticks —
-    // wait: timeToTick=100, step=100, advanceTime expires bonus before tick.
-    //
-    // Better scenario: acc already 90ms, interval 100ms, bonus remaining 20ms,
-    // dt=50 → step to tick = 10ms, advance 10ms (bonus still 10ms), tick, pick up.
+    // Bonus decay happens at movement ticks, so a pickup receives the current
+    // value even when the render frame reaches that tick after partial time.
     const s = state({
       dir: "right",
       body: [{ x: 4, y: 5 }],
       food: { x: 9, y: 9 },
       bonus: {
         cell: { x: 5, y: 5 },
-        remainingMs: 20,
+        remainingMs: BONUS_TICK_DECAY_MS,
         value: 20,
         size: 12,
       },
@@ -697,24 +713,25 @@ describe("snakeFrame — interleaved time vs ticks", () => {
     expect(result.state.alive).toBe(true);
   });
 
-  it("expires bonus before a later tick when remaining elapses mid-frame", () => {
-    // acc=0, speed=10 (100ms/tick), bonus remaining 40ms, dt=50.
-    // First step advances 50ms → bonus expires; no tick yet (acc=50 < 100).
+  it("does not expire bonus between movement ticks", () => {
+    // acc=0, speed=10 (100ms/tick), bonus has one tick left, dt=50.
+    // No movement tick fires, so no bonus decay occurs yet.
     const s = state({
       dir: "right",
       body: [{ x: 4, y: 5 }],
       food: { x: 9, y: 9 },
       bonus: {
         cell: { x: 5, y: 5 },
-        remainingMs: 40,
+        remainingMs: BONUS_TICK_DECAY_MS,
         value: 20,
         size: 12,
       },
       speed: 10,
     });
     const result = snakeFrame(s, 0, 50);
-    expect(result.events).toContain("bonus-expired");
-    expect(result.state.bonus).toBeNull();
+    expect(result.events).toEqual([]);
+    expect(result.state.bonus).not.toBeNull();
+    expect(result.state.bonus?.remainingMs).toBe(BONUS_TICK_DECAY_MS);
     // Head has not moved — no tick fired.
     expect(result.state.body[0]).toEqual({ x: 4, y: 5 });
     expect(result.accMs).toBe(50);
@@ -767,7 +784,7 @@ describe("snakeFrame — interleaved time vs ticks", () => {
       food: { x: 1, y: 0 },
       bonus: {
         cell: { x: 1, y: 1 },
-        remainingMs: 100,
+        remainingMs: BONUS_TICK_DECAY_MS * 2,
         value: 10,
         size: 10,
       },
@@ -775,10 +792,6 @@ describe("snakeFrame — interleaved time vs ticks", () => {
     const eaten = snakeTick(s).state;
     expect(eaten.food).toEqual({ x: 1, y: 1 });
     expect(eaten.bonus).not.toBeNull();
-
-    const expired = snakeAdvanceTime(eaten, 100).state;
-    expect(expired.bonus).toBeNull();
-    expect(expired.food).toEqual({ x: 1, y: 1 });
   });
 });
 

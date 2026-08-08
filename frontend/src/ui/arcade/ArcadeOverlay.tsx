@@ -12,10 +12,11 @@ import { toSeed } from "../../game/arcade/prng";
 import { bus } from "../../game/eventBus";
 import { fetchLeaderboard, submitScore } from "../../net/arcade";
 import { getSettings, setSettings, subscribeSettings } from "../settings";
+import { useReducedMotion } from "../reducedMotionBridge";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
 import MergeDropGame from "./MergeDropGame";
-import { TERMINAL_HOLD_MS } from "./terminalHold";
+import { terminalHoldMs } from "./terminalHold";
 import {
   exitFullscreen,
   fullscreenAvailable,
@@ -126,6 +127,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   const [arcadeVolume, setArcadeVolume] = useState(() => getSettings().arcadeVolume);
   const [muteArcade, setMuteArcade] = useState(() => getSettings().muteArcade);
   const [arcadeShake, setArcadeShake] = useState(() => getSettings().arcadeShake);
+  const reducedMotion = useReducedMotion();
   const activeRunIdRef = useRef(run.id);
   const aliveRef = useRef(true);
   const reqSeqRef = useRef(0);
@@ -358,7 +360,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
       setLastFinal(finalScore);
       setPhase({ k: "finishing", score: finalScore });
 
-      // Persist immediately. The 450ms terminal hold is presentation only and
+      // Persist immediately. The terminal hold is presentation only and
       // cannot lose a score if the player restarts or quits during it.
       const reqId = ++reqSeqRef.current;
       submitScore(game, finalScore)
@@ -379,9 +381,9 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
           setPhase({ k: "over", score: finalScore });
         }
         finishTimerRef.current = null;
-      }, TERMINAL_HOLD_MS[game]);
+      }, terminalHoldMs(game, reducedMotion));
     },
-    [game, absorbBoard, refresh]
+    [game, absorbBoard, refresh, reducedMotion]
   );
 
   const menuOpen = phase.k === "paused" && phase.reason !== "auto";
