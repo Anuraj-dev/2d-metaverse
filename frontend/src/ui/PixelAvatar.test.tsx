@@ -21,10 +21,17 @@ describe("PixelAvatar", () => {
   });
 
   it("honors an explicit character override (the local player's chosen avatar)", () => {
+    const { container } = render(<PixelAvatar playerId="p1" char="char6" />);
+    const el = container.querySelector(".pixel-avatar") as HTMLElement;
+    expect(el.getAttribute("data-char")).toBe("char6");
+    expect(el.style.backgroundImage).toContain("/assets/characters/char6.png");
+  });
+
+  it("aliases legacy duplicate keys (char9 → char1)", () => {
     const { container } = render(<PixelAvatar playerId="p1" char="char9" />);
     const el = container.querySelector(".pixel-avatar") as HTMLElement;
-    expect(el.getAttribute("data-char")).toBe("char9");
-    expect(el.style.backgroundImage).toContain("/assets/characters/char9.png");
+    expect(el.getAttribute("data-char")).toBe("char1");
+    expect(el.style.backgroundImage).toContain("/assets/characters/char1.png");
   });
 
   it("falls back to the deterministic world mapping for an unknown override", () => {

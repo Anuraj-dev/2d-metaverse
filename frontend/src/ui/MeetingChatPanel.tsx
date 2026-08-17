@@ -81,7 +81,7 @@ export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle
       </header>
       <div className="meeting-chat-list" data-testid="meeting-chat-list" ref={listRef}>
         {lines.length === 0 ? (
-          <p className="meeting-chat-empty">No messages yet — say hi</p>
+          <p className="meeting-chat-empty">No messages yet. Say hi</p>
         ) : (
           lines.map((line) => (
             <p key={line.key} className={`meeting-chat-line${line.self ? " self" : ""}`}>

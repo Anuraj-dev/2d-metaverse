@@ -30,11 +30,11 @@ function errorNotice(code: ReportErrorCode): string {
     case "message-not-found":
       return "That message is too old to report.";
     case "rate-limited":
-      return "You're reporting too fast — wait a moment and try again.";
+      return "You're reporting too fast. Wait a moment and try again.";
     case "unauthorized":
       return "Please sign in again to report.";
     case "network":
-      return "Couldn't reach the server — check your connection and try again.";
+      return "Couldn't reach the server. Check your connection and try again.";
     case "unknown":
     default:
       return "Couldn't send your report. Please try again.";
@@ -45,6 +45,6 @@ function errorNotice(code: ReportErrorCode): string {
 export function reportResultNotice(result: ReportResult): string {
   if (!result.ok) return errorNotice(result.code);
   return result.status === "duplicate"
-    ? "You've already reported that message — moderators have it."
-    : "Thanks — your report was sent to the moderators.";
+    ? "You've already reported that message. Moderators have it."
+    : "Thanks. Your report was sent to the moderators.";
 }

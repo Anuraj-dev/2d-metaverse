@@ -5,12 +5,12 @@ import Dialog from "./Dialog";
 const CONTROLS: [string, string][] = [
   ["Move", "WASD / Arrow keys"],
   ["Run", "Hold Shift"],
-  ["Interact", "E — sit, stand, doors, tables, arcade"],
+  ["Interact", "E: sit, stand, doors, tables, arcade"],
   ["Enter a room", "Walk to its door, type the key"],
   ["Fullscreen map", "M (Esc to close)"],
-  ["Chat", "Enter or T — / for a command"],
+  ["Chat", "Enter or T, / for a command"],
   ["Find someone", "Open Around (top-right), click a name"],
-  ["Arcade games", "Arrow keys / WASD — Space to flap"],
+  ["Arcade games", "Arrow keys / WASD, Space to flap"],
   ["Close overlay", "Escape"],
   ["Help", "Press ?"],
 ];

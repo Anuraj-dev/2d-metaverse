@@ -18,8 +18,8 @@ describe("cooldownRetrySeconds", () => {
 
 describe("chatCooldownNotice", () => {
   it("names the whole-second wait derived from retryAfterMs", () => {
-    expect(chatCooldownNotice(4000)).toBe("You're sending messages too fast — wait 4s.");
-    expect(chatCooldownNotice(3200)).toBe("You're sending messages too fast — wait 4s.");
-    expect(chatCooldownNotice(0)).toBe("You're sending messages too fast — wait 1s.");
+    expect(chatCooldownNotice(4000)).toBe("You're sending messages too fast. Wait 4s.");
+    expect(chatCooldownNotice(3200)).toBe("You're sending messages too fast. Wait 4s.");
+    expect(chatCooldownNotice(0)).toBe("You're sending messages too fast. Wait 1s.");
   });
 });

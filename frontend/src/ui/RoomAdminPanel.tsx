@@ -108,7 +108,7 @@ export default function RoomAdminPanel() {
         )}
       </div>
       {view.atCapacity && view.allowAll && (
-        <div className="room-admin-note">Room at max capacity — door closed until a slot frees.</div>
+        <div className="room-admin-note">Room at max capacity. Door closed until a slot frees.</div>
       )}
       {view.requests.length > 0 && (
         <div className="knock-requests">

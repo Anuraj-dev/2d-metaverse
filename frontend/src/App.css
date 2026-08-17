@@ -411,13 +411,6 @@ html, body, #root {
 .console-submit:disabled { opacity: 0.6; cursor: default; }
 .console-submit-arrow { transition: transform 0.18s ease; }
 .console-submit:hover:not(:disabled) .console-submit-arrow { transform: translateX(3px); }
-.console-foot {
-  margin: 14px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--hv-muted);
-}
 
 /* Shared keyboard-focus ring for every interactive landing control. */
 .landing button:focus-visible,

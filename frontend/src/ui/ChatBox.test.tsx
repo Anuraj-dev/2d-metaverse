@@ -208,13 +208,13 @@ describe("ChatBox persistent panel", () => {
   it("surfaces a world-chat cooldown with retry timing instead of dropping silently", () => {
     render(<ChatBox />);
     act(() => netMock.net.emit("chat-cooldown", { scope: "world", retryAfterMs: 4000 }));
-    expect(screen.getByText("You're sending messages too fast — wait 4s.")).toBeTruthy();
+    expect(screen.getByText("You're sending messages too fast. Wait 4s.")).toBeTruthy();
   });
 
   it("surfaces a whisper cooldown in the transcript", () => {
     render(<ChatBox />);
     act(() => netMock.net.emit("chat-cooldown", { scope: "whisper", retryAfterMs: 2500 }));
-    expect(screen.getByText("You're sending messages too fast — wait 3s.")).toBeTruthy();
+    expect(screen.getByText("You're sending messages too fast. Wait 3s.")).toBeTruthy();
   });
 
   it("shows only populated moderation sections and closes after the final unmute", async () => {

@@ -83,7 +83,7 @@ export const CAPACITY_MESSAGE = "This room is at max capacity.";
 export function knockResultMessage(result: "denied" | "timeout" | "too-far"): string {
   switch (result) {
     case "timeout":
-      return "No answer — nobody let you in.";
+      return "No answer. Nobody let you in.";
     case "too-far":
       return "Step up to the door to knock.";
     default:
