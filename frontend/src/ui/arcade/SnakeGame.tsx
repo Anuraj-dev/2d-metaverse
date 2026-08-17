@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bus, type ArcadeBusEvent } from "../../game/eventBus";
 import {
-  DEFAULT_SNAKE_HEIGHT,
-  DEFAULT_SNAKE_WIDTH,
   initSnake,
   snakeInput,
   snakeFrame,
@@ -20,33 +18,20 @@ import {
   renderHeading,
 } from "./snake/interp";
 import { renderSnake } from "./snake/render";
+import {
+  CELL_CSS,
+  EDGE_INSET,
+  MIN_COLS,
+  MIN_ROWS,
+  boardForStage,
+  type SnakeBoard,
+} from "./snake/stage";
 import { useReducedMotion } from "../reducedMotionBridge";
 import type { ArcadeGameProps } from "./gameTypes";
 
 const MAX_DPR = 2;
-/**
- * FIXED cell size in CSS px (the original game's grid). Cells are NEVER scaled
- * to fit the stage — that just reads as "zoomed in". The board fills the stage
- * by GRID SIZE instead: more cells, same 20px each.
- */
-const CELL_CSS = 20;
-/** Smallest playable board if the stage is tiny. */
-const MIN_COLS = 20;
-const MIN_ROWS = 12;
-/**
- * Minimum letterbox per side. The stage surface clips with a 10px border
- * radius; anything closer than ~3px to its edge gets a bite taken out of the
- * corner cells, which players read as "the end cell is cut off".
- */
-const EDGE_INSET = 4;
 const DIFFICULTY_KEY = "arcadeSnakeDifficulty";
 const DIFFICULTIES: readonly Difficulty[] = ["easy", "normal", "hard"];
-
-/** Board size in whole cells for the current stage box. */
-interface Board {
-  readonly cols: number;
-  readonly rows: number;
-}
 
 interface SnakeMotion {
   readonly previous: SnakeState["body"];
@@ -55,9 +40,7 @@ interface SnakeMotion {
   readonly snap: boolean;
 }
 
-const INITIAL_BOARD: Board = { cols: MIN_COLS, rows: MIN_ROWS };
-/** Fixed dimensions keep globally ranked Snake runs comparable. */
-const SCORE_BOARD: Board = { cols: DEFAULT_SNAKE_WIDTH, rows: DEFAULT_SNAKE_HEIGHT };
+const INITIAL_BOARD: SnakeBoard = { cols: MIN_COLS, rows: MIN_ROWS };
 
 /** Reducer domain event → bus event name (glue only — no game rules). */
 const BUS_FOR_EVENT: Readonly<Partial<Record<SnakeEvent, ArcadeBusEvent>>> = {
@@ -132,12 +115,12 @@ export default function SnakeGame({
   const bestScoreRef = useRef(bestScore);
   const pausedRef = useRef(paused);
   /** Latest measurement of the stage; only adopted between runs. */
-  const measuredRef = useRef<Board>(INITIAL_BOARD);
+  const measuredRef = useRef<SnakeBoard>(INITIAL_BOARD);
   /** Board the canvas backing store is currently sized for (mirror of state). */
-  const sizedRef = useRef<Board>(INITIAL_BOARD);
+  const sizedRef = useRef<SnakeBoard>(INITIAL_BOARD);
   const phaseRef = useRef<"menu" | "play">("menu");
   /** Board the canvas is currently sized for (frozen while a run is live). */
-  const [board, setBoard] = useState<Board>(INITIAL_BOARD);
+  const [board, setBoard] = useState<SnakeBoard>(INITIAL_BOARD);
   const [phase, setPhase] = useState<"menu" | "play">("menu");
   const [difficulty, setDifficulty] = useState<Difficulty>(readStoredDifficulty);
 
@@ -240,13 +223,8 @@ export default function SnakeGame({
   const measure = useCallback(() => {
     const root = rootRef.current;
     if (!root) return;
-    const boxW = root.clientWidth - 2 * EDGE_INSET;
-    const boxH = root.clientHeight - 2 * EDGE_INSET;
-    if (boxW < 1 || boxH < 1) return;
-    const next: Board = {
-      cols: Math.max(MIN_COLS, Math.floor(boxW / CELL_CSS)),
-      rows: Math.max(MIN_ROWS, Math.floor(boxH / CELL_CSS)),
-    };
+    const next = boardForStage(root.clientWidth, root.clientHeight);
+    if (!next) return;
     measuredRef.current = next;
     layout();
     if (phaseRef.current !== "menu") return;
@@ -292,13 +270,14 @@ export default function SnakeGame({
       if (pausedRef.current) return;
       writeStoredDifficulty(d);
       setDifficulty(d);
-      // Scored runs always use one board size; CSS layout handles letterboxing
-      // on narrow/fullscreen surfaces without changing leaderboard potential.
-      setBoard(SCORE_BOARD);
+      // Fill the cabinet with whole 20px cells. Rules, speed, and scoring
+      // stay the same; only the playfield grows to the measured stage.
+      const next = measuredRef.current;
+      setBoard(next);
       stateRef.current = initSnake(seed, {
         difficulty: d,
-        width: SCORE_BOARD.cols,
-        height: SCORE_BOARD.rows,
+        width: next.cols,
+        height: next.rows,
       });
       const initial = stateRef.current;
       motionRef.current = {
