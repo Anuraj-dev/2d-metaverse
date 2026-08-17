@@ -18,5 +18,5 @@ export function cooldownRetrySeconds(retryAfterMs: number): number {
 
 /** The system line shown in a chat transcript when a send is rate-limited. */
 export function chatCooldownNotice(retryAfterMs: number): string {
-  return `You're sending messages too fast — wait ${cooldownRetrySeconds(retryAfterMs)}s.`;
+  return `You're sending messages too fast. Wait ${cooldownRetrySeconds(retryAfterMs)}s.`;
 }

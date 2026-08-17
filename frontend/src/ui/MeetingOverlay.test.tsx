@@ -137,7 +137,7 @@ describe("MeetingOverlay", () => {
     expect(screen.queryByTestId("meeting-chat-notice")).toBeNull();
     deliverCooldown({ scope: "meeting", retryAfterMs: 4000 });
     expect(screen.getByTestId("meeting-chat-notice").textContent).toBe(
-      "You're sending messages too fast — wait 4s.",
+      "You're sending messages too fast. Wait 4s.",
     );
   });
 

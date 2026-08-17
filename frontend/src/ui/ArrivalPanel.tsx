@@ -77,7 +77,7 @@ export default function ArrivalPanel() {
         className="arrival-head"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        aria-label={headerCount === undefined ? "Who's around" : `Who's around — ${headerCount} online`}
+        aria-label={headerCount === undefined ? "Who's around" : `Who's around: ${headerCount} online`}
       >
         <Sparkles size={14} aria-hidden="true" />
         <span>Around{headerCount !== undefined ? ` · ${headerCount}` : ""}</span>
@@ -87,9 +87,9 @@ export default function ArrivalPanel() {
         <div className="arrival-body">
           <p className="arrival-status" role="status" aria-live="polite">
             {view.kind === "loading" && "Finding who's around…"}
-            {view.kind === "offline" && "You're offline — reconnecting to see who's around."}
+            {view.kind === "offline" && "You're offline. Reconnecting to see who's around."}
             {view.kind === "failed" && "Couldn't load who's around. It'll update when you reconnect."}
-            {view.kind === "empty" && "Nobody else is around yet — walk out and explore, or start something."}
+            {view.kind === "empty" && "Nobody else is around yet. Walk out and explore, or start something."}
             {view.kind === "active" && `${view.onlineCount} online right now.`}
           </p>
 

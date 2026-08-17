@@ -182,7 +182,7 @@ export default function ChatBox() {
       }
     );
     const offFail = net.on("whisper-fail", () =>
-      push({ kind: "sys", text: "Couldn't deliver your whisper — they may have left." })
+      push({ kind: "sys", text: "Couldn't deliver your whisper. They may have left." })
     );
     // Anti-spam cooldown (PRD 25.11): the server refused an over-limit send. World
     // and whisper both surface here; the meeting panel owns its own "meeting" line.
@@ -493,7 +493,7 @@ export default function ChatBox() {
       if (localModeration.mutedIds().length === 0 && localModeration.blockedIds().length === 0) {
         setShowMod(false);
       }
-      push({ kind: "sys", text: `Couldn't block ${name} — please try again.` });
+      push({ kind: "sys", text: `Couldn't block ${name}. Please try again.` });
     }
   };
 
@@ -505,7 +505,7 @@ export default function ChatBox() {
         setShowMod(false);
       }
     } else {
-      push({ kind: "sys", text: `Couldn't unblock ${name} — please try again.` });
+      push({ kind: "sys", text: `Couldn't unblock ${name}. Please try again.` });
     }
   };
 
@@ -634,7 +634,7 @@ export default function ChatBox() {
         {visible.length === 0 ? (
           <div className="mc-empty">
             {panel.tab === "room"
-              ? "Private area — only people here see these messages."
+              ? "Private area: only people here see these messages."
               : "Say hi to the space…  (type /help for commands)"}
           </div>
         ) : (

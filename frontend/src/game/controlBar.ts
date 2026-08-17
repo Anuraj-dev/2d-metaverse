@@ -11,7 +11,7 @@ export function mediaFailureText(
   const noun = device === "mic" ? "Microphone" : "Camera";
   switch (failure) {
     case "denied":
-      return `${noun} blocked — allow access in your browser`;
+      return `${noun} blocked: allow access in your browser`;
     case "unavailable":
       return device === "mic" ? "No microphone found" : "No camera found";
     case "failed":

@@ -11,7 +11,7 @@ import type { Net } from "../../net/net";
 import { authToken } from "../../net/auth";
 import { bus } from "../eventBus";
 import { createCharAnims, idleFrame, walkAnim } from "../avatar";
-import { CHARS, charForPlayer, isCharKey } from "../chars";
+import { CHARS, charForPlayer, resolveCharKey } from "../chars";
 import { activeMap } from "../maps";
 import { parseInteractables, findNear, arcadeOpenPayload, type InteractableDef } from "../interactables";
 import { movementIntent, BASE_SPEED } from "../movement";
@@ -227,7 +227,7 @@ export default class WorldScene extends Phaser.Scene {
     });
 
     const saved = localStorage.getItem("avatar");
-    this.avatar = saved && isCharKey(saved) ? saved : "char1";
+    this.avatar = saved ? (resolveCharKey(saved) ?? "char1") : "char1";
 
     const mapKey = activeMap().key;
     const map = this.make.tilemap({ key: mapKey });

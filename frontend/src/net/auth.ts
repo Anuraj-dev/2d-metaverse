@@ -50,9 +50,9 @@ function failureMessage(failure: AuthFailureResponse | null): string {
     case "validation":
       return "Check the username and password requirements, then try again.";
     case "username-taken":
-      return "That username is taken — try signing in instead.";
+      return "That username is taken. Try signing in instead.";
     case "invalid-credentials":
-      return "Sign in failed — check your username and password.";
+      return "Sign in failed. Check your username and password.";
     case "rate-limited":
       return `Too many attempts. Try again in ${failure.retryAfterSeconds} seconds.`;
     case "server-error":

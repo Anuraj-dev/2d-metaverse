@@ -25,7 +25,7 @@ export const MISCONFIGURED = !USE_MOCK && !SERVER_URL;
 export function assertServerUrl(): string {
   if (!SERVER_URL)
     throw new Error(
-      "VITE_SERVER_URL is required — production builds must point at the backend " +
+      "VITE_SERVER_URL is required: production builds must point at the backend " +
         "(mock mode is development-only)."
     );
   return SERVER_URL;

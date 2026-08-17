@@ -132,7 +132,7 @@ describe("ControlBar", () => {
     // ...then the confirmed denial reverts it to muted and announces the reason.
     await waitFor(() => {
       expect(screen.getByRole("status").textContent).toBe(
-        "Microphone blocked — allow access in your browser",
+        "Microphone blocked: allow access in your browser",
       );
       expect(screen.getByLabelText("Unmute microphone")).toBeTruthy();
     });

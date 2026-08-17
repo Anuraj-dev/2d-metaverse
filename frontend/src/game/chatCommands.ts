@@ -31,6 +31,6 @@ export function commandInsertion(command: ChatCommand): string {
 
 export const CHAT_HELP = [
   "Commands:",
-  ...CHAT_COMMANDS.map((command) => `${command.usage} — ${command.description}`),
+  ...CHAT_COMMANDS.map((command) => `${command.usage}: ${command.description}`),
   "Enter or T focuses chat · Esc returns to the game",
 ] as const;

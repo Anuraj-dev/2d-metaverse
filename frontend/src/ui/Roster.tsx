@@ -49,7 +49,7 @@ export default function Roster() {
       <button
         className="roster-head"
         onClick={() => setOpen((o) => !o)}
-        aria-label={`Roster — ${players.length} online`}
+        aria-label={`Roster: ${players.length} online`}
         aria-expanded={open}
       >
         <Users size={14} aria-hidden="true" /> {players.length}

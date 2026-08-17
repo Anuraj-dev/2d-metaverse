@@ -239,7 +239,7 @@ describe("boardTableView — endings", () => {
       seats: [null, { ...bob, accepted: true }],
       state: { board: board9(), turn: 1, result: { status: "in_progress" } },
     });
-    expect(boardTableView(forfeit, "b").status).toBe("Opponent left — you win!");
+    expect(boardTableView(forfeit, "b").status).toBe("Opponent left. You win!");
     // The forfeiter's seat is emptied, so they (and any spectator) see the same.
     expect(boardTableView(forfeit, "a").status).toBe("Bob wins by forfeit");
     expect(boardTableView(forfeit, "spectator").status).toBe("Bob wins by forfeit");

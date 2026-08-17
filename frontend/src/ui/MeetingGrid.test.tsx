@@ -53,11 +53,12 @@ describe("MeetingGrid (roster fallback — media unavailable)", () => {
   });
 
   it("uses the local player's chosen avatar for their own tile", () => {
+    // char7 is a legacy alias of char4 (deduped picker)
     render(<MeetingGrid participants={roster} selfId="me" selfChar="char7" />);
     const selfTile = screen
       .getAllByTestId("meet-tile")
       .find((tile) => tile.getAttribute("data-player") === "me");
-    expect(selfTile?.querySelector(".pixel-avatar")?.getAttribute("data-char")).toBe("char7");
+    expect(selfTile?.querySelector(".pixel-avatar")?.getAttribute("data-char")).toBe("char4");
   });
 
   it("marks the grid container for hook-based e2e assertions", () => {

@@ -10,7 +10,7 @@
  * composition with no JS involved (the strollers/motes hide, the tint freezes).
  */
 
-// Each stroller reuses one of the 12 in-game character spritesheets (96×128, a
+// Each stroller reuses one of the 9 in-game character spritesheets (96×128, a
 // 3-col × 4-row grid of 32×32 frames; row 1 = facing left, row 2 = facing right).
 type Stroller = {
   char: string;
@@ -22,8 +22,8 @@ type Stroller = {
 };
 
 const STROLLERS: Stroller[] = [
-  { char: "char5", dir: "right", top: "58%", scale: 2.2, dur: "34s", delay: "0s" },
-  { char: "char9", dir: "left", top: "70%", scale: 2.5, dur: "29s", delay: "-8s" },
+  { char: "char8", dir: "right", top: "58%", scale: 2.2, dur: "34s", delay: "0s" },
+  { char: "char1", dir: "left", top: "70%", scale: 2.5, dur: "29s", delay: "-8s" },
   { char: "char2", dir: "right", top: "80%", scale: 2.8, dur: "26s", delay: "-15s" },
 ];
 

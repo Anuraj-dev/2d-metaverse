@@ -92,7 +92,7 @@ export default function ModPanel({ onClose }: ModPanelProps) {
     setBusy(false);
     if (result.ok) {
       closeEditor();
-      setNotice(`${label} — done.`);
+      setNotice(`${label}: done.`);
       await load();
     } else {
       setActionError(moderationErrorText(result.code));

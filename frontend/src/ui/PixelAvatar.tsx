@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { FRAME_W, FRAME_H, idleFrame } from "../game/avatar";
-import { charForPlayer, isCharKey, type CharKey } from "../game/chars";
+import { charForPlayer, resolveCharKey, type CharKey } from "../game/chars";
 
 /**
  * A participant's in-game pixel sprite (idle pose, facing down, scaled) for
@@ -23,7 +23,8 @@ export default function PixelAvatar({
   char?: string | undefined;
   scale?: number;
 }) {
-  const key: CharKey = char !== undefined && isCharKey(char) ? char : charForPlayer(playerId);
+  const key: CharKey =
+    char !== undefined ? (resolveCharKey(char) ?? charForPlayer(playerId)) : charForPlayer(playerId);
   const frame = idleFrame("down");
   const col = frame % SHEET_COLS;
   const row = Math.floor(frame / SHEET_COLS);

@@ -160,15 +160,15 @@ export type ModErrorCode =
 export function moderationErrorText(code: ModErrorCode): string {
   switch (code) {
     case "validation":
-      return "That request was rejected — check the details and try again.";
+      return "That request was rejected. Check the details and try again.";
     case "invalid-until":
       return "Pick a suspension end time in the future.";
     case "target-not-found":
       return "That user no longer exists.";
     case "not-found":
-      return "That report is no longer available — refresh the list.";
+      return "That report is no longer available. Refresh the list.";
     case "rate-limited":
-      return "Too many moderation actions — wait a moment and try again.";
+      return "Too many moderation actions. Wait a moment and try again.";
     case "unauthorized":
       return "Your session is no longer authorized for moderation.";
     case "network":

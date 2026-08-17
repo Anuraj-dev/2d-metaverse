@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { signUp, signIn, USE_MOCK } from "../net/auth";
-import { CHARS } from "../game/chars";
+import { CHARS, resolveCharKey } from "../game/chars";
 import Logo from "./Logo";
 import CampusHero from "./CampusHero";
 type Mode = "signin" | "signup";
@@ -23,7 +23,7 @@ export default function Landing({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [avatar, setAvatar] = useState(
-    () => localStorage.getItem("avatar") ?? "char1"
+    () => resolveCharKey(localStorage.getItem("avatar") ?? "char1") ?? "char1"
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,10 +177,6 @@ export default function Landing({
             <span>{cta}</span>
             <ArrowRight className="console-submit-arrow" size={18} aria-hidden="true" />
           </button>
-
-          <p className="console-foot">
-            WASD / arrows move · Shift runs · E sits · ? for help
-          </p>
         </form>
       </main>
     </div>

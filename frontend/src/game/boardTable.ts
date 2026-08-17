@@ -160,7 +160,7 @@ function statusFor(snapshot: BoardUpdatePayload, mySeat: 0 | 1 | null): string {
       const result = snapshot.state?.result;
       if (snapshot.reason === "forfeit") {
         // Forfeit empties the leaver's seat, so anyone still seated is the winner.
-        if (mySeat !== null) return "Opponent left — you win!";
+        if (mySeat !== null) return "Opponent left. You win!";
         const winnerSeat = snapshot.seats[0] ? 0 : snapshot.seats[1] ? 1 : null;
         return `${winnerSeat !== null ? names[winnerSeat] ?? "Player" : "A player"} wins by forfeit`;
       }

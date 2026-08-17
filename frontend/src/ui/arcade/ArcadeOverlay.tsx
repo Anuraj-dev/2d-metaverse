@@ -597,7 +597,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
               </div>
               <div className="arcade-scorecell arcade-scorecell--best">
                 <span className="arcade-scorelabel">Best</span>
-                <span className="arcade-scorenum arcade-scorenum--best">{best ?? "—"}</span>
+                <span className="arcade-scorenum arcade-scorenum--best">{best ?? "-"}</span>
               </div>
               <span className="arcade-sr" aria-live="polite">
                 Score {score}
@@ -689,7 +689,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
             <h3 className="arcade-lb-title">Leaderboard</h3>
             <div className="arcade-yourbest">
               <span className="arcade-yourbest-label">Your best</span>
-              <span className="arcade-yourbest-num">{best ?? "—"}</span>
+              <span className="arcade-yourbest-num">{best ?? "-"}</span>
             </div>
             {boardError ? (
               <p className="arcade-lb-note">Scores unavailable</p>
@@ -700,7 +700,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
                 <span className="arcade-skel" />
               </div>
             ) : rows.length === 0 ? (
-              <p className="arcade-lb-note">No scores yet — set the pace.</p>
+              <p className="arcade-lb-note">No scores yet. Set the pace.</p>
             ) : (
               <ol className="arcade-rows">
                 {rows.map((row, i) => (
