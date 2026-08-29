@@ -364,6 +364,20 @@ html, body, #root {
   border-color: var(--hv-leaf);
   box-shadow: 0 0 0 3px rgba(95, 166, 58, 0.22);
 }
+.field input[aria-invalid="true"] { border-color: #b5371f; }
+.field-error {
+  display: block;
+  margin-top: 5px;
+  color: #b5371f;
+  font-size: 12px;
+  font-weight: 600;
+}
+.field-hint {
+  display: block;
+  margin-top: 5px;
+  color: var(--hv-muted);
+  font-size: 12px;
+}
 .avatar-head { margin-top: 4px; margin-bottom: 9px; }
 .console-avatars {
   display: flex;
