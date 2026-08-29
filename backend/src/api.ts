@@ -15,6 +15,7 @@ import {
   type ArcadeScoreGame,
   type ArcadeLeaderboard,
   type ArcadeScoreResult,
+  type AuthFailureResponse,
   type BlockAck,
   type BlockList,
   type ReportAck,
@@ -52,6 +53,33 @@ const moderationLog = childLogger({ module: "moderation" });
 
 // Request schemas live in @metaverse/shared (single source of truth for wire shapes).
 export const api = Router();
+
+function credentialValidationFailure(issues: readonly z.core.$ZodIssue[], body: unknown): AuthFailureResponse {
+  const issue = issues.find((candidate) => candidate.path[0] === "username" || candidate.path[0] === "password");
+  if (!issue) return { error: "validation" };
+  const field = issue.path[0];
+  if (field !== "username" && field !== "password") return { error: "validation" };
+  if (typeof body === "object" && body !== null) {
+    let raw: unknown;
+    if (field === "username") {
+      if (!("username" in body)) return { error: "validation", field, reason: "required" };
+      raw = body.username;
+    } else {
+      if (!("password" in body)) return { error: "validation", field, reason: "required" };
+      raw = body.password;
+    }
+    if (typeof raw !== "string") return { error: "validation" };
+    if (raw.trim().length === 0) {
+      return { error: "validation", field, reason: "required" };
+    }
+  } else return { error: "validation" };
+  if (issue.code === "too_small") return { error: "validation", field, reason: "too-short" };
+  if (issue.code === "too_big") return { error: "validation", field, reason: "too-long" };
+  if (field === "username" && issue.code === "invalid_format") {
+    return { error: "validation", field, reason: "invalid-characters" };
+  }
+  return { error: "validation" };
+}
 
 /** Read a player's last known {x,y} from the space's Redis presence hash. */
 async function presencePosition(
@@ -158,7 +186,7 @@ function isArcadeScoreGame(value: string): value is ArcadeScoreGame {
 api.post("/signup", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);
   if (!parsed.success) {
-    response.status(400).json({ error: "validation" });
+    response.status(400).json(credentialValidationFailure(parsed.error.issues, request.body));
     return;
   }
   const passwordHash = await hashSecret(parsed.data.password);
@@ -178,7 +206,7 @@ api.post("/signin", authLimiter, async (request, response) => {
   const parsed = credentialsSchema.safeParse(request.body);
   if (!parsed.success) {
     await safelyRecordSigninOutcome(response, "validation", requestLog(response, analyticsFallbackLog));
-    response.status(400).json({ error: "validation" });
+    response.status(400).json(credentialValidationFailure(parsed.error.issues, request.body));
     return;
   }
   const result = await pool.query<{ id: string; username: string; password_hash: string }>(

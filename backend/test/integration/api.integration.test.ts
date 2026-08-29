@@ -31,17 +31,44 @@ describe("signup", () => {
   it("reports a duplicate username as a conflict", async () => {
     const username = uniqueName("su2");
     expect((await api(base, "/api/v1/signup", { body: { username, password: TEST_PASSWORD } })).status).toBe(200);
-    const duplicate = await api(base, "/api/v1/signup", { body: { username, password: TEST_PASSWORD } });
+    const duplicate = await api(base, "/api/v1/signup", {
+      body: { username: `  ${username.toUpperCase()}  `, password: TEST_PASSWORD },
+    });
     expect(duplicate).toEqual({ status: 409, json: { error: "username-taken" } });
   });
 
   it("reports malformed signup credentials as validation, never username taken", async () => {
     const short = await api(base, "/api/v1/signup", { body: { username: "ab", password: "short" } });
     expect(short.status).toBe(400);
-    expect(short.json).toEqual({ error: "validation" });
+    expect(short.json).toEqual({ error: "validation", field: "username", reason: "too-short" });
 
-    expect((await api(base, "/api/v1/signup", { body: { username: "Bad Chars!", password: TEST_PASSWORD } })).status).toBe(400);
-    expect((await api(base, "/api/v1/signup", { body: {} })).status).toBe(400);
+    expect((await api(base, "/api/v1/signup", { body: { username: "Bad Chars!", password: TEST_PASSWORD } }))).toEqual({
+      status: 400, json: { error: "validation", field: "username", reason: "invalid-characters" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: "valid-name", password: "short" } }))).toEqual({
+      status: 400, json: { error: "validation", field: "password", reason: "too-short" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: "", password: TEST_PASSWORD } }))).toEqual({
+      status: 400, json: { error: "validation", field: "username", reason: "required" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: "   ", password: TEST_PASSWORD } }))).toEqual({
+      status: 400, json: { error: "validation", field: "username", reason: "required" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: "valid-name", password: "" } }))).toEqual({
+      status: 400, json: { error: "validation", field: "password", reason: "required" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: "valid-name", password: "        " } }))).toEqual({
+      status: 400, json: { error: "validation", field: "password", reason: "required" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: {} }))).toEqual({
+      status: 400, json: { error: "validation", field: "username", reason: "required" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: 123, password: TEST_PASSWORD } }))).toEqual({
+      status: 400, json: { error: "validation" },
+    });
+    expect((await api(base, "/api/v1/signup", { body: { username: "valid-name", password: [] } }))).toEqual({
+      status: 400, json: { error: "validation" },
+    });
   });
 
   it("reports syntactically invalid signup JSON as validation", async () => {

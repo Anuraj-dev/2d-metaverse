@@ -77,8 +77,20 @@ describe("auth", () => {
   });
 
   it("distinguishes validation failures from a taken username", async () => {
-    fetchMock.mockReturnValue(fail(400, { error: "validation" }));
-    await expect(signUp("x", "y")).rejects.toThrow(/requirements/i);
+    fetchMock.mockReturnValue(fail(400, { error: "validation", field: "username", reason: "too-short" }));
+    await expect(signUp("x", "y")).rejects.toMatchObject({ field: "username", message: expect.stringMatching(/at least 3/i) });
+  });
+
+  it("surfaces suspension expiry truthfully", async () => {
+    const until = 1_800_000_000_000;
+    fetchMock.mockReturnValue(fail(403, { error: "suspended", until }));
+    await expect(signIn("alice", "password1")).rejects.toThrow(new Date(until).toLocaleString());
+  });
+
+  it("rejects an out-of-range suspension timestamp instead of rendering an invalid date", async () => {
+    fetchMock.mockReturnValue(fail(403, { error: "suspended", until: 8_640_000_000_000_001 }));
+    await expect(signIn("alice", "password1")).rejects.toThrow(/server is having trouble/i);
+    await expect(signIn("alice", "password1")).rejects.not.toThrow(/invalid date/i);
   });
 
   it("includes bounded retry guidance when auth is rate limited", async () => {

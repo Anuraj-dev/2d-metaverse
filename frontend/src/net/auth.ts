@@ -1,5 +1,5 @@
 /** REST auth against the backend. Returns a JWT used for socket handshake + LiveKit tokens. */
-import type { AuthFailureResponse, AuthTokenResponse } from "@metaverse/shared";
+import { LIMITS, type AuthFailureResponse, type AuthTokenResponse } from "@metaverse/shared";
 import { parseAuthFailureResponse } from "@metaverse/shared/auth-failure";
 import { SERVER_URL } from "./config";
 import { authTransportReason, getOperationalReporter } from "../operationalReport";
@@ -48,7 +48,16 @@ async function authFailure(response: Response): Promise<AuthFailureResponse | nu
 function failureMessage(failure: AuthFailureResponse | null): string {
   switch (failure?.error) {
     case "validation":
-      return "Check the username and password requirements, then try again.";
+      if (!("field" in failure)) return "Check the username and password requirements, then try again.";
+      if (failure.field === "username") {
+        if (failure.reason === "required") return "Username is required.";
+        if (failure.reason === "too-short") return `Username must be at least ${LIMITS.usernameMin} characters.`;
+        if (failure.reason === "too-long") return `Username must be at most ${LIMITS.usernameMax} characters.`;
+        return "Use only letters, numbers, underscores, and hyphens.";
+      }
+      if (failure.reason === "required") return "Password is required.";
+      if (failure.reason === "too-short") return `Password must be at least ${LIMITS.passwordMin} characters.`;
+      return `Password must be at most ${LIMITS.passwordMax} characters.`;
     case "username-taken":
       return "That username is taken. Try signing in instead.";
     case "invalid-credentials":
@@ -56,8 +65,21 @@ function failureMessage(failure: AuthFailureResponse | null): string {
     case "rate-limited":
       return `Too many attempts. Try again in ${failure.retryAfterSeconds} seconds.`;
     case "server-error":
+      return "The server is having trouble. Try again.";
+    case "suspended":
+      return `Your account is suspended until ${new Date(failure.until).toLocaleString()}.`;
     default:
       return "The server is having trouble. Try again.";
+  }
+}
+
+export class AuthError extends Error {
+  readonly field: "username" | "password" | undefined;
+
+  constructor(message: string, field?: "username" | "password") {
+    super(message);
+    this.name = "AuthError";
+    this.field = field;
   }
 }
 
@@ -66,7 +88,11 @@ export async function signUp(username: string, password: string): Promise<void> 
   const res = await postJson("/api/v1/signup", { username, password });
   if (!res.ok) {
     reportAuthTransport({ kind: "http", status: res.status });
-    throw new Error(failureMessage(await authFailure(res)));
+    const failure = await authFailure(res);
+    const field = failure?.error === "username-taken"
+      ? "username"
+      : failure?.error === "validation" && "field" in failure ? failure.field : undefined;
+    throw new AuthError(failureMessage(failure), field);
   }
 }
 
@@ -75,7 +101,9 @@ export async function signIn(username: string, password: string): Promise<string
   const res = await postJson("/api/v1/signin", { username, password });
   if (!res.ok) {
     reportAuthTransport({ kind: "http", status: res.status });
-    throw new Error(failureMessage(await authFailure(res)));
+    const failure = await authFailure(res);
+    const field = failure?.error === "validation" && "field" in failure ? failure.field : undefined;
+    throw new AuthError(failureMessage(failure), field);
   }
   const { token } = (await res.json()) as AuthTokenResponse;
   return token;

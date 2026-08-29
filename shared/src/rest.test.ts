@@ -18,6 +18,7 @@ import {
   reportCreateSchema,
   reportFailureResponseSchema,
   spaceInfoSchema,
+  suspendedResponseSchema,
 } from "./rest.js";
 import { LIMITS } from "./constants.js";
 
@@ -30,6 +31,7 @@ describe("credentials", () => {
   it("rejects a short username or password", () => {
     expect(credentialsSchema.safeParse({ username: "ab", password: "hunter2!!" }).success).toBe(false);
     expect(credentialsSchema.safeParse({ username: "alice", password: "short" }).success).toBe(false);
+    expect(credentialsSchema.safeParse({ username: "alice", password: "        " }).success).toBe(false);
   });
   it("rejects disallowed username characters", () => {
     expect(credentialsSchema.safeParse({ username: "bad name", password: "hunter2!!" }).success).toBe(false);
@@ -39,12 +41,18 @@ describe("credentials", () => {
 describe("auth failure response", () => {
   it("accepts only the bounded public auth outcomes", () => {
     expect(authFailureResponseSchema.safeParse({ error: "validation" }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "validation", field: "username", reason: "too-short" }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "validation", field: "password", reason: "too-long" }).success).toBe(true);
     expect(authFailureResponseSchema.safeParse({ error: "username-taken" }).success).toBe(true);
     expect(authFailureResponseSchema.safeParse({ error: "invalid-credentials" }).success).toBe(true);
     expect(
       authFailureResponseSchema.safeParse({ error: "rate-limited", retryAfterSeconds: 60 }).success,
     ).toBe(true);
     expect(authFailureResponseSchema.safeParse({ error: "server-error" }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "suspended", until: 1_800_000_000_000 }).success).toBe(true);
+    expect(authFailureResponseSchema.safeParse({ error: "validation", field: "password", reason: "invalid-characters" }).success).toBe(false);
+    expect(authFailureResponseSchema.safeParse({ error: "suspended", until: 8_640_000_000_000_001 }).success).toBe(false);
+    expect(suspendedResponseSchema.safeParse({ error: "suspended", until: 8_640_000_000_000_001 }).success).toBe(false);
     expect(authFailureResponseSchema.safeParse({ error: "database exploded" }).success).toBe(false);
     expect(
       authFailureResponseSchema.safeParse({

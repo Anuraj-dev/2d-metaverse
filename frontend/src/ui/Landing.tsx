@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { signUp, signIn, USE_MOCK } from "../net/auth";
+import { LIMITS, USERNAME_PATTERN } from "@metaverse/shared";
+import { AuthError, signUp, signIn, USE_MOCK } from "../net/auth";
 import { CHARS, resolveCharKey } from "../game/chars";
 import Logo from "./Logo";
 import CampusHero from "./CampusHero";
@@ -27,13 +28,25 @@ export default function Landing({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ username: string | null; password: string | null }>({
+    username: null,
+    password: null,
+  });
 
   const userInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (busy) return;
+    if (fieldErrors.username) userInputRef.current?.focus();
+    else if (fieldErrors.password) passwordInputRef.current?.focus();
+  }, [busy, fieldErrors]);
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setError(null);
-    const u = username.trim();
+    setFieldErrors({ username: null, password: null });
+    const u = username.trim().toLowerCase();
     localStorage.setItem("avatar", avatar);
 
     if (USE_MOCK) {
@@ -44,7 +57,18 @@ export default function Landing({
       return;
     }
 
-    if (!u || !password) return setError("Username and password are required.");
+    const nextErrors: { username: string | null; password: string | null } = { username: null, password: null };
+    if (!u) nextErrors.username = "Username is required.";
+    else if (u.length < LIMITS.usernameMin) nextErrors.username = `Username must be at least ${LIMITS.usernameMin} characters.`;
+    else if (u.length > LIMITS.usernameMax) nextErrors.username = `Username must be at most ${LIMITS.usernameMax} characters.`;
+    else if (!USERNAME_PATTERN.test(u)) nextErrors.username = "Use only letters, numbers, underscores, and hyphens.";
+    if (!password.trim()) nextErrors.password = "Password is required.";
+    else if (password.length < LIMITS.passwordMin) nextErrors.password = `Password must be at least ${LIMITS.passwordMin} characters.`;
+    else if (password.length > LIMITS.passwordMax) nextErrors.password = `Password must be at most ${LIMITS.passwordMax} characters.`;
+    if (nextErrors.username || nextErrors.password) {
+      setFieldErrors(nextErrors);
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "signup") await signUp(u, password);
@@ -53,7 +77,10 @@ export default function Landing({
       localStorage.setItem("displayName", u);
       onEntered();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect.");
+      if (err instanceof AuthError && err.field) {
+        setFieldErrors({ username: err.field === "username" ? err.message : null, password: err.field === "password" ? err.message : null });
+      }
+      else setError(err instanceof Error ? err.message : "Could not connect.");
     } finally {
       setBusy(false);
     }
@@ -96,7 +123,7 @@ export default function Landing({
           </div>
         </section>
 
-        <form className="console" onSubmit={submit}>
+        <form className="console" onSubmit={submit} noValidate>
           <h2 className="console-title">
             {USE_MOCK
               ? "Pick your character"
@@ -110,9 +137,11 @@ export default function Landing({
               <button
                 type="button"
                 className={mode === "signin" ? "active" : ""}
+                disabled={busy}
                 onClick={() => {
                   setMode("signin");
                   setError(null);
+                  setFieldErrors({ username: null, password: null });
                 }}
               >
                 Sign in
@@ -120,9 +149,11 @@ export default function Landing({
               <button
                 type="button"
                 className={mode === "signup" ? "active" : ""}
+                disabled={busy}
                 onClick={() => {
                   setMode("signup");
                   setError(null);
+                  setFieldErrors({ username: null, password: null });
                 }}
               >
                 Sign up
@@ -130,28 +161,53 @@ export default function Landing({
             </div>
           )}
 
-          <label className="field">
-            <span className="field-label">Username</span>
+          <div className="field">
+            <label className="field-label" htmlFor="auth-username">Username</label>
             <input
+              id="auth-username"
               ref={userInputRef}
               autoFocus
+              disabled={busy}
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                setFieldErrors((current) => ({ ...current, username: null }));
+              }}
               placeholder="your name"
               autoComplete="username"
+              minLength={LIMITS.usernameMin}
+              maxLength={LIMITS.usernameMax}
+              pattern="[A-Za-z0-9_-]+"
+              aria-invalid={fieldErrors.username ? "true" : undefined}
+              aria-describedby={fieldErrors.username ? "username-error" : mode === "signup" ? "username-hint" : undefined}
             />
-          </label>
+            {fieldErrors.username && <span id="username-error" className="field-error" role="alert">{fieldErrors.username}</span>}
+            {!fieldErrors.username && mode === "signup" && (
+              <span id="username-hint" className="field-hint">Letters, numbers, _ and -. Saved in lowercase.</span>
+            )}
+          </div>
           {!USE_MOCK && (
-            <label className="field">
-              <span className="field-label">Password</span>
+            <div className="field">
+              <label className="field-label" htmlFor="auth-password">Password</label>
               <input
+                id="auth-password"
+                ref={passwordInputRef}
                 type="password"
+                disabled={busy}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setFieldErrors((current) => ({ ...current, password: null }));
+                }}
                 placeholder="your password"
                 autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                minLength={LIMITS.passwordMin}
+                maxLength={LIMITS.passwordMax}
+                aria-invalid={fieldErrors.password ? "true" : undefined}
+                aria-describedby={fieldErrors.password ? "password-error" : undefined}
               />
-            </label>
+              {fieldErrors.password && <span id="password-error" className="field-error" role="alert">{fieldErrors.password}</span>}
+            </div>
           )}
 
           <div className="field-label avatar-head">Choose your character</div>
@@ -160,6 +216,7 @@ export default function Landing({
               <button
                 key={c}
                 type="button"
+                disabled={busy}
                 className={`avatar-thumb ${avatar === c ? "sel" : ""}`}
                 style={{ backgroundImage: `url(/assets/characters/${c}.png)` }}
                 aria-label={`Choose ${c}`}

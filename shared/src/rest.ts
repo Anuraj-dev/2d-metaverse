@@ -34,7 +34,11 @@ export const credentialsSchema = z.object({
     .min(LIMITS.usernameMin)
     .max(LIMITS.usernameMax)
     .regex(USERNAME_PATTERN),
-  password: z.string().min(LIMITS.passwordMin).max(LIMITS.passwordMax),
+  password: z
+    .string()
+    .min(LIMITS.passwordMin)
+    .max(LIMITS.passwordMax)
+    .refine((value) => value.trim().length > 0),
 });
 export type Credentials = z.infer<typeof credentialsSchema>;
 
@@ -143,13 +147,35 @@ export type ModerationUnsuspendRequest = z.infer<typeof moderationUnsuspendSchem
 /* ------------------------------- responses -------------------------------- */
 
 /**
+ * The bounded refusal returned when a SUSPENDED user attempts to authenticate,
+ * open a socket, or fetch a media token. Carries only a JavaScript-Date-safe
+ * expiry timestamp, never the moderator, reason, or server internals.
+ */
+export const suspendedResponseSchema = z.strictObject({
+  error: z.literal("suspended"),
+  until: z.number().int().positive().max(8_640_000_000_000_000),
+});
+export type SuspendedResponse = z.infer<typeof suspendedResponseSchema>;
+
+/**
  * Bounded failure response shared by `POST /signup` and `POST /signin`.
  * Details stay deliberately coarse: the wire never reflects credentials or
- * arbitrary database/server text. Rate limiting is the only variant carrying
- * metadata, capped to the configured auth window.
+ * arbitrary database/server text. Validation identifies only the field and a
+ * bounded reason, rate limiting carries a capped retry delay, and suspension
+ * carries only its bounded expiry timestamp.
  */
-export const authFailureResponseSchema = z.discriminatedUnion("error", [
+export const authFailureResponseSchema = z.union([
   z.strictObject({ error: z.literal("validation") }),
+  z.strictObject({
+    error: z.literal("validation"),
+    field: z.literal("username"),
+    reason: z.enum(["required", "too-short", "too-long", "invalid-characters"]),
+  }),
+  z.strictObject({
+    error: z.literal("validation"),
+    field: z.literal("password"),
+    reason: z.enum(["required", "too-short", "too-long"]),
+  }),
   z.strictObject({ error: z.literal("username-taken") }),
   z.strictObject({ error: z.literal("invalid-credentials") }),
   z.strictObject({
@@ -157,6 +183,7 @@ export const authFailureResponseSchema = z.discriminatedUnion("error", [
     retryAfterSeconds: z.number().int().min(1).max(Math.ceil(RATE_LIMITS.authWindowMs / 1000)),
   }),
   z.strictObject({ error: z.literal("server-error") }),
+  suspendedResponseSchema,
 ]);
 export type AuthFailureResponse = z.infer<typeof authFailureResponseSchema>;
 
@@ -449,18 +476,6 @@ export const moderationFailureResponseSchema = z.discriminatedUnion("error", [
   }),
 ]);
 export type ModerationFailureResponse = z.infer<typeof moderationFailureResponseSchema>;
-
-/**
- * The bounded refusal returned when a SUSPENDED user attempts to authenticate
- * (`POST /signin`), open a socket, or fetch a media token (PRD 25.14). Carries
- * only the expiry (epoch ms) so the client can show when access returns — never
- * the moderator, reason, or any server internals.
- */
-export const suspendedResponseSchema = z.strictObject({
-  error: z.literal("suspended"),
-  until: z.number().int().positive(),
-});
-export type SuspendedResponse = z.infer<typeof suspendedResponseSchema>;
 
 /** A private room within a space, as returned by `GET /api/v1/space/:id`. */
 export const roomInfoSchema = z.object({

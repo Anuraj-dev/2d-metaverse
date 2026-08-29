@@ -11,6 +11,13 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
  */
 
 const auth = vi.hoisted(() => ({
+  AuthError: class AuthError extends Error {
+    readonly field: "username" | "password" | undefined;
+    constructor(message: string, field?: "username" | "password") {
+      super(message);
+      this.field = field;
+    }
+  },
   signUp: vi.fn().mockResolvedValue(undefined),
   signIn: vi.fn().mockResolvedValue("test-token"),
   USE_MOCK: false,
@@ -82,7 +89,7 @@ describe("Landing", () => {
     const onEntered = vi.fn();
     render(<Landing onEntered={onEntered} />);
     fireEvent.change(userField(), { target: { value: "ada" } });
-    fireEvent.change(passField(), { target: { value: "wrongpw" } });
+    fireEvent.change(passField(), { target: { value: "wrongpass" } });
     fireEvent.click(submitBtn());
     expect((await screen.findByRole("alert")).textContent).toContain("Invalid credentials");
     expect(onEntered).not.toHaveBeenCalled();
@@ -92,18 +99,110 @@ describe("Landing", () => {
     auth.signIn.mockRejectedValueOnce(new Error("Too many attempts. Try again in 37 seconds."));
     render(<Landing onEntered={() => {}} />);
     fireEvent.change(userField(), { target: { value: "ada" } });
-    fireEvent.change(passField(), { target: { value: "wrongpw" } });
+    fireEvent.change(passField(), { target: { value: "wrongpass" } });
     fireEvent.click(submitBtn());
 
     expect((await screen.findByRole("alert")).textContent).toContain("37 seconds");
     expect(submitBtn().disabled).toBe(false);
   });
 
-  it("requires username and password", async () => {
+  it("requires username and password", () => {
     render(<Landing onEntered={() => {}} />);
     fireEvent.click(submitBtn());
-    expect((await screen.findByRole("alert")).textContent).toMatch(/required/i);
+    expect(screen.getByText("Username is required.")).toBeTruthy();
+    expect(screen.getByText("Password is required.")).toBeTruthy();
     expect(auth.signIn).not.toHaveBeenCalled();
+  });
+
+  it("rejects a whitespace-only password as required", () => {
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.change(userField(), { target: { value: "alice" } });
+    fireEvent.change(passField(), { target: { value: "        " } });
+    fireEvent.click(submitBtn());
+
+    expect(screen.getByRole("alert").textContent).toBe("Password is required.");
+    expect(document.activeElement).toBe(passField());
+    expect(auth.signIn).not.toHaveBeenCalled();
+  });
+
+  it("shows precise local signup constraints without making a request", () => {
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.change(userField(), { target: { value: "bad name" } });
+    fireEvent.change(passField(), { target: { value: "short" } });
+    const form = submitBtn().closest("form");
+    if (!form) throw new Error("no auth form rendered");
+    fireEvent.submit(form);
+    expect(screen.getByText(/only letters, numbers/i)).toBeTruthy();
+    expect(screen.getByText(/password must be at least 8/i)).toBeTruthy();
+    expect(auth.signUp).not.toHaveBeenCalled();
+  });
+
+  it("announces and focuses the exact short-username error without making a request", () => {
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.change(userField(), { target: { value: "ab" } });
+    fireEvent.change(passField(), { target: { value: "password1" } });
+    fireEvent.click(submitBtn());
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("Username must be at least 3 characters.");
+    expect(userField().getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(userField());
+    expect(auth.signUp).not.toHaveBeenCalled();
+    expect(auth.signIn).not.toHaveBeenCalled();
+  });
+
+  it("places a duplicate-username response beside the username", async () => {
+    auth.signUp.mockRejectedValueOnce(new auth.AuthError("That username is taken.", "username"));
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.change(userField(), { target: { value: "Taken_Name" } });
+    fireEvent.change(passField(), { target: { value: "password1" } });
+    submitBtn().focus();
+    expect(document.activeElement).toBe(submitBtn());
+    fireEvent.click(submitBtn());
+    expect((await screen.findByRole("alert")).textContent).toBe("That username is taken.");
+    expect(userField().getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(userField());
+  });
+
+  it("locks auth state until an in-flight signup settles", async () => {
+    let rejectSignup: ((reason?: unknown) => void) | undefined;
+    auth.signUp.mockReturnValueOnce(new Promise<void>((_resolve, reject) => {
+      rejectSignup = reject;
+    }));
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.change(userField(), { target: { value: "taken-name" } });
+    fireEvent.change(passField(), { target: { value: "password1" } });
+    fireEvent.click(submitBtn());
+
+    await waitFor(() => expect(submitBtn().disabled).toBe(true));
+    expect(userField().hasAttribute("disabled")).toBe(true);
+    expect(passField().hasAttribute("disabled")).toBe(true);
+    const signInTab = screen.getByRole("button", { name: "Sign in" });
+    expect(signInTab.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(signInTab);
+    expect(screen.getByRole("heading", { name: "Join the campus" })).toBeTruthy();
+
+    if (!rejectSignup) throw new Error("signup rejection callback was not captured");
+    rejectSignup(new auth.AuthError("That username is taken.", "username"));
+    expect((await screen.findByRole("alert")).textContent).toBe("That username is taken.");
+    expect(userField()).toHaveProperty("value", "taken-name");
+    expect(userField().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("uses and stores the canonical normalised username", async () => {
+    const onEntered = vi.fn();
+    render(<Landing onEntered={onEntered} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.change(userField(), { target: { value: "  Ada_Lovelace  " } });
+    fireEvent.change(passField(), { target: { value: "password1" } });
+    fireEvent.click(submitBtn());
+    await waitFor(() => expect(onEntered).toHaveBeenCalled());
+    expect(auth.signUp).toHaveBeenCalledWith("ada_lovelace", "password1");
+    expect(localStorage.getItem("displayName")).toBe("ada_lovelace");
   });
 
   it("selects a different avatar and persists it on submit", async () => {

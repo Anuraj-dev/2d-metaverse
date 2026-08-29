@@ -11,13 +11,41 @@ export function parseAuthFailureResponse(value: unknown): AuthFailureResponse | 
   const keys = Object.keys(value);
   const error = value.error;
   if (
+    error === "validation" &&
+    keys.length === 3 &&
+    "field" in value &&
+    (value.field === "username" || value.field === "password") &&
+    "reason" in value &&
+    (value.reason === "required" ||
+      value.reason === "too-short" ||
+      value.reason === "too-long" ||
+      (value.reason === "invalid-characters" && value.field === "username"))
+  ) {
+    return { error, field: value.field, reason: value.reason };
+  }
+  if (
+    error === "suspended" &&
+    keys.length === 2 &&
+    "until" in value &&
+    typeof value.until === "number" &&
+    Number.isInteger(value.until) &&
+    value.until > 0 &&
+    value.until <= 8_640_000_000_000_000 &&
+    Number.isFinite(value.until)
+  ) {
+    return { error, until: value.until };
+  }
+  if (
     (error === "validation" ||
       error === "username-taken" ||
       error === "invalid-credentials" ||
       error === "server-error") &&
     keys.length === 1
   ) {
-    return { error };
+    if (error === "validation") return { error: "validation" };
+    if (error === "username-taken") return { error: "username-taken" };
+    if (error === "invalid-credentials") return { error: "invalid-credentials" };
+    return { error: "server-error" };
   }
   if (
     error === "rate-limited" &&
