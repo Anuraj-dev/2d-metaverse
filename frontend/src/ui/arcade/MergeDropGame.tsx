@@ -840,6 +840,8 @@ export default function MergeDropGame({ seed, paused, shake, onScore, onGameOver
       className="arcade-canvas"
       width={W * S}
       height={H * S}
+      role="img"
+      aria-label="Stellar Forge. Move with the mouse or A and D. Click or press Space to drop."
       onPointerMove={onPointerMove}
       onPointerDown={onPointerDown}
     />

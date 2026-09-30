@@ -302,6 +302,8 @@ describe("arcade score submission", () => {
     expect(arcadeScoreSchema.safeParse({ game: "snake-v2", score: 12 }).success).toBe(true);
     expect(arcadeScoreSchema.safeParse({ game: "flappy", score: 0 }).success).toBe(true);
     expect(arcadeScoreSchema.safeParse({ game: "merge-drop", score: 4096 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "breakout", score: 120 }).success).toBe(true);
+    expect(arcadeScoreSchema.safeParse({ game: "minesweeper", score: 2400 }).success).toBe(true);
   });
   it("rejects an unknown game", () => {
     expect(arcadeScoreSchema.safeParse({ game: "pong", score: 1 }).success).toBe(false);
