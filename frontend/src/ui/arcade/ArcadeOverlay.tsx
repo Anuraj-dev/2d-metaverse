@@ -16,6 +16,8 @@ import { useReducedMotion } from "../reducedMotionBridge";
 import SnakeGame from "./SnakeGame";
 import FlappyGame from "./FlappyGame";
 import MergeDropGame from "./MergeDropGame";
+import BreakoutGame from "./BreakoutGame";
+import MinesweeperGame from "./MinesweeperGame";
 import { terminalHoldMs } from "./terminalHold";
 import {
   exitFullscreen,
@@ -31,6 +33,8 @@ const GAMES: Record<ArcadeGame, ComponentType<ArcadeGameProps>> = {
   snake: SnakeGame,
   flappy: FlappyGame,
   "merge-drop": MergeDropGame,
+  breakout: BreakoutGame,
+  minesweeper: MinesweeperGame,
 };
 
 /** Fade-out budget before the parent unmounts us (matches the CSS transition). */
@@ -159,6 +163,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "m" && e.key !== "M") return;
+      if (e.repeat) return;
       e.preventDefault();
       setSettings({ muteArcade: !getSettings().muteArcade });
     };
@@ -227,6 +232,7 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "f" && e.key !== "F") return;
+      if (e.repeat) return;
       e.preventDefault();
       toggleFullscreen();
     };
@@ -398,6 +404,8 @@ export default function ArcadeOverlay({ game, label, onClose }: ArcadeOverlayPro
         e.stopPropagation();
       };
       if (phase.k === "closing") return;
+      // Auto-repeat would flicker pause/resume and retrigger Play again.
+      if (e.repeat && (e.key === "Escape" || e.key === "Enter" || e.key === " ")) return;
 
       if (e.key === "Escape") {
         swallow();

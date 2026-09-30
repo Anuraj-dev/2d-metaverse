@@ -167,6 +167,14 @@ describe("ArcadeOverlay pause menu", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("ignores auto-repeated Escape so a held key cannot flicker pause/resume", () => {
+    render(<ArcadeOverlay game="flappy" label="Flappy" onClose={() => {}} />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(panelOpen("pause")).toBe(true);
+    fireEvent.keyDown(window, { key: "Escape", repeat: true });
+    expect(panelOpen("pause")).toBe(true);
+  });
+
   it("arrow to Quit + Enter closes the overlay", () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
@@ -585,6 +593,34 @@ describe("ArcadeOverlay chrome", () => {
     fireEvent.change(slider, { target: { value: "20" } });
     expect(getSettings().arcadeVolume).toBeCloseTo(0.2);
     expect(getSettings().muteArcade).toBe(false);
+  });
+});
+
+describe("ArcadeOverlay new cabinet registry", () => {
+  it("mounts the breakout cabinet from the shared registry", async () => {
+    net.fetchLeaderboard.mockResolvedValue({
+      game: "breakout",
+      top: [{ username: "ada", score: 42 }],
+      best: 17,
+    });
+    render(<ArcadeOverlay game="breakout" label="Breakout" onClose={() => {}} />);
+    expect(await screen.findByText("Your best")).toBeTruthy();
+    expect(net.fetchLeaderboard).toHaveBeenCalledWith("breakout");
+    expect(screen.getByRole("img", { name: /Breakout/i })).toBeTruthy();
+    expect(screen.getByLabelText("Breakout arcade")).toBeTruthy();
+  });
+
+  it("mounts the minesweeper cabinet from the shared registry", async () => {
+    net.fetchLeaderboard.mockResolvedValue({
+      game: "minesweeper",
+      top: [],
+      best: null,
+    });
+    render(<ArcadeOverlay game="minesweeper" label="Minesweeper" onClose={() => {}} />);
+    expect(await screen.findByText("Your best")).toBeTruthy();
+    expect(net.fetchLeaderboard).toHaveBeenCalledWith("minesweeper");
+    expect(screen.getByRole("grid", { name: "Minesweeper board" })).toBeTruthy();
+    expect(screen.getByLabelText("Minesweeper arcade")).toBeTruthy();
   });
 });
 
