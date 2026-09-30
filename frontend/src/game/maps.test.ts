@@ -229,7 +229,7 @@ describe("campus arcade cabinets (PRD 11)", () => {
 
   const ARCADE_GAME_SET = new Set<string>(ARCADE_GAMES);
 
-  it("places exactly three arcade interactables, each with a valid game id + label", () => {
+  it("places one arcade interactable per registered game, each with a valid game id + label", () => {
     const arcades = objects("interactables").filter((o) => prop(o, "interactType") === "arcade");
     expect(arcades).toHaveLength(ARCADE_GAME_SET.size);
     const games = arcades.map((o) => prop(o, "game"));
@@ -285,8 +285,8 @@ describe("campus arcade hall (PRD 16)", () => {
 
   it("relocates the cabinets together into the southern hall (well clear of the plaza)", () => {
     const cabinets = objects("furniture").filter((o) => o.name.startsWith("f_arcade_"));
-    // One solid cabinet sprite per registered game (Arcade 2.0 added a third).
-    expect(cabinets.length).toBe(3);
+    // One solid cabinet sprite per registered game, all on the north wall.
+    expect(cabinets.length).toBe(ARCADE_GAMES.length);
     for (const c of cabinets) {
       // Deep south of spawn (row 44 = 704px) — the cabinets moved out of the
       // old plaza cluster (~row 50) into the far-south hall (row 96 = 1536px).

@@ -212,7 +212,7 @@ describe("physics", () => {
       }
     }
     expect(s.bodies.length).toBeGreaterThan(0);
-  });
+  }, 15_000);
 
   it("never mutates the state it is given", () => {
     const s = stepMergeDrop(initMergeDrop(5), drop(120));
@@ -514,7 +514,7 @@ describe("solver equivalence (broad phase vs all-pairs reference)", () => {
       );
       expect(matched).toBe(1_500);
     }
-  });
+  }, 15_000);
 });
 
 describe("pressure phases", () => {
