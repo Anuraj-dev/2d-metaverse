@@ -5,6 +5,7 @@ import { areaLabels, nearestDot } from "../game/mapView";
 import { fitScale } from "./minimapScale";
 import type { TerrainInfo } from "./minimapTerrain";
 import Dialog from "./Dialog";
+import { useDevicePixelRatio } from "./useDevicePixelRatio";
 
 const OTHER_PLAYER_COLORS = ["#2f80b7", "#7650a8", "#c65373", "#d29223"] as const;
 
@@ -71,6 +72,7 @@ export interface FullscreenMapProps {
  */
 export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dpr = useDevicePixelRatio();
   const [hover, setHover] = useState<{ x: number; y: number; name: string } | null>(null);
 
   // The rasterized terrain, one offscreen pixel per tile (shared with the minimap).
@@ -108,14 +110,14 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
   const cw = Math.round(info.width * scale);
   const ch = Math.round(info.height * scale);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
+  // Cache terrain, room outlines and measured labels; movement only needs one
+  // background blit plus live dots. The cache is released with this dialog.
+  const backgroundCanvas = useMemo(() => {
+    const canvas = document.createElement("canvas");
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     ctx.clearRect(0, 0, info.width, info.height);
 
@@ -150,6 +152,21 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
       ctx.fillText(label.name, label.cx, label.cy);
     }
 
+    return canvas;
+  }, [info, terrainCanvas, scale, cw, ch, dpr]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !backgroundCanvas) return;
+    if (canvas.width !== backgroundCanvas.width) canvas.width = backgroundCanvas.width;
+    if (canvas.height !== backgroundCanvas.height) canvas.height = backgroundCanvas.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(backgroundCanvas, 0, 0);
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
     // Live player dots.
     dots.forEach((d, index) => {
       ctx.beginPath();
@@ -160,7 +177,7 @@ export default function FullscreenMap({ info, dots, onClose }: FullscreenMapProp
       ctx.strokeStyle = "#382718";
       ctx.stroke();
     });
-  }, [info, dots, terrainCanvas, scale, cw, ch]);
+  }, [dots, backgroundCanvas, scale, dpr]);
 
   // Esc, focus containment, and background inertness are owned by the Dialog
   // primitive; the scene already has movement captured via map-open.

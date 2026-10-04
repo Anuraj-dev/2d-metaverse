@@ -1,3 +1,4 @@
+import { createCoalescedRefresh } from "./coalesced-refresh.js";
 import type { Server as HttpServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { Server, type Socket } from "socket.io";
@@ -350,13 +351,18 @@ export function createGameServer(httpServer: HttpServer) {
     });
   }
 
-  // Recompute + broadcast the space's presence snapshot on a membership/activity
-  // change (join, leave, room enter/leave, meeting start/end, board change).
-  // Fire-and-forget: telemetry-grade — a failure must never break the game.
+  // Coalesce bursts of membership/activity changes into sequential gathers.
+  // Every completed snapshot is broadcast; updates arriving during that gather
+  // request one follow-up, keeping steady activity visible without query fanout.
+  const queuePresenceRefresh = createCoalescedRefresh<string>(
+    async (spaceId) => {
+      const snapshot = await gatherSpacePresence(spaceId);
+      io.to(spaceChannel(spaceId)).emit("presence-snapshot", snapshot);
+    },
+    (error, spaceId) => presenceLog.error({ err: error, spaceId }, "presence refresh failed"),
+  );
   function refreshPresence(spaceId: string): void {
-    void gatherSpacePresence(spaceId)
-      .then((snapshot) => io.to(spaceChannel(spaceId)).emit("presence-snapshot", snapshot))
-      .catch((error: unknown) => presenceLog.error({ err: error, spaceId }, "presence refresh failed"));
+    void queuePresenceRefresh(spaceId);
   }
 
   io.use((socket, next) => {
@@ -382,7 +388,7 @@ export function createGameServer(httpServer: HttpServer) {
       })
       .catch((error: unknown) => {
         childLogger({ module: "socket" }).error({ err: error }, "suspension check failed");
-        next(new Error("unauthorized"));
+        next(new Error("service unavailable"));
       });
   });
 

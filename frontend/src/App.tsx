@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { MotionConfig } from "motion/react";
 import { TriangleAlert } from "lucide-react";
 import Minimap from "./ui/Minimap";
+import { reloadPage } from "./ui/reloadPage";
 import ControlBar from "./ui/ControlBar";
 import TouchControls from "./ui/TouchControls";
 import HelpOverlay from "./ui/HelpOverlay";
@@ -21,8 +22,8 @@ import { sharedNet } from "./net/shared";
 import { bus } from "./game/eventBus";
 import { boardSoundEvents } from "./game/boardSound";
 import { worldAudio, roomVideo, stageVideo } from "./media/livekit";
-import { setMic } from "./media/mediaControls";
-import { getMediaPrefs } from "./media/mediaPrefs";
+import { beginStageMic, endStageMic } from "./media/mediaControls";
+import { endStageMicOverride } from "./media/mediaPrefs";
 import { outcomeNeedsAttention } from "./media/publicationState";
 import {
   MEETING_NONE,
@@ -137,7 +138,7 @@ export default function App() {
   // Connection lifecycle (PRD 25.5): drive a truthful status surface from the raw
   // socket.io events through the pure connectionReduce machine — connected /
   // reconnecting / recovered / gone. A connect_error (e.g. rejected JWT) is the
-  // separate fatal path: it clears the session and returns the player to sign-in.
+  // authentication rejection path; transport errors keep the session for retries.
   useEffect(() => {
     if (!entered) return;
     const net = sharedNet();
@@ -181,14 +182,30 @@ export default function App() {
       apply({ type: "disconnect", reason: p.reason }),
     );
     const offReconnecting = net.on("socket-reconnecting", () => apply({ type: "reconnecting" }));
-    const offErr = net.on("connect_error", (p: { message: string }) => {
-      // A rejected handshake is a failed world load for this attempt.
+    const offErr = net.on("connect_error", (p: { message: string; retrying: boolean }) => {
+      if (p.retrying) {
+        apply({ type: "reconnecting" });
+        return;
+      }
+      // Middleware rejection stops Socket.IO retries. Only authentication or
+      // suspension rejection invalidates the credentials; outages allow re-entry.
       emitWorldLoad("failure");
-      localStorage.removeItem("token");
+      const rejectedSession = p.message === "unauthorized" || p.message === "suspended";
+      if (rejectedSession) localStorage.removeItem("token");
+      setSelfId("");
+      setMeeting(MEETING_NONE);
+      setPortal(null);
+      setArcade(null);
+      setBoardSnapshots({});
+      setBoardSeatedTable(null);
+      setBoardNearTable(null);
+      setBoardError(null);
       connStatusRef.current = CONNECTION_INITIAL;
       setConnStatus(CONNECTION_INITIAL);
       setEntered(false);
-      setNotice(`Couldn't connect: ${p.message}. Please sign in again.`);
+      setNotice(rejectedSession
+        ? `Couldn't connect: ${p.message}. Please sign in again.`
+        : "Couldn't connect. Please try entering again.");
     });
     return () => {
       window.clearTimeout(settleTimer);
@@ -351,25 +368,22 @@ export default function App() {
     // afterward without creating a second stage action.
     //
     // Mic consent: Go Live unmutes via the shared fan-out (world + room + stage).
-    // Capture the pre-live pref so failure and stop both restore consent-safe
-    // silence when the player had not already unmuted for proximity voice.
+    // Keep this consent temporary: failure and stop restore the latest explicit
+    // global choice, and reloads never retain a stage-only unmute.
     // Walking off the presenter platform also emits stage-off-air — that path
     // must re-mute too, or the world publisher stays hot with no further gesture.
-    let stageMicWasOnBeforeLive = false;
     const offOnAir = bus.on("stage-on-air", () => {
       if (!selfId) return;
       transition(async () => {
-        const micWasOn = getMediaPrefs().micOn;
-        stageMicWasOnBeforeLive = micWasOn;
-        const mic = await setMic(true);
+        const mic = await beginStageMic();
         if (outcomeNeedsAttention(mic.status)) {
-          if (!micWasOn) await setMic(false);
+          await endStageMic();
           bus.emit("stage-live-failed");
           return;
         }
         const live = await stageVideo.goLive(SPACE_ID, selfId);
         if (outcomeNeedsAttention(live.status)) {
-          if (!micWasOn) await setMic(false);
+          await endStageMic();
           bus.emit("stage-live-failed");
         }
       });
@@ -382,7 +396,7 @@ export default function App() {
         try {
           await stageVideo.goOffAir(SPACE_ID, selfId);
         } finally {
-          if (!stageMicWasOnBeforeLive) await setMic(false);
+          await endStageMic();
         }
       });
     });
@@ -485,6 +499,7 @@ export default function App() {
     startWorldAudio();
     return () => {
       disposed = true;
+      endStageMicOverride();
       offInit();
       offRoomEntered();
       offSeat();
@@ -501,6 +516,7 @@ export default function App() {
       settlePhaseA?.();
       burstCovered.current = () => {};
       void mediaTransition.finally(async () => {
+        endStageMicOverride();
         await roomVideo.leave();
         await stageVideo.leave();
         await worldAudio.stop();
@@ -624,6 +640,11 @@ export default function App() {
           >
             <span className="presence-dot" aria-hidden="true" />
             {CONNECTION_LABELS[connStatus]}
+            {connStatus === "gone" && (
+              <button className="connection-reload" type="button" onClick={reloadPage}>
+                Reload space
+              </button>
+            )}
           </div>
         )}
         {/* The global media controls stay above meeting surfaces, but the arcade

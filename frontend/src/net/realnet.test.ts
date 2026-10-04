@@ -9,6 +9,7 @@ const h = vi.hoisted(() => {
   const socket = {
     auth: undefined as unknown,
     recovered: false,
+    active: false,
     on: vi.fn((ev: string, cb: Handler) => {
       handlers[ev] = cb;
     }),
@@ -40,6 +41,7 @@ beforeEach(() => {
   for (const k of Object.keys(h.managerHandlers)) delete h.managerHandlers[k];
   h.socket.auth = undefined;
   h.socket.recovered = false;
+  h.socket.active = false;
 });
 
 describe("RealNet adapter", () => {
@@ -79,7 +81,16 @@ describe("RealNet adapter", () => {
     net.on<{ message: string }>("connect_error", (p) => seen.push(p));
 
     h.handlers["connect_error"]?.(new Error("invalid token"));
-    expect(seen).toEqual([{ message: "invalid token" }]);
+    expect(seen).toEqual([{ message: "invalid token", retrying: false }]);
+  });
+
+  it("marks transport errors as automatically retrying", () => {
+    const net = new RealNet("http://api.test");
+    const seen: unknown[] = [];
+    net.on("connect_error", (payload) => seen.push(payload));
+    h.socket.active = true;
+    h.handlers["connect_error"]?.(new Error("websocket error"));
+    expect(seen).toEqual([{ message: "websocket error", retrying: true }]);
   });
 
   it("surfaces socket lifecycle events for the connection-state machine", () => {
@@ -103,6 +114,18 @@ describe("RealNet adapter", () => {
 
     h.handlers["disconnect"]?.("transport close");
     expect(disconnects).toEqual([{ reason: "transport close" }]);
+  });
+
+  it("forgets the previous identity and space on intentional teardown", () => {
+    const net = new RealNet("http://api.test");
+    net.connect("old-jwt", "old-space");
+    h.handlers["init"]?.({ selfId: "old-player", players: [] });
+    net.disconnect();
+    expect(net.selfId).toBe("");
+    h.socket.emit.mockClear();
+    h.handlers["connect"]?.();
+    expect(h.socket.emit).not.toHaveBeenCalled();
+    expect(h.socket.disconnect).toHaveBeenCalledOnce();
   });
 
   it("captures selfId from init and forwards the payload", () => {

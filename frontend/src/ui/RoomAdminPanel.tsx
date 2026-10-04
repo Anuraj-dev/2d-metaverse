@@ -118,10 +118,10 @@ export default function RoomAdminPanel() {
                 <strong>{r.name}</strong> wants to join
               </span>
               <div className="knock-request-actions">
-                <button type="button" className="ghost" onClick={() => net.denyKnock(roomId, r.id)}>
+                <button type="button" aria-label={`Deny ${r.name}`} className="ghost" onClick={() => net.denyKnock(roomId, r.id)}>
                   Deny
                 </button>
-                <button type="button" onClick={() => net.approveKnock(roomId, r.id)}>
+                <button type="button" aria-label={`Approve ${r.name}`} onClick={() => net.approveKnock(roomId, r.id)}>
                   Approve
                 </button>
               </div>

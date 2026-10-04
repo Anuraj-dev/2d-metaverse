@@ -20,6 +20,9 @@ const auth = vi.hoisted(() => ({
   },
   signUp: vi.fn().mockResolvedValue(undefined),
   signIn: vi.fn().mockResolvedValue("test-token"),
+  googleAvailable: vi.fn().mockResolvedValue(false),
+  startGoogleSignIn: vi.fn(),
+  completeGoogleSignIn: vi.fn().mockReturnValue(null),
   USE_MOCK: false,
 }));
 vi.mock("../net/auth", () => auth);
@@ -43,6 +46,9 @@ const passField = () => screen.getByLabelText("Password");
 beforeEach(() => {
   auth.signUp.mockClear().mockResolvedValue(undefined);
   auth.signIn.mockClear().mockResolvedValue("test-token");
+  auth.googleAvailable.mockReset().mockResolvedValue(false);
+  auth.startGoogleSignIn.mockReset();
+  auth.completeGoogleSignIn.mockReset().mockReturnValue(null);
   localStorage.clear();
 });
 afterEach(() => cleanup());
@@ -55,7 +61,7 @@ describe("Landing", () => {
     expect(passField()).toBeTruthy();
     expect(submitBtn().textContent).toContain("Sign in");
     // both auth tabs present
-    expect(screen.getByRole("button", { name: "Sign up" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create account", pressed: false })).toBeTruthy();
     // avatar picker present, first char selected by default
     expect(screen.getByRole("button", { name: "Choose char1" }).getAttribute("aria-pressed")).toBe("true");
   });
@@ -74,14 +80,29 @@ describe("Landing", () => {
   it("switches to sign-up mode and registers before signing in", async () => {
     const onEntered = vi.fn();
     render(<Landing onEntered={onEntered} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
     expect(screen.getByRole("heading", { name: "Join the campus" })).toBeTruthy();
     fireEvent.change(userField(), { target: { value: "grace" } });
     fireEvent.change(passField(), { target: { value: "hopper99" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    fireEvent.click(submitBtn());
     await waitFor(() => expect(onEntered).toHaveBeenCalled());
     expect(auth.signUp).toHaveBeenCalledWith("grace", "hopper99");
     expect(auth.signIn).toHaveBeenCalledWith("grace", "hopper99");
+  });
+
+  it("returns to sign-in after registration succeeds but automatic sign-in fails", async () => {
+    auth.signIn.mockRejectedValueOnce(new Error("Connection interrupted"));
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
+    fireEvent.change(userField(), { target: { value: "new-user" } });
+    fireEvent.change(passField(), { target: { value: "password1" } });
+    fireEvent.click(submitBtn());
+    expect((await screen.findByRole("alert")).textContent).toContain("Your account was created. Sign in to continue.");
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(submitBtn().textContent).toContain("Sign in");
+    fireEvent.click(submitBtn());
+    await waitFor(() => expect(auth.signIn).toHaveBeenCalledTimes(2));
+    expect(auth.signUp).toHaveBeenCalledOnce();
   });
 
   it("surfaces a server error and does not enter", async () => {
@@ -106,6 +127,16 @@ describe("Landing", () => {
     expect(submitBtn().disabled).toBe(false);
   });
 
+  it("reveals and hides the password without submitting credentials", () => {
+    render(<Landing onEntered={() => {}} />);
+    expect(passField()).toHaveProperty("type", "password");
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passField()).toHaveProperty("type", "text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(passField()).toHaveProperty("type", "password");
+    expect(auth.signIn).not.toHaveBeenCalled();
+  });
+
   it("requires username and password", () => {
     render(<Landing onEntered={() => {}} />);
     fireEvent.click(submitBtn());
@@ -127,7 +158,7 @@ describe("Landing", () => {
 
   it("shows precise local signup constraints without making a request", () => {
     render(<Landing onEntered={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
     fireEvent.change(userField(), { target: { value: "bad name" } });
     fireEvent.change(passField(), { target: { value: "short" } });
     const form = submitBtn().closest("form");
@@ -140,7 +171,7 @@ describe("Landing", () => {
 
   it("announces and focuses the exact short-username error without making a request", () => {
     render(<Landing onEntered={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
     fireEvent.change(userField(), { target: { value: "ab" } });
     fireEvent.change(passField(), { target: { value: "password1" } });
     fireEvent.click(submitBtn());
@@ -156,7 +187,7 @@ describe("Landing", () => {
   it("places a duplicate-username response beside the username", async () => {
     auth.signUp.mockRejectedValueOnce(new auth.AuthError("That username is taken.", "username"));
     render(<Landing onEntered={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
     fireEvent.change(userField(), { target: { value: "Taken_Name" } });
     fireEvent.change(passField(), { target: { value: "password1" } });
     submitBtn().focus();
@@ -173,7 +204,7 @@ describe("Landing", () => {
       rejectSignup = reject;
     }));
     render(<Landing onEntered={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
     fireEvent.change(userField(), { target: { value: "taken-name" } });
     fireEvent.change(passField(), { target: { value: "password1" } });
     fireEvent.click(submitBtn());
@@ -196,7 +227,7 @@ describe("Landing", () => {
   it("uses and stores the canonical normalised username", async () => {
     const onEntered = vi.fn();
     render(<Landing onEntered={onEntered} />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account", pressed: false }));
     fireEvent.change(userField(), { target: { value: "  Ada_Lovelace  " } });
     fireEvent.change(passField(), { target: { value: "password1" } });
     fireEvent.click(submitBtn());
@@ -226,6 +257,63 @@ describe("Landing", () => {
     expect(document.activeElement).not.toBe(user);
     fireEvent.click(screen.getByRole("button", { name: /enter campus/i }));
     expect(document.activeElement).toBe(user);
+  });
+
+  it("keeps Google disabled when the provider is unconfigured", async () => {
+    render(<Landing onEntered={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/Google sign-in is not available yet/)).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toHaveProperty("disabled", true);
+  });
+
+  it("starts the configured Google flow without submitting password credentials", async () => {
+    auth.googleAvailable.mockResolvedValue(true);
+    render(<Landing onEntered={() => {}} />);
+    const google = screen.getByRole("button", { name: "Continue with Google" });
+    await waitFor(() => expect(google).toHaveProperty("disabled", false));
+    fireEvent.click(google);
+    expect(auth.startGoogleSignIn).toHaveBeenCalledOnce();
+    expect(auth.signIn).not.toHaveBeenCalled();
+    expect(submitBtn()).toHaveProperty("disabled", true);
+  });
+
+  it("finishes Google sign-in with the canonical account and enters", async () => {
+    auth.completeGoogleSignIn.mockReturnValue(Promise.resolve({ token: "google-token", username: "google-user" }));
+    const onEntered = vi.fn();
+    render(<Landing onEntered={onEntered} />);
+    await waitFor(() => expect(onEntered).toHaveBeenCalledOnce());
+    expect(localStorage.getItem("token")).toBe("google-token");
+    expect(localStorage.getItem("displayName")).toBe("google-user");
+  });
+
+  it("restores password access after a failed Google callback", async () => {
+    localStorage.setItem("token", "existing-session");
+    auth.completeGoogleSignIn.mockReturnValue(Promise.reject(new Error("expired")));
+    render(<Landing onEntered={() => {}} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Google sign-in could not be completed");
+    expect(screen.getByRole("button", { name: "Continue as your account" })).toHaveProperty("disabled", false);
+    expect(localStorage.getItem("token")).toBe("existing-session");
+  });
+
+  it("offers explicit resume for a saved session without submitting credentials", () => {
+    localStorage.setItem("token", "saved-token");
+    localStorage.setItem("displayName", "ada");
+    const onEntered = vi.fn();
+    render(<Landing onEntered={onEntered} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continue as ada" }));
+    expect(onEntered).toHaveBeenCalledOnce();
+    expect(auth.signIn).not.toHaveBeenCalled();
+    expect(localStorage.getItem("token")).toBe("saved-token");
+  });
+
+  it("clears the saved session only when choosing another account", () => {
+    localStorage.setItem("token", "saved-token");
+    localStorage.setItem("displayName", "ada");
+    render(<Landing onEntered={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    expect(localStorage.getItem("token")).toBeNull();
+    expect(localStorage.getItem("displayName")).toBeNull();
+    expect(userField()).toBeTruthy();
+    expect(passField()).toBeTruthy();
   });
 
   it("shows a parent-supplied notice", () => {

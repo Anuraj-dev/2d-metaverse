@@ -1,5 +1,16 @@
 # 2D Metaverse — State
-> **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-08-08
+> **hyprverse**: a private student social world with spatial media, meeting rooms, stage, arcade, and board tables. · Last checkpoint: 2026-10-04
+
+## Current cloud work — review branch
+- User requested clearer sign-in, Google OAuth preparation (credentials later), overlapping room-chat fixes, and additional tested usability/performance improvements. Changes are prepared on `feat/auth-chat-reliability` for a pull request; no merge or deployment is authorized.
+- Implemented explicit sign-in/create-account, saved-session resume/account switch, password reveal, bounded auth requests, optional Google OAuth with PKCE/state/nonce and browser-bound one-use completion tickets. Backend migration `007_google_identities.sql` must precede enabling Google. Configuration and canonical callback-origin requirements: backend/README.md → Optional Google sign-in.
+- Fixed shrinking/overlapping chat rows, long-word wrapping, landscape composer clipping, scroll preservation and Jump to latest. Permanent Chromium geometry tests: frontend/e2e/chat-layout.spec.ts.
+- Connection failures preserve credentials when retryable; stale entry state resets on rejection. Root rendering/chunk recovery and terminal-disconnect reload controls preserve sign-in. Stage microphone consent is temporary and never silently persisted over the explicit choice.
+- Improved roster dismissal/focus, named approval buttons, help shortcut repeat handling, and touch joystick rotation/capture-loss cleanup.
+- Performance pass complete: static map layers cache between position updates and react to DPR changes; world-audio generation guards prevent late connections/listener leaks; failed stage subscription can retry; per-space presence refreshes coalesce bursts without starving updates.
+- Final validation: all-workspace production build and 102.4 KiB entry bundle budget passed; 196 selected frontend tests, 53 backend unit tests, 75 PostgreSQL/Redis integration tests, and 8 Chromium browser regressions passed. Production output excludes the E2E hook. Full suites were not run. Real Google consent remains pending actual credentials/configuration, not simulated as verified.
+- See docs/sessions/2026-10-04.md for exact evidence and next steps. Google outbound domains were saved in the cloud configuration draft; review/save/publish through environment settings before relying on them. No live Google request was validated.
+- Native GPT 6.1 Sol subagents used. Requested external CLI review was blocked by automatic approval review over potential private-source export; do not bypass. No wake-after-quota automation was installed or promised.
 
 ## 🚧 In progress / next
 - PR #174 (`feat/restore-white-snake`) merged as `3701d473` from head `21e6dec`; no active work remains from this session.

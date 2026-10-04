@@ -2,6 +2,7 @@ import http from "node:http";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
+import { googleAuth } from "./google-auth.js";
 import { api } from "./api.js";
 import { beginSigninAttempt, safelyRecordSigninOutcome } from "./analytics.js";
 import { moderation } from "./moderation.js";
@@ -64,6 +65,7 @@ export function createApp(): express.Express {
       response.status(503).json({ ok: false, sha: config.GIT_SHA });
     }
   });
+  app.use("/api/v1/auth", googleAuth);
   app.use("/api/v1/mod", moderation);
   app.use("/api/v1", api);
   app.use((_request, response) => response.status(404).json({ error: "not-found" }));

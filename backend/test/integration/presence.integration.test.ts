@@ -77,6 +77,18 @@ describe("presence read model over the socket boundary", () => {
     expect(personFor(snap, second.id)?.activity).toBe("world");
   });
 
+  it("converges on all arrivals when several players join concurrently", async () => {
+    const observer = await createPlayer("pres-burst-observer");
+    const { socket } = await joinAs(observer.token);
+    const arrivals = await Promise.all(Array.from({ length: 6 }, (_, i) => createPlayer(`pres-burst-${i}`)));
+    const visible = onceMatching<PresenceSnapshot>(socket, "presence-snapshot", (snapshot) =>
+      arrivals.every((user) => Boolean(personFor(snapshot, user.id))),
+    );
+    await Promise.all(arrivals.map((user) => joinAs(user.token)));
+    const snapshot = await visible;
+    expect(arrivals.every((user) => personFor(snapshot, user.id)?.activity === "world")).toBe(true);
+  });
+
   it("moves a student to the 'room' activity when they enter a private room", async () => {
     const user = await createPlayer("pres-c");
     const { socket, selfId } = await joinAs(user.token);

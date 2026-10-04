@@ -33,13 +33,27 @@ export interface MeetingChatPanelProps {
 export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle, notice = null }: MeetingChatPanelProps) {
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const [following, setFollowing] = useState(true);
+  const [readThrough, setReadThrough] = useState<number | undefined>(undefined);
+  const latestKey = lines.at(-1)?.key;
+  const hasNewMessages = !following && latestKey !== readThrough;
+  const toggle = () => {
+    followLatest.current = true;
+    setFollowing(true);
+    setReadThrough(latestKey);
+    onToggle();
+  };
 
-  // Keep the newest line in view as the transcript grows (only while open).
+  // Follow new messages only while reading the latest; reopening starts there.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      followLatest.current = true;
+      return;
+    }
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [lines.length, open]);
+    if (el && followLatest.current) el.scrollTop = el.scrollHeight;
+  }, [lines, open]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +70,7 @@ export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle
         type="button"
         className="meeting-chat-launcher"
         data-testid="meeting-chat-open"
-        onClick={onToggle}
+        onClick={toggle}
         aria-label={unread > 0 ? `Open meeting chat, ${unread} unread` : "Open meeting chat"}
       >
         <MessageSquare size={18} aria-hidden="true" />
@@ -72,14 +86,30 @@ export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle
         <button
           type="button"
           className="meeting-chat-close"
-          onClick={onToggle}
+          onClick={toggle}
           aria-label="Close meeting chat"
           data-testid="meeting-chat-close"
         >
           <X size={16} aria-hidden="true" />
         </button>
       </header>
-      <div className="meeting-chat-list" data-testid="meeting-chat-list" ref={listRef}>
+      <div
+        className="meeting-chat-list"
+        data-testid="meeting-chat-list"
+        ref={listRef}
+        role="log"
+        aria-label="Meeting messages"
+        aria-live="polite"
+        aria-relevant="additions"
+        tabIndex={0}
+        onScroll={(event) => {
+          const list = event.currentTarget;
+          const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight <= 24;
+          if (followLatest.current || atBottom) setReadThrough(latestKey);
+          followLatest.current = atBottom;
+          setFollowing(followLatest.current);
+        }}
+      >
         {lines.length === 0 ? (
           <p className="meeting-chat-empty">No messages yet. Say hi</p>
         ) : (
@@ -91,6 +121,21 @@ export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle
           ))
         )}
       </div>
+      {hasNewMessages && (
+        <button
+          type="button"
+          className="meeting-chat-latest"
+          onClick={() => {
+            const list = listRef.current;
+            if (list) list.scrollTop = list.scrollHeight;
+            followLatest.current = true;
+            setFollowing(true);
+            setReadThrough(latestKey);
+          }}
+        >
+          New messages · Jump to latest
+        </button>
+      )}
       {notice && (
         <p className="meeting-chat-notice" role="status" data-testid="meeting-chat-notice">
           {notice}
@@ -101,6 +146,7 @@ export default function MeetingChatPanel({ lines, onSend, open, unread, onToggle
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.stopPropagation()}
+          autoComplete="off"
           maxLength={LIMITS.chatTextMax}
           placeholder="Message the meeting…"
           aria-label="Message the meeting"

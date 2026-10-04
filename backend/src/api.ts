@@ -209,12 +209,12 @@ api.post("/signin", authLimiter, async (request, response) => {
     response.status(400).json(credentialValidationFailure(parsed.error.issues, request.body));
     return;
   }
-  const result = await pool.query<{ id: string; username: string; password_hash: string }>(
+  const result = await pool.query<{ id: string; username: string; password_hash: string | null }>(
     "SELECT id, username, password_hash FROM users WHERE username = $1",
     [parsed.data.username]
   );
   const user = result.rows[0];
-  if (!user || !(await verifySecret(parsed.data.password, user.password_hash))) {
+  if (!user || !user.password_hash || !(await verifySecret(parsed.data.password, user.password_hash))) {
     await safelyRecordSigninOutcome(response, "invalid-credentials", requestLog(response, analyticsFallbackLog));
     response.status(401).json({ error: "invalid-credentials" });
     return;

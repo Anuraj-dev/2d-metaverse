@@ -4,6 +4,7 @@ import {
   createBeaconState,
   installErrorBeacon,
   recordSend,
+  reportCaughtError,
   shouldSend,
 } from "./errorBeacon";
 
@@ -298,9 +299,25 @@ describe("installErrorBeacon", () => {
     }
   });
 
+  it("shares caps and deduplication between caught and uncaught errors", () => {
+    const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc", maxPerSession: 2 });
+    try {
+      reportCaughtError(new Error("chunk failed"));
+      window.dispatchEvent(new ErrorEvent("error", { message: "chunk failed" }));
+      reportCaughtError(new Error("render failed"));
+      reportCaughtError(new Error("over cap"));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(sentBody().message).toBe("chunk failed");
+      expect(sentBody(1).message).toBe("render failed");
+    } finally {
+      uninstall();
+    }
+  });
+
   it("stops reporting after uninstall", () => {
     const uninstall = installErrorBeacon({ endpoint: "http://api.test/client-errors", sha: "abc" });
     uninstall();
+    reportCaughtError(new Error("late caught"));
     window.dispatchEvent(new ErrorEvent("error", { message: "late", error: new Error("late") }));
     expect(fetchMock).not.toHaveBeenCalled();
   });

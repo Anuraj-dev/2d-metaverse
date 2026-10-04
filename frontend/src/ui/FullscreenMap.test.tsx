@@ -18,9 +18,43 @@ const dots: MapDotFull[] = [
   { id: "p2", self: false, x: 180, y: 90, name: "bob" },
 ];
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("FullscreenMap", () => {
+  it("paints static rooms and labels once across ten live position updates", () => {
+    vi.stubGlobal("devicePixelRatio", 1);
+    const ctx = {
+      setTransform: vi.fn(), clearRect: vi.fn(), drawImage: vi.fn(),
+      fillRect: vi.fn(), strokeRect: vi.fn(), fillText: vi.fn(),
+      measureText: vi.fn(() => ({ width: 100 })),
+      beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(), stroke: vi.fn(),
+    };
+    // Only the canvas methods used by this surface are needed in jsdom.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+    const onClose = vi.fn();
+    const { rerender } = render(<FullscreenMap info={info} dots={dots} onClose={onClose} />);
+    expect(ctx.fillText).toHaveBeenCalledTimes(1);
+    expect(ctx.measureText).toHaveBeenCalledTimes(1);
+    for (let tick = 0; tick < 10; tick++) {
+      rerender(<FullscreenMap info={info} dots={[{ id: "me", self: true, x: tick, y: 5 }]} onClose={onClose} />);
+    }
+    expect(ctx.fillText).toHaveBeenCalledTimes(1);
+    expect(ctx.measureText).toHaveBeenCalledTimes(1);
+    expect(ctx.arc).toHaveBeenCalledTimes(12);
+    expect(ctx.arc).toHaveBeenLastCalledWith(9, 5, expect.any(Number), 0, Math.PI * 2);
+    rerender(<FullscreenMap info={{ ...info, rooms: [] }} dots={dots} onClose={onClose} />);
+    expect(ctx.fillText).toHaveBeenCalledTimes(2);
+    const canvas = document.querySelector(".fullmap-canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Fullscreen canvas missing");
+    const originalWidth = canvas.width;
+    vi.stubGlobal("devicePixelRatio", 2);
+    fireEvent(window, new Event("resize"));
+    expect(canvas.width).toBe(originalWidth * 2);
+    expect(ctx.fillText).toHaveBeenCalledTimes(3);
+    const transforms = ctx.setTransform.mock.calls;
+    expect(transforms.at(-1)).toEqual(transforms.at(-3));
+  });
+
   it("renders a dialog with a close control", () => {
     render(<FullscreenMap info={info} dots={dots} onClose={() => {}} />);
     expect(screen.getByRole("dialog", { name: "Campus map" })).toBeTruthy();

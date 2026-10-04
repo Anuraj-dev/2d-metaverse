@@ -157,6 +157,8 @@ class WorldAudio {
   private room: LKRoom | null = null;
   private audioEls = new Map<string, HTMLAudioElement>();
   private selfId = "";
+  private generation = 0;
+  private starting = false;
   private offPositions?: () => void;
   // Per-remote volume-ramp state (PRD 21) — the applied `<audio>` gain glides
   // toward its zone-aware target over `VOICE_RAMP_MS`, except zone/door cuts,
@@ -165,6 +167,11 @@ class WorldAudio {
   private lastVolumeTickAt = 0;
 
   async start(spaceId: string, selfId: string) {
+    if (this.room || this.starting) return;
+    this.starting = true;
+    const generation = ++this.generation;
+    // A retry after unavailable media replaces, rather than leaks, the listener.
+    this.offPositions?.();
     this.selfId = selfId;
     // Price volumes off every positions tick regardless of whether the LiveKit
     // connection came up: the zone-aware volume decision is derived purely from
@@ -174,9 +181,13 @@ class WorldAudio {
     this.offPositions = bus.on("positions", (p: PositionsPayload) =>
       this.updateVolumes(p)
     );
+    let connected = false;
+    let pendingRoom: LKRoom | null = null;
     try {
       const { token, url } = await fetchToken(worldRoomName(spaceId));
+      if (generation !== this.generation) return;
       const { Room, RoomEvent, Track } = await import("livekit-client");
+      if (generation !== this.generation) return;
       const room = new Room({
         audioCaptureDefaults: {
           echoCancellation: true,
@@ -184,17 +195,23 @@ class WorldAudio {
           autoGainControl: true,
         },
       });
+      pendingRoom = room;
       this.room = room;
       wireTrackRouting(room, { RoomEvent, Track }, "world-audio", {
         surfaceVideo: () => {},
         dropVideo: () => {},
-        attachAudio: (id, el) => this.audioEls.set(id, el),
+        attachAudio: (id, el) => {
+          if (generation !== this.generation) { el.remove(); return; }
+          this.audioEls.set(id, el);
+        },
         detachAudio: (id) => {
+          if (generation !== this.generation) return;
           this.audioEls.get(id)?.remove();
           this.audioEls.delete(id);
         },
       });
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
+        if (generation !== this.generation) return;
         this.audioEls.get(p.identity)?.remove();
         this.audioEls.delete(p.identity);
       });
@@ -202,20 +219,40 @@ class WorldAudio {
       // shared speaking-state seam; the pure mixer decides the duck. Identity ===
       // playerId, so it lines up 1:1 with the proximity-volume map.
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        if (generation !== this.generation) return;
         speakingState.setSpeakers(
           "world",
           speakers.map((s) => s.identity)
         );
       });
       await room.connect(url, token);
+      if (generation !== this.generation) {
+        await room.disconnect();
+        return;
+      }
+      connected = true;
       // Respect the player's sticky mute (global control bar, PRD 20) instead of
       // force-unmuting on every world (re)join. A fresh connection has no local
       // track, so a consent-safe cold start never touches the capture API.
       if (getMediaPrefs().micOn) {
         await room.localParticipant.setMicrophoneEnabled(true);
+        if (generation !== this.generation) await room.disconnect();
       }
     } catch (e) {
+      if (generation !== this.generation) {
+        await pendingRoom?.disconnect();
+        return;
+      }
       console.warn("World audio unavailable:", e);
+      if (!connected) {
+        this.room = null;
+        this.audioEls.forEach((el) => el.remove());
+        this.audioEls.clear();
+        speakingState.clear("world");
+        await pendingRoom?.disconnect();
+      }
+    } finally {
+      if (generation === this.generation) this.starting = false;
     }
   }
 
@@ -279,14 +316,17 @@ class WorldAudio {
   }
 
   async stop() {
+    ++this.generation;
+    this.starting = false;
+    const room = this.room;
+    this.room = null;
     this.offPositions?.();
     speakingState.clear("world");
     this.audioEls.forEach((el) => el.remove());
     this.audioEls.clear();
     this.rampState = new Map();
     this.lastVolumeTickAt = 0;
-    await this.room?.disconnect();
-    this.room = null;
+    await room?.disconnect();
   }
 }
 
@@ -663,6 +703,8 @@ class StageVideo {
         return { status: reason };
       }
       console.warn("Stage unavailable:", e);
+      // A dead audience room must not block the next subscription attempt.
+      await this.teardownRoom();
       return { status: "inactive" };
     }
   }
@@ -696,7 +738,7 @@ class StageVideo {
   async joinAsAudience(spaceId: string, selfId: string) {
     if (this.room) return;
     await this.open(spaceId, selfId, { publish: false, video: false });
-    this.mode = "audience";
+    if (this.room) this.mode = "audience";
   }
 
   /**

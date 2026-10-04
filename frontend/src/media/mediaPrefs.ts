@@ -36,24 +36,45 @@ function readSessionPrefs(): MediaPrefs {
   return CONSENT_SAFE_DEFAULTS;
 }
 
-let prefs: MediaPrefs = readSessionPrefs();
+let explicitPrefs: MediaPrefs = readSessionPrefs();
+let prefs: MediaPrefs = explicitPrefs;
+let stageMicOverride = false;
 const listeners = new Set<() => void>();
 
 export function getMediaPrefs(): MediaPrefs {
   return prefs;
 }
 
-/** Merge a patch; notifies subscribers only when a value actually changed. */
-export function setMediaPrefs(patch: Partial<MediaPrefs>): void {
-  const next: MediaPrefs = { ...prefs, ...patch };
+/** Publish effective preferences without persisting temporary stage consent. */
+function refreshPrefs(): void {
+  const next = { ...explicitPrefs, micOn: stageMicOverride || explicitPrefs.micOn };
   if (next.micOn === prefs.micOn && next.camOn === prefs.camOn) return;
   prefs = next;
+  listeners.forEach((listener) => listener());
+}
+
+/** An explicit microphone choice supersedes temporary stage consent. */
+export function setMediaPrefs(patch: Partial<MediaPrefs>): void {
+  explicitPrefs = { ...explicitPrefs, ...patch };
+  if (patch.micOn !== undefined) stageMicOverride = false;
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(prefs));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(explicitPrefs));
   } catch {
     // Keep the in-memory preference when session storage is unavailable.
   }
-  listeners.forEach((l) => l());
+  refreshPrefs();
+}
+
+/** Go Live grants microphone consent for this broadcast, never across reloads. */
+export function beginStageMicOverride(): void {
+  stageMicOverride = true;
+  refreshPrefs();
+}
+
+/** Restore the latest explicit choice, including changes made while live. */
+export function endStageMicOverride(): void {
+  stageMicOverride = false;
+  refreshPrefs();
 }
 
 export function subscribeMediaPrefs(cb: () => void): () => void {

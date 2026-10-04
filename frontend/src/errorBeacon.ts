@@ -135,6 +135,14 @@ function describeRejectionReason(reason: unknown): { message: string; stack?: st
   }
 }
 
+// React boundaries catch rendering failures before the window listeners see
+// them. Share the installed beacon so these reports keep the same cap/dedupe.
+let caughtReporter: (reason: unknown) => void = () => {};
+
+export function reportCaughtError(reason: unknown): void {
+  caughtReporter(reason);
+}
+
 /**
  * Register window error handlers. Returns an uninstall function (used by tests;
  * the app installs once at boot and never uninstalls).
@@ -161,6 +169,12 @@ export function installErrorBeacon(options: BeaconOptions): () => void {
       /* never let the beacon itself throw */
     }
   };
+
+  const reportCaught = (reason: unknown) => {
+    const { message, stack } = describeRejectionReason(reason);
+    report(message, stack);
+  };
+  caughtReporter = reportCaught;
 
   // The ENTIRE listener body is wrapped: normalizing hostile values (throwing
   // getters/coercions) must never escape a global error handler, or the beacon
@@ -199,6 +213,7 @@ export function installErrorBeacon(options: BeaconOptions): () => void {
   window.addEventListener("error", onError);
   window.addEventListener("unhandledrejection", onRejection);
   return () => {
+    if (caughtReporter === reportCaught) caughtReporter = () => {};
     window.removeEventListener("error", onError);
     window.removeEventListener("unhandledrejection", onRejection);
   };

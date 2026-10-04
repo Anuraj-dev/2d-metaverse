@@ -12,6 +12,10 @@ x-backend-environment: &backend-environment
   DATABASE_URL: ${DATABASE_URL:-postgres://metaverse:metaverse@postgres:5432/metaverse}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me-now}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+  GOOGLE_FRONTEND_REDIRECT_URI: ${GOOGLE_FRONTEND_REDIRECT_URI:-}
   JWT_TTL: ${JWT_TTL:-7d}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
   LIVEKIT_URL: ${LIVEKIT_URL:-ws://localhost:7880}

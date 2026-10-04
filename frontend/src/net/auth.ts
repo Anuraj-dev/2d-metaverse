@@ -1,5 +1,5 @@
 /** REST auth against the backend. Returns a JWT used for socket handshake + LiveKit tokens. */
-import { LIMITS, type AuthFailureResponse, type AuthTokenResponse } from "@metaverse/shared";
+import { LIMITS, type AuthFailureResponse, type AuthProvidersResponse, type GoogleExchangeResponse, type GoogleExchangeRequest, type AuthTokenResponse } from "@metaverse/shared";
 import { parseAuthFailureResponse } from "@metaverse/shared/auth-failure";
 import { SERVER_URL } from "./config";
 import { authTransportReason, getOperationalReporter } from "../operationalReport";
@@ -24,6 +24,7 @@ async function postJson(path: string, body: unknown): Promise<Response> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
   } catch {
     reportAuthTransport({ kind: "network" });
@@ -107,4 +108,50 @@ export async function signIn(username: string, password: string): Promise<string
   }
   const { token } = (await res.json()) as AuthTokenResponse;
   return token;
+}
+
+/** Unconfigured or unreachable providers leave password access available. */
+export async function googleAvailable(): Promise<boolean> {
+  try {
+    const response = await fetch(`${serverBase}/api/v1/auth/providers`, { signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) return false;
+    const providers = await response.json() as AuthProvidersResponse;
+    return providers.google === true;
+  } catch {
+    return false;
+  }
+}
+
+const GOOGLE_FLOW_KEY = "hyprverse-google-flow";
+
+export function startGoogleSignIn(): void {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  sessionStorage.setItem(GOOGLE_FLOW_KEY, nonce);
+  window.location.assign(`${serverBase}/api/v1/auth/google/start?client_nonce=${encodeURIComponent(nonce)}`);
+}
+
+/** Consume the short-lived ticket immediately, before any network operation. */
+export function completeGoogleSignIn(): Promise<GoogleExchangeResponse> | null {
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const code = fragment.get("google_code");
+  const error = fragment.get("google_error");
+  if (code === null && error === null) return null;
+  fragment.delete("google_code");
+  fragment.delete("google_error");
+  const remaining = fragment.toString();
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${remaining ? `#${remaining}` : ""}`);
+  const clientNonce = sessionStorage.getItem(GOOGLE_FLOW_KEY);
+  sessionStorage.removeItem(GOOGLE_FLOW_KEY);
+  if (error !== null || !code || !clientNonce) return Promise.reject(new Error("Google sign-in failed."));
+  return exchangeGoogleCode(code, clientNonce);
+}
+
+async function exchangeGoogleCode(code: string, clientNonce: string): Promise<GoogleExchangeResponse> {
+  const body: GoogleExchangeRequest = { code, clientNonce };
+  const response = await postJson("/api/v1/auth/google/exchange", body);
+  if (!response.ok) throw new Error("Google sign-in expired or failed. Please try again.");
+  const session = await response.json() as GoogleExchangeResponse;
+  if (!session.token || !session.username) throw new Error("Google sign-in failed.");
+  return session;
 }

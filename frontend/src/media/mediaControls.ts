@@ -12,7 +12,7 @@
 import { worldAudio, roomVideo, stageVideo } from "./livekit";
 import { setCamEnabled as mockSetCam, setMicEnabled as mockSetMic } from "./localMedia";
 import { USE_MOCK } from "../net/auth";
-import { getMediaPrefs, setMediaPrefs } from "./mediaPrefs";
+import { beginStageMicOverride, endStageMicOverride, getMediaPrefs, setMediaPrefs } from "./mediaPrefs";
 import { worstOutcome, type MediaOutcome } from "./publicationState";
 
 /**
@@ -37,6 +37,10 @@ async function resolveOutcome(
  */
 export async function setMic(on: boolean): Promise<MediaOutcome> {
   setMediaPrefs({ micOn: on });
+  return applyMic(on);
+}
+
+async function applyMic(on: boolean): Promise<MediaOutcome> {
   if (USE_MOCK) {
     mockSetMic(on);
     return { status: on ? "live" : "off" };
@@ -48,6 +52,17 @@ export async function setMic(on: boolean): Promise<MediaOutcome> {
       resolveOutcome(stageVideo.setMicEnabled(on), on),
     ]),
   );
+}
+
+/** Stage consent changes effective state without saving a global mic choice. */
+export function beginStageMic(): Promise<MediaOutcome> {
+  beginStageMicOverride();
+  return applyMic(getMediaPrefs().micOn);
+}
+
+export function endStageMic(): Promise<MediaOutcome> {
+  endStageMicOverride();
+  return applyMic(getMediaPrefs().micOn);
 }
 
 export async function setCam(on: boolean): Promise<MediaOutcome> {

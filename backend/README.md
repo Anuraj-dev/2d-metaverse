@@ -164,3 +164,56 @@ The EC2 security group must allow:
 Do not expose PostgreSQL or Redis publicly. LiveKit uses external-IP discovery for EC2 NAT. The AWS override mounts Let's Encrypt certificates read-only and enables TURN/UDP plus TURN/TLS; plain signaling TLS does not replace TURN.
 
 The current single-host setup matches the plan. Before horizontal backend scaling, add the Socket.IO Redis adapter; Redis already holds shared presence and seats, but Socket.IO broadcasts are currently process-local.
+
+### Optional Google sign-in
+
+Google sign-in is disabled until all four backend environment values are supplied:
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and
+`GOOGLE_FRONTEND_REDIRECT_URI`. Create a Google **Web application** OAuth client
+and register the exact backend callback URL, e.g.
+`https://api.example.com/api/v1/auth/google/callback`. The frontend return URL
+is the canonical landing page (e.g. `https://app.example.com/`); start sign-in
+from that same frontend origin so the per-tab secret survives the return. Its origin must appear in
+`CORS_ORIGINS`. Production redirect URLs require HTTPS. Local development permits
+HTTP on localhost/127.0.0.1. Keep credentials empty until genuine credentials are
+available; the client secret stays exclusively on the backend. Compose forwards
+these optional values. Production operators must also supply them through the
+existing deployment environment/secret mechanism; sample files do not provision
+Google credentials. Google token exchange requires actual client-secret bytes in
+the request body; an injected header-only proxy credential placeholder cannot
+replace that value.
+
+Apply migration `007_google_identities.sql` before enabling the provider. Google
+subjects receive separate accounts with random `student_…` usernames and no
+password. Existing password accounts continue working; there is no automatic
+email linking and no account-linking/reset interface in this release. Changing
+Google client/project settings does not change the database provider/subject key.
+
+`GET /api/v1/auth/providers` advertises availability. The browser starts at
+`/api/v1/auth/google/start?client_nonce=…` with a fresh 32-byte base64url secret
+retained in that tab's sessionStorage. State, nonce, PKCE and a short-lived HttpOnly
+SameSite=Lax cookie bind the Google authorization response. Google ID tokens are
+verified against Google's RSA keys, issuer, audience, expiry and nonce. Only the
+stable subject is persisted; email/profile scopes are not requested.
+
+The callback redirects to the configured frontend URL with a 60-second single-use
+`#google_code=…` ticket, or `#google_error=oauth-failed`. The frontend removes the
+fragment immediately and POSTs `{code, clientNonce}` to
+`/api/v1/auth/google/exchange`; the response is `{token, username}`. The per-tab
+secret prevents a ticket from signing a different browser into an attacker's
+account. Redis state expires after five minutes, and both state and completion
+tickets are consumed atomically. Suspension is checked before ticket creation
+and again before JWT issuance. Application JWTs never enter frontend redirect URLs; application request logs omit
+query strings. Google's authorization code necessarily arrives in the backend
+callback query: use the query-free access-log format in
+`deploy/nginx.conf.example`, and verify deployed proxies/observability do not
+capture callback query strings or token request bodies. Requests to Google use a ten-second timeout.
+
+Real Google consent, callback registration, networking and production secret
+injection require a configured OAuth client and must be verified before rollout.
+Restricted outbound environments must allow `oauth2.googleapis.com` for code
+exchange and `www.googleapis.com` for signing keys; the browser must reach
+`accounts.google.com` for consent. Preserve TLS verification and use the
+platform's supported proxy configuration when required (Node 24 can opt into
+environment proxies with `NODE_USE_ENV_PROXY=1`). Do not treat mocked-provider
+tests as evidence that a deployment's Google network access works.

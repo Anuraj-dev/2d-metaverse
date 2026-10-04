@@ -1,0 +1,26 @@
+.console-google {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d5cfbf);
+  border-radius: 6px;
+  background: var(--surface, #fffdf6);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.console-google:disabled { opacity: .65; cursor: default; }
+.console-google:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
+.password-toggle {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.password-toggle:disabled { opacity: .65; cursor: default; }

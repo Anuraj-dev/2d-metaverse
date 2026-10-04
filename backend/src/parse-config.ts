@@ -14,6 +14,10 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
   JWT_SECRET: z.string().min(32),
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
+  GOOGLE_REDIRECT_URI: z.string().default(""),
+  GOOGLE_FRONTEND_REDIRECT_URI: z.string().default(""),
   JWT_TTL: z.string().default("7d"),
   CORS_ORIGINS: z.string().default("http://localhost:5173"),
   LIVEKIT_URL: z.string().min(1),
@@ -108,6 +112,22 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
   }
   if (parsed.data.NODE_ENV === "production" && usesDevelopmentSecret(parsed.data)) {
     throw new ConfigError("refusing to start production with development credentials");
+  }
+  const googleValues = [parsed.data.GOOGLE_CLIENT_ID, parsed.data.GOOGLE_CLIENT_SECRET,
+    parsed.data.GOOGLE_REDIRECT_URI, parsed.data.GOOGLE_FRONTEND_REDIRECT_URI];
+  if (googleValues.some(Boolean)) {
+    if (!googleValues.every(Boolean)) throw new ConfigError("Google OAuth requires all four GOOGLE_* settings");
+    for (const raw of googleValues.slice(2)) {
+      const url = new URL(raw);
+      const local = parsed.data.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname);
+      if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.username || url.password || url.hash || url.search) {
+        throw new ConfigError("Google OAuth redirect URLs must use HTTPS (HTTP localhost allowed in development), without credentials, query or fragment");
+      }
+    }
+    const frontend = new URL(parsed.data.GOOGLE_FRONTEND_REDIRECT_URI);
+    if (!parsed.data.CORS_ORIGINS.split(",").map((origin) => origin.trim()).includes(frontend.origin)) {
+      throw new ConfigError("Google frontend redirect origin must appear in CORS_ORIGINS");
+    }
   }
   return {
     ...parsed.data,

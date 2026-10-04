@@ -14,6 +14,8 @@ const lk = vi.hoisted(() => {
     track?: { mediaStreamTrack: unknown };
   }
   const pubs: FakePub[] = [];
+  const connect = vi.fn(async () => {});
+  const disconnect = vi.fn(async () => {});
   const localParticipant = {
     setMicrophoneEnabled: vi.fn(async () => {}),
     setCameraEnabled: vi.fn(async (on: boolean) => {
@@ -29,10 +31,10 @@ const lk = vi.hoisted(() => {
     on() {
       return this;
     }
-    async connect() {}
-    async disconnect() {}
+    connect = connect;
+    disconnect = disconnect;
   }
-  return { pubs, localParticipant, FakeRoom };
+  return { pubs, localParticipant, FakeRoom, connect, disconnect };
 });
 
 vi.mock("livekit-client", () => ({
@@ -62,6 +64,8 @@ beforeEach(() => {
   );
   setMediaPrefs({ micOn: true, camOn: true });
   lk.pubs.length = 0;
+  lk.connect.mockReset().mockResolvedValue(undefined);
+  lk.disconnect.mockReset().mockResolvedValue(undefined);
   lk.localParticipant.setMicrophoneEnabled.mockClear();
   lk.localParticipant.setCameraEnabled.mockClear();
 });
@@ -234,5 +238,23 @@ describe("stage publication state is confirmed, never optimistic", () => {
     expect(stageVideo.getPublicationStatus()).toBe("live");
     await stageVideo.goOffAir("1", "self");
     expect(stageVideo.getPublicationStatus()).toBe("off");
+  });
+});
+
+
+describe("stage audience connection recovery", () => {
+  it("disconnects a failed audience room and retries without capturing devices", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    lk.connect.mockRejectedValueOnce(new Error("connection lost"));
+    try {
+      await stageVideo.joinAsAudience("1", "self");
+      expect(lk.disconnect).toHaveBeenCalledTimes(1);
+      await stageVideo.joinAsAudience("1", "self");
+      expect(lk.connect).toHaveBeenCalledTimes(2);
+      expect(lk.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+      expect(lk.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

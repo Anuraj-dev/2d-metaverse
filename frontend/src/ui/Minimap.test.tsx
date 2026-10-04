@@ -25,6 +25,7 @@ describe("Minimap overlay exclusivity", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   function renderMap() {
@@ -70,5 +71,43 @@ describe("Minimap overlay exclusivity", () => {
     } finally {
       cleanupBus();
     }
+  });
+
+  it("reuses the static map across position ticks and rebuilds it for a new world", () => {
+    vi.stubGlobal("devicePixelRatio", 1);
+    const ctx = {
+      setTransform: vi.fn(), clearRect: vi.fn(), drawImage: vi.fn(),
+      fillRect: vi.fn(), strokeRect: vi.fn(), strokeText: vi.fn(), fillText: vi.fn(),
+      beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(), stroke: vi.fn(),
+    };
+    // Only the canvas methods used by this surface are needed in jsdom.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+    const resizeWidth = vi.spyOn(HTMLCanvasElement.prototype, "width", "set");
+    const resizeHeight = vi.spyOn(HTMLCanvasElement.prototype, "height", "set");
+    render(<Minimap />);
+    const world = { ...WORLD_INFO, rooms: [{ id: "1", x: 10, y: 10, w: 20, h: 20 }] };
+    act(() => bus.emit("world-info", world));
+    const initialWidthWrites = resizeWidth.mock.calls.length;
+    const initialHeightWrites = resizeHeight.mock.calls.length;
+    expect(ctx.strokeRect).toHaveBeenCalledTimes(1);
+    for (let tick = 0; tick < 10; tick++) {
+      act(() => bus.emit("positions", { players: [{ id: "me", self: true, x: tick, y: 5 }] }));
+    }
+    expect(ctx.strokeRect).toHaveBeenCalledTimes(1);
+    expect(ctx.arc).toHaveBeenCalledTimes(10);
+    expect(resizeWidth).toHaveBeenCalledTimes(initialWidthWrites);
+    expect(resizeHeight).toHaveBeenCalledTimes(initialHeightWrites);
+    expect(ctx.arc).toHaveBeenLastCalledWith(9, 5, expect.any(Number), 0, Math.PI * 2);
+    act(() => bus.emit("world-info", { ...world, width: 200 }));
+    expect(ctx.strokeRect).toHaveBeenCalledTimes(2);
+    const canvas = screen.getByRole("button", { name: "Open campus map" }).querySelector("canvas");
+    if (!canvas) throw new Error("Minimap canvas missing");
+    const originalWidth = canvas.width;
+    vi.stubGlobal("devicePixelRatio", 2);
+    fireEvent(window, new Event("resize"));
+    expect(canvas.width).toBe(originalWidth * 2);
+    expect(ctx.strokeRect).toHaveBeenCalledTimes(3);
+    const transforms = ctx.setTransform.mock.calls;
+    expect(transforms.at(-1)).toEqual(transforms.at(-3));
   });
 });

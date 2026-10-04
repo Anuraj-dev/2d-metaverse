@@ -630,7 +630,7 @@ export default function ChatBox() {
         </div>
       )}
 
-      <div className="mc-list" ref={listRef}>
+      <div className="mc-list" ref={listRef} role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions" tabIndex={0}>
         {visible.length === 0 ? (
           <div className="mc-empty">
             {panel.tab === "room"

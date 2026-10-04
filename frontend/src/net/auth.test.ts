@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { signUp, signIn } from "./auth";
+import { signUp, signIn, googleAvailable, completeGoogleSignIn } from "./auth";
 
 const fetchMock = vi.fn();
 
@@ -19,6 +19,9 @@ vi.mock("../operationalReport", async (importActual) => {
 });
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
+  localStorage.clear();
+  sessionStorage.clear();
   fetchMock.mockReset();
   reportAuthTransport.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -39,6 +42,49 @@ const fail = (status: number, body: unknown = {}) =>
   } as Response);
 
 describe("auth", () => {
+  it("treats unavailable Google configuration and network errors as disabled", async () => {
+    fetchMock.mockReturnValueOnce(ok({ google: false })).mockRejectedValueOnce(new Error("offline"));
+    await expect(googleAvailable()).resolves.toBe(false);
+    await expect(googleAvailable()).resolves.toBe(false);
+  });
+
+  it("consumes Google tickets before exchanging and never stores them", async () => {
+    sessionStorage.setItem("hyprverse-google-flow", "browser-flow-secret");
+    window.history.replaceState(null, "", "/?invite=campus#google_code=one-use-ticket");
+    fetchMock.mockReturnValue(ok({ token: "JWT", username: "google-user" }));
+    const completion = completeGoogleSignIn();
+    expect(window.location.hash).toBe("");
+    expect(window.location.search).toBe("?invite=campus");
+    await expect(completion).resolves.toEqual({ token: "JWT", username: "google-user" });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/auth/google/exchange"), expect.objectContaining({ body: JSON.stringify({ code: "one-use-ticket", clientNonce: "browser-flow-secret" }) }));
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+    expect(completeGoogleSignIn()).toBeNull();
+  });
+
+  it("clears Google failures without requesting or leaking callback details", async () => {
+    window.history.replaceState(null, "", "/#google_error=oauth-failed");
+    await expect(completeGoogleSignIn()).rejects.toThrow("Google sign-in failed.");
+    expect(window.location.hash).toBe("");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsolicited Google callbacks without a browser flow secret", async () => {
+    window.history.replaceState(null, "", "/#google_code=attacker-ticket");
+    await expect(completeGoogleSignIn()).rejects.toThrow("Google sign-in failed.");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe("");
+  });
+
+  it("rejects expired Google exchanges without storing a session", async () => {
+    sessionStorage.setItem("hyprverse-google-flow", "browser-flow-secret");
+    window.history.replaceState(null, "", "/#google_code=expired");
+    fetchMock.mockReturnValue(fail(401));
+    await expect(completeGoogleSignIn()).rejects.toThrow(/expired or failed/);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+  });
+
   it("signIn posts to /signin and returns the token without signing up", async () => {
     fetchMock.mockReturnValue(ok({ token: "JWT" }));
     const token = await signIn("alice", "pw");
@@ -98,6 +144,22 @@ describe("auth", () => {
       fail(429, { error: "rate-limited", retryAfterSeconds: 37 }),
     );
     await expect(signIn("x", "y")).rejects.toThrow(/37 seconds/i);
+  });
+
+  it("bounds auth and provider requests with timeout signals", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    fetchMock.mockReturnValueOnce(ok({ token: "JWT" })).mockReturnValueOnce(ok({ google: true }));
+    await signIn("alice", "password1");
+    await googleAvailable();
+    expect(timeout).toHaveBeenNthCalledWith(1, 15_000);
+    expect(timeout).toHaveBeenNthCalledWith(2, 5_000);
+    timeout.mockRestore();
+  });
+
+  it("restores friendly retry guidance when auth times out", async () => {
+    fetchMock.mockRejectedValue(new DOMException("deadline", "TimeoutError"));
+    await expect(signIn("alice", "password1")).rejects.toThrow(/check your connection and try again/i);
+    await expect(googleAvailable()).resolves.toBe(false);
   });
 
   it("reports network failures without exposing the fetch exception", async () => {

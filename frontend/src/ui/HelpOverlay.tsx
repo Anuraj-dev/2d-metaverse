@@ -23,6 +23,7 @@ export default function HelpOverlay() {
   // the Dialog primitive while it is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       const typing =
         !!el &&

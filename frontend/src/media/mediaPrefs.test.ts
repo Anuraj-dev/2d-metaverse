@@ -29,4 +29,42 @@ describe("browser-session media preferences", () => {
 
     expect(getMediaPrefs()).toEqual({ micOn: false, camOn: false });
   });
+  it("does not retain stage-only microphone consent across reloads or camera changes", async () => {
+    const firstLoad = await import("./mediaPrefs");
+    firstLoad.beginStageMicOverride();
+    expect(firstLoad.getMediaPrefs().micOn).toBe(true);
+    firstLoad.setMediaPrefs({ camOn: true });
+
+    vi.resetModules();
+    const reloaded = await import("./mediaPrefs");
+    expect(reloaded.getMediaPrefs()).toEqual({ micOn: false, camOn: true });
+  });
+
+  it("restores microphone silence when temporary stage consent ends", async () => {
+    const prefs = await import("./mediaPrefs");
+    prefs.beginStageMicOverride();
+    prefs.endStageMicOverride();
+    expect(prefs.getMediaPrefs().micOn).toBe(false);
+  });
+
+  it.each([true, false])("preserves an explicit mic choice of %s made during a broadcast", async (micOn) => {
+    const prefs = await import("./mediaPrefs");
+    prefs.beginStageMicOverride();
+    prefs.setMediaPrefs({ micOn });
+    prefs.endStageMicOverride();
+    expect(prefs.getMediaPrefs().micOn).toBe(micOn);
+
+    vi.resetModules();
+    const reloaded = await import("./mediaPrefs");
+    expect(reloaded.getMediaPrefs().micOn).toBe(micOn);
+  });
+
+  it("retains pre-existing microphone consent after a broadcast", async () => {
+    const prefs = await import("./mediaPrefs");
+    prefs.setMediaPrefs({ micOn: true });
+    prefs.beginStageMicOverride();
+    prefs.endStageMicOverride();
+    expect(prefs.getMediaPrefs().micOn).toBe(true);
+  });
+
 });

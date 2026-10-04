@@ -153,7 +153,7 @@ export async function signUpAndJoin(
   const user = opts.user ?? uniqueUser();
 
   await page.goto(`/${MAPS[map].query}`);
-  await page.getByRole("button", { name: "Sign up" }).click();
+  await page.locator(".console-tabs").getByRole("button", { name: "Create account", exact: true }).click();
   await page.getByPlaceholder("your name").fill(user.username);
   await page.locator('input[type="password"]').fill(user.password);
   await page.locator("button.console-submit").click();

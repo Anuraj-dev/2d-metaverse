@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { bus } from "../game/eventBus";
 
 /**
@@ -60,14 +60,18 @@ describe("RoomAdminPanel over the meeting overlay (PRD 23)", () => {
     expect(screen.getByText("Mandakini Hostel · Room 1")).toBeTruthy();
 
     // The approve/deny prompt is present…
-    const approve = screen.getByRole("button", { name: "Approve" });
+    const approve = screen.getByRole("button", { name: "Approve Zoe" });
     expect(approve).toBeTruthy();
     expect(screen.getByText("Zoe")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Deny" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deny Zoe" })).toBeTruthy();
 
     // …and it is NOT nested inside the meeting overlay (independent HUD layer, so
     // its higher z-index can win — the overlay never traps it).
     const overlay = screen.getByTestId("meeting-overlay");
     expect(overlay.contains(approve)).toBe(false);
+    fireEvent.click(approve);
+    fireEvent.click(screen.getByRole("button", { name: "Deny Zoe" }));
+    expect(net.approveKnock).toHaveBeenCalledWith("1", "k1");
+    expect(net.denyKnock).toHaveBeenCalledWith("1", "k1");
   });
 });

@@ -1,3 +1,9 @@
+# Include this file inside nginx's http context (e.g. sites-enabled).
+# $uri excludes query strings: Google callback codes/state must not enter access logs.
+log_format metaverse_no_query '$remote_addr - $remote_user [$time_local] '
+    '"$request_method $uri $server_protocol" $status $body_bytes_sent';
+access_log /var/log/nginx/metaverse.access.log metaverse_no_query;
+
 # Replace API_DOMAIN and LIVEKIT_DOMAIN, then obtain TLS certificates with Certbot.
 server {
     listen 80;

@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
+import RecoveryBoundary from "./ui/RecoveryBoundary";
 import { installErrorBeacon } from "./errorBeacon";
 import { installOperationalReporter } from "./operationalReport";
 import { installAnalyticsEmitter } from "./analytics";
@@ -45,4 +46,4 @@ if (!rootEl) {
 
 // StrictMode intentionally omitted: it double-mounts effects in dev, which would
 // boot/destroy the Phaser game twice. Re-enable once mount is idempotent.
-createRoot(rootEl).render(<App />);
+createRoot(rootEl).render(<RecoveryBoundary><App /></RecoveryBoundary>);

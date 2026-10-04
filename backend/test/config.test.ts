@@ -155,3 +155,24 @@ describe("socket timing knobs", () => {
     }
   );
 });
+
+describe("optional Google OAuth configuration", () => {
+  const google = {
+    GOOGLE_CLIENT_ID: "test-client", GOOGLE_CLIENT_SECRET: "test-secret",
+    GOOGLE_REDIRECT_URI: "http://localhost:3001/api/v1/auth/google/callback",
+    GOOGLE_FRONTEND_REDIRECT_URI: "http://localhost:5173/"
+  };
+  it("stays disabled when no Google credentials are provided", () => {
+    expect(parseConfig(devEnv).GOOGLE_CLIENT_ID).toBe("");
+  });
+  it("accepts complete development configuration", () => {
+    expect(parseConfig({ ...devEnv, ...google }).GOOGLE_REDIRECT_URI).toBe(google.GOOGLE_REDIRECT_URI);
+  });
+  it("rejects partial configuration and an untrusted frontend origin", () => {
+    expect(() => parseConfig({ ...devEnv, GOOGLE_CLIENT_ID: "test-client" })).toThrow();
+    expect(() => parseConfig({ ...devEnv, ...google, GOOGLE_FRONTEND_REDIRECT_URI: "https://attacker.example/" })).toThrow();
+  });
+  it("rejects insecure production callbacks", () => {
+    expect(() => parseConfig({ ...productionEnv, ...google })).toThrow();
+  });
+});

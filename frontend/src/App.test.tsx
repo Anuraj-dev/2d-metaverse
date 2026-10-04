@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
 import { bus } from "./game/eventBus";
+import { reloadPage } from "./ui/reloadPage";
+vi.mock("./ui/reloadPage", () => ({ reloadPage: vi.fn() }));
 
 /**
  * App-shell test: pins the world-audio ⇄ room-video ⇄ stage-video media-transition
@@ -82,6 +84,7 @@ vi.mock("./ui/Landing", () => ({
     <button onClick={props.onEntered}>enter-space</button>
   ),
 }));
+vi.mock("./ui/arcade/ArcadeOverlay", () => ({ default: () => <div data-testid="arcade-overlay" /> }));
 vi.mock("./ui/Roster", () => ({ default: () => null }));
 vi.mock("./ui/Minimap", () => ({ default: () => null }));
 vi.mock("./ui/Settings", () => ({ default: () => null }));
@@ -148,6 +151,7 @@ function deferred() {
 beforeEach(async () => {
   netMock.net.selfId = "";
   reportReconnect.mockClear();
+  vi.mocked(reloadPage).mockClear();
   for (const k of Object.keys(netMock.handlers)) delete netMock.handlers[k];
   for (const group of Object.values(media)) {
     for (const fn of Object.values(group)) if (vi.isMockFunction(fn)) fn.mockClear();
@@ -192,6 +196,43 @@ describe("App shell", () => {
     expect(reportReconnect).toHaveBeenCalledWith("reconnecting");
   });
 
+  it("keeps the session and world mounted across transport connection errors", async () => {
+    localStorage.setItem("token", "valid-jwt");
+    render(<App />);
+    await enterAndInit();
+    await emit(() => netMock.net.emit("connect_error", { message: "websocket error", retrying: true }));
+    expect(localStorage.getItem("token")).toBe("valid-jwt");
+    expect(screen.queryByText("enter-space")).toBeNull();
+    expect(screen.getByText(/^reconnecting…$/)).toBeTruthy();
+    await emit(() => netMock.net.emit("init", { selfId: SELF }));
+    expect(screen.getByText(/^connected$/)).toBeTruthy();
+  });
+
+  it("preserves credentials when a temporary server rejection requires re-entry", async () => {
+    localStorage.setItem("token", "valid-jwt");
+    render(<App />);
+    await enterAndInit();
+    await emit(() => netMock.net.emit("connect_error", { message: "service unavailable", retrying: false }));
+    expect(localStorage.getItem("token")).toBe("valid-jwt");
+    expect(screen.getByText("enter-space")).toBeTruthy();
+  });
+
+  it("clears rejected credentials and stale arcade state before re-entry", async () => {
+    localStorage.setItem("token", "expired-jwt");
+    render(<App />);
+    await enterAndInit();
+    await emit(() => bus.emit("open-arcade", { game: "snake", label: "Snake" }));
+    expect(await screen.findByTestId("arcade-overlay")).toBeTruthy();
+    await emit(() => netMock.net.emit("connect_error", { message: "unauthorized", retrying: false }));
+    expect(localStorage.getItem("token")).toBeNull();
+    expect(screen.getByText("enter-space")).toBeTruthy();
+    media.worldAudio.start.mockClear();
+    fireEvent.click(screen.getByText("enter-space"));
+    expect(await screen.findByTestId("game-canvas")).toBeTruthy();
+    expect(screen.queryByTestId("arcade-overlay")).toBeNull();
+    expect(media.worldAudio.start).not.toHaveBeenCalled();
+  });
+
   it("acknowledges a recovered reconnect, then settles back to connected", async () => {
     vi.useFakeTimers();
     try {
@@ -227,6 +268,9 @@ describe("App shell", () => {
     await emit(() => netMock.net.emit("socket-disconnect", { reason: "io server disconnect" }));
     await waitFor(() => expect(screen.getByText(/^disconnected$/)).toBeTruthy());
     expect(reportReconnect).toHaveBeenCalledWith("gone");
+    expect(reloadPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Reload space" }));
+    expect(reloadPage).toHaveBeenCalledOnce();
   });
 
   it("arrives receive-only without issuing a device publish command", async () => {
@@ -335,6 +379,29 @@ describe("App shell", () => {
     await waitFor(() => expect(media.stageVideo.goOffAir).toHaveBeenCalledWith("1", SELF));
     // setMic(true) on go-live is fine; setMic(false) must not follow stop.
     expect(media.worldAudio.setMicEnabled.mock.calls.map((c) => c[0])).not.toContain(false);
+  });
+
+  it("does not persist Go Live microphone consent when camera preference changes", async () => {
+    const { setMediaPrefs } = await import("./media/mediaPrefs");
+    render(<App />);
+    await enterAndInit();
+    await emit(() => bus.emit("stage-on-air"));
+    await waitFor(() => expect(media.stageVideo.goLive).toHaveBeenCalled());
+    setMediaPrefs({ camOn: true });
+    const stored: unknown = JSON.parse(sessionStorage.getItem("mv:media-prefs") ?? "null");
+    expect(stored).toEqual({ micOn: false, camOn: true });
+  });
+
+  it("keeps an explicit microphone choice made while live after stopping", async () => {
+    const { setMic } = await import("./media/mediaControls");
+    render(<App />);
+    await enterAndInit();
+    await emit(() => bus.emit("stage-on-air"));
+    await waitFor(() => expect(media.stageVideo.goLive).toHaveBeenCalled());
+    await act(() => setMic(true));
+    await emit(() => bus.emit("stage-off-air"));
+    await waitFor(() => expect(media.stageVideo.goOffAir).toHaveBeenCalled());
+    expect(media.worldAudio.setMicEnabled).toHaveBeenLastCalledWith(true);
   });
 
   it("re-mutes and re-opens the single prompt when starting live is denied", async () => {

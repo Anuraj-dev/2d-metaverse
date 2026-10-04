@@ -515,3 +515,14 @@ export const liveKitTokenResponseSchema = z.object({
   url: z.string(),
 });
 export type LiveKitTokenResponse = z.infer<typeof liveKitTokenResponseSchema>;
+
+/** Optional Google sign-in availability and single-use completion ticket. */
+export const authProvidersResponseSchema = z.strictObject({ google: z.boolean() });
+export type AuthProvidersResponse = z.infer<typeof authProvidersResponseSchema>;
+export const googleExchangeRequestSchema = z.strictObject({ code: z.string().regex(/^[A-Za-z0-9_-]{43}$/), clientNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export type GoogleExchangeRequest = z.infer<typeof googleExchangeRequestSchema>;
+export const googleAuthFailureSchema = z.strictObject({ error: z.enum(["oauth-disabled", "oauth-failed", "rate-limited"]) });
+export type GoogleAuthFailure = z.infer<typeof googleAuthFailureSchema>;
+
+export const googleExchangeResponseSchema = z.strictObject({ token: z.string(), username: z.string() });
+export type GoogleExchangeResponse = z.infer<typeof googleExchangeResponseSchema>;

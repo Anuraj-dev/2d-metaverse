@@ -476,6 +476,17 @@ html, body, #root {
   backdrop-filter: blur(14px);
 }
 .login-card h1 { margin: 0 0 6px; font-size: 26px; font-weight: 800; }
+.recovery-reload {
+  margin-top: 12px;
+  padding: 10px 16px;
+  border: 2px solid var(--hv-leaf-deep);
+  border-radius: 6px;
+  color: var(--hv-ink);
+  background: var(--hv-cream);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
 .login-title-icon {
   display: inline-flex;
   align-items: center;
@@ -630,6 +641,16 @@ html, body, #root {
 /* The link is gone and will not auto-recover — red, never faked as connected. */
 .presence-gone { color: #e2726e; }
 .presence-gone .presence-dot { background: #e2726e; }
+.connection-reload {
+  color: var(--hud-active);
+  background: var(--hud-paper);
+  border: 1px solid var(--hud-border);
+  border-radius: 3px;
+  padding: 4px 7px;
+  font: inherit;
+  cursor: pointer;
+}
+.connection-reload:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
 @keyframes presence-pulse { 50% { opacity: 0.3; } }
 
 /* ---------- Roster ---------- */
@@ -980,6 +1001,8 @@ html, body, #root {
 }
 .mc-tabs {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 2px solid var(--hud-border);
@@ -1050,7 +1073,10 @@ html, body, #root {
 }
 .mc-list::-webkit-scrollbar-thumb:hover { background: var(--hud-shadow); }
 .mc-chat:has(.mc-command-tray) .mc-list { height: 150px; }
-.mc-line { word-break: break-word; }
+/* Scroll transcripts must preserve each row's natural wrapped height. Without
+   this, flex shrinks tall messages to fit and their text overlaps later rows. */
+.mc-list > * { flex-shrink: 0; }
+.mc-line { min-width: 0; overflow-wrap: anywhere; }
 /* Report affordance (PRD 25.12): faint until the line is hovered/focused. */
 .mc-report-btn {
   margin-left: 4px;
@@ -2257,13 +2283,17 @@ html, body, #root {
 
 .meet-grid {
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 
 /* In-meeting chat panel (PRD 10) — same panel/line palette as the HUD. */
 .meeting-chat {
+  position: relative;
   flex: none;
   width: 300px;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   border-radius: 14px;
@@ -2275,10 +2305,28 @@ html, body, #root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.meeting-chat-list > * { flex-shrink: 0; }
+.meeting-chat-latest {
+  position: absolute;
+  right: 12px;
+  bottom: 64px;
+  max-width: calc(100% - 24px);
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #21394a;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .meeting-chat-empty {
   margin: auto;
@@ -2296,14 +2344,20 @@ html, body, #root {
   text-align: center;
 }
 .meeting-chat-line {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
   display: flex;
   flex-direction: column;
   gap: 2px;
   color: var(--ink);
   font-size: 13px;
   line-height: 1.35;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+.meeting-chat-line.self { background: rgba(126, 231, 135, 0.08); }
+.meeting-chat-text { white-space: pre-wrap; }
 .meeting-chat-name {
   font-weight: 700;
   font-size: 11px;
@@ -2313,6 +2367,7 @@ html, body, #root {
   color: var(--accent2);
 }
 .meeting-chat-input {
+  flex-shrink: 0;
   display: flex;
   gap: 8px;
   padding: 10px;
@@ -2345,6 +2400,7 @@ html, body, #root {
 /* Chat open/close (PRD 23): header with a close control, and a slim launcher
    with an unread badge when the panel is collapsed. */
 .meeting-chat-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2408,7 +2464,19 @@ html, body, #root {
   }
   .meeting-chat {
     width: 100%;
+    flex: 0 1 40%;
+    min-height: min(180px, 100%);
     max-height: 40%;
+  }
+}
+/* Short landscape screens have room for a sidebar but not a stacked composer. */
+@media (min-width: 540px) and (max-width: 720px) and (max-height: 480px) {
+  .meeting-body { flex-direction: row; }
+  .meeting-chat {
+    width: 260px;
+    flex: none;
+    min-height: 0;
+    max-height: none;
   }
 }
 /* ---- Meet-style stage (PRD 23): focus tile + filmstrip, or symmetric grid --- */

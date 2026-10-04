@@ -44,6 +44,14 @@ describe("HelpOverlay", () => {
     expect(backdrop?.classList.contains("help-backdrop")).toBe(true);
   });
 
+  it("does not toggle repeatedly while the help shortcut is held", () => {
+    open();
+    fireEvent.keyDown(window, { key: "?", repeat: true });
+    expect(screen.getByRole("dialog", { name: "Controls" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Controls" })).toBeNull();
+  });
+
   it("opens when the control rail requests help", () => {
     render(<HelpOverlay />);
     act(() => bus.emit("show-controls-help"));

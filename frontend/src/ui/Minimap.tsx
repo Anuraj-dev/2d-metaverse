@@ -3,6 +3,7 @@ import { bus } from "../game/eventBus";
 import { areaLabels } from "../game/mapView";
 import { fitScale } from "./minimapScale";
 import type { TerrainInfo } from "./minimapTerrain";
+import { useDevicePixelRatio } from "./useDevicePixelRatio";
 
 const FullscreenMap = lazy(() => import("./FullscreenMap"));
 
@@ -54,6 +55,7 @@ export default function Minimap() {
   const [dots, setDots] = useState<Dot[]>([]);
   const [open, setOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dpr = useDevicePixelRatio();
 
   useEffect(() => {
     const offInfo = bus.on("world-info", (p: WorldInfo) => setInfo(p));
@@ -112,19 +114,20 @@ export default function Minimap() {
     return c;
   }, [info]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !info) return;
+  // Rooms and labels are static: compose once rather than repainting them on
+  // every player-position tick. This canvas is owned by the mounted map.
+  const backgroundCanvas = useMemo(() => {
+    if (!info) return null;
+    const canvas = document.createElement("canvas");
     const scale = fitScale(info.width, info.height);
     const cw = Math.round(info.width * scale);
     const ch = Math.round(info.height * scale);
-    const dpr = window.devicePixelRatio || 1;
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
     canvas.style.width = `${cw}px`;
     canvas.style.height = `${ch}px`;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     ctx.clearRect(0, 0, info.width, info.height);
 
@@ -155,6 +158,24 @@ export default function Minimap() {
       ctx.fillText(label.name, label.cx, label.cy);
     }
 
+    return canvas;
+  }, [info, terrainCanvas, dpr]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !info || !backgroundCanvas) return;
+    if (canvas.width !== backgroundCanvas.width) canvas.width = backgroundCanvas.width;
+    if (canvas.height !== backgroundCanvas.height) canvas.height = backgroundCanvas.height;
+    canvas.style.width = backgroundCanvas.style.width;
+    canvas.style.height = backgroundCanvas.style.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(backgroundCanvas, 0, 0);
+    const scale = fitScale(info.width, info.height);
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
     // players
     for (const d of dots) {
       ctx.beginPath();
@@ -167,7 +188,7 @@ export default function Minimap() {
         ctx.stroke();
       }
     }
-  }, [info, dots, terrainCanvas]);
+  }, [info, dots, backgroundCanvas, dpr]);
 
   if (!info) return null;
   return (

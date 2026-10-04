@@ -102,9 +102,9 @@ export class RealNet implements Net {
     this.socket.io.on("reconnect_attempt", (attempt: number) =>
       this.bus.emit("socket-reconnecting", { attempt })
     );
-    // Handshake rejection / network failure → surface so the UI can sign out.
+    // Distinguish transport failures (automatic retry) from rejected handshakes.
     this.socket.on("connect_error", (err: Error) =>
-      this.bus.emit("connect_error", { message: err.message })
+      this.bus.emit("connect_error", { message: err.message, retrying: this.socket.active })
     );
   }
 
@@ -165,6 +165,8 @@ export class RealNet implements Net {
     this.socket.emit(CLIENT_EVENTS.boardMove, { tableId: tableId as BoardTableId, index });
   }
   disconnect() {
+    this.selfId = "";
+    this.spaceId = "";
     this.socket.disconnect();
   }
 }

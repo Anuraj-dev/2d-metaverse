@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { bus } from "../game/eventBus";
 
 const R = 46; // joystick travel radius (px)
@@ -11,12 +11,41 @@ export default function TouchControls() {
   const isTouchDevice =
     typeof window !== "undefined" &&
     ("ontouchstart" in window || navigator.maxTouchPoints > 0);
-  const isMobileLandscape =
-    typeof window !== "undefined" &&
-    window.matchMedia?.(MOBILE_LANDSCAPE_QUERY).matches;
+  const [isMobileLandscape, setMobileLandscape] = useState(
+    () => window.matchMedia?.(MOBILE_LANDSCAPE_QUERY).matches ?? false,
+  );
   const baseRef = useRef<HTMLDivElement>(null);
   const activeId = useRef<number | null>(null);
   const [thumb, setThumb] = useState({ x: 0, y: 0 });
+
+  const stop = useCallback(() => {
+    if (activeId.current === null) return;
+    activeId.current = null;
+    setThumb({ x: 0, y: 0 });
+    bus.emit("move-axis", { x: 0, y: 0 });
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia?.(MOBILE_LANDSCAPE_QUERY);
+    const onChange = () => {
+      stop();
+      setMobileLandscape(media?.matches ?? false);
+    };
+    const onVisibility = () => { if (document.hidden) stop(); };
+    media?.addEventListener("change", onChange);
+    window.addEventListener("blur", stop);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      media?.removeEventListener("change", onChange);
+      window.removeEventListener("blur", stop);
+      document.removeEventListener("visibilitychange", onVisibility);
+      // Releasing the UI must never leave a movement vector latched in Phaser.
+      if (activeId.current !== null) {
+        activeId.current = null;
+        bus.emit("move-axis", { x: 0, y: 0 });
+      }
+    };
+  }, [stop]);
 
   if (!isTouchDevice || !isMobileLandscape) return null;
 
@@ -38,8 +67,9 @@ export default function TouchControls() {
   };
 
   const start = (e: React.PointerEvent) => {
+    if (activeId.current !== null) return;
     activeId.current = e.pointerId;
-    (e.target as Element).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
     apply(e.clientX, e.clientY);
   };
   const move = (e: React.PointerEvent) => {
@@ -47,9 +77,7 @@ export default function TouchControls() {
   };
   const end = (e: React.PointerEvent) => {
     if (activeId.current !== e.pointerId) return;
-    activeId.current = null;
-    setThumb({ x: 0, y: 0 });
-    bus.emit("move-axis", { x: 0, y: 0 });
+    stop();
   };
 
   return (
@@ -57,10 +85,13 @@ export default function TouchControls() {
       <div
         ref={baseRef}
         className="joystick"
+        role="group"
+        aria-label="Movement joystick"
         onPointerDown={start}
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
+        onLostPointerCapture={end}
       >
         <div
           className="joystick-thumb"
@@ -68,11 +99,10 @@ export default function TouchControls() {
         />
       </div>
       <button
+        type="button"
         className="touch-action"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          bus.emit("do-interact");
-        }}
+        aria-label="Interact"
+        onClick={() => bus.emit("do-interact")}
       >
         E
       </button>
