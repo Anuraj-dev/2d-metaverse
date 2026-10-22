@@ -6,7 +6,7 @@
  */
 // `livekit-client` is loaded dynamically (only when audio/video is actually used)
 // so it stays out of the initial bundle. Types are erased type-only imports.
-import type { Room as LKRoom } from "livekit-client";
+import type { Room as LKRoom, ScreenShareCaptureOptions } from "livekit-client";
 import { serverBase, authToken } from "../net/auth";
 import { bus } from "../game/eventBus";
 import {
@@ -99,12 +99,16 @@ async function fetchToken(
 /* --------------------------- Track routing glue -------------------------- */
 type LKModule = Pick<typeof import("livekit-client"), "RoomEvent" | "Track">;
 
-/** Where routed tracks land — each room class supplies its own containers. */
+/**
+ * Where routed tracks land — each room class supplies its own containers.
+ * `trackSid` tells apart one participant's audio tracks (meeting mic vs shared
+ * screen audio); sinks that only ever see one audio track per peer ignore it.
+ */
 interface TrackSinks {
   surfaceVideo(identity: string, track: MediaStreamTrack): void;
   dropVideo(identity: string): void;
-  attachAudio(identity: string, el: HTMLAudioElement): void;
-  detachAudio(identity: string): void;
+  attachAudio(identity: string, el: HTMLAudioElement, trackSid: string): void;
+  detachAudio(identity: string, trackSid: string): void;
 }
 
 /**
@@ -119,7 +123,7 @@ function wireTrackRouting(
   sinks: TrackSinks
 ) {
   const { RoomEvent, Track } = lk;
-  room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+  room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
     // Unknown-kind tracks were never routed; keep skipping them.
     if (track.kind !== Track.Kind.Audio && track.kind !== Track.Kind.Video) return;
     const kind = track.kind === Track.Kind.Video ? "video" : "audio";
@@ -136,11 +140,11 @@ function wireTrackRouting(
       if (action === "attach-audio-silent") el.volume = 0;
       else if (action === "attach-audio-fixed") el.volume = STAGE_VOLUME;
       document.body.appendChild(el);
-      sinks.attachAudio(participant.identity, el);
+      sinks.attachAudio(participant.identity, el, pub.trackSid);
     }
     // "ignore": world audio has no use for video tracks.
   });
-  room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+  room.on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
     const kind = track.kind === Track.Kind.Video ? "video" : "audio";
     const action = unsubscribeAction(kind, mode);
     if (action === "drop-video") {
@@ -148,7 +152,7 @@ function wireTrackRouting(
       return;
     }
     track.detach().forEach((el) => el.remove());
-    sinks.detachAudio(participant.identity);
+    sinks.detachAudio(participant.identity, pub.trackSid);
   });
 }
 
@@ -297,10 +301,23 @@ export interface RoomTrack {
   self: boolean;
 }
 
+/**
+ * Ask the browser picker for the shared surface's audio too. Voice processing is
+ * off because it is tuned for speech and garbles music; the presenter keeps
+ * hearing the tab locally instead of it going silent on their side.
+ */
+const SCREEN_CAPTURE: ScreenShareCaptureOptions = {
+  audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  systemAudio: "include",
+  suppressLocalAudioPlayback: false,
+};
+
 class RoomVideo {
   private room: LKRoom | null = null;
   private roomListeners = new Set<() => void>();
   private shareListeners = new Set<() => void>();
+  // Keyed by trackSid: a presenter has both a mic and a screen-share audio
+  // element; each element carries its owner in `dataset.identity`.
   private audioEls = new Map<string, HTMLAudioElement>();
   private sharing = false;
 
@@ -312,7 +329,9 @@ class RoomVideo {
    * (presence visible) — only their audio is silenced (video is hidden in the grid).
    */
   private applyModeration = () => {
-    for (const [id, el] of this.audioEls) el.volume = localModeration.isCommsSuppressed(id) ? 0 : 1;
+    for (const el of this.audioEls.values()) {
+      el.volume = localModeration.isCommsSuppressed(el.dataset.identity ?? "") ? 0 : 1;
+    }
   };
 
   /**
@@ -359,20 +378,23 @@ class RoomVideo {
       wireTrackRouting(room, { RoomEvent, Track }, "room-av", {
         surfaceVideo: () => {},
         dropVideo: () => {},
-        attachAudio: (id, el) => {
+        attachAudio: (id, el, trackSid) => {
           // Start a suppressed peer silent (PRD 25.13) rather than briefly audible.
           if (localModeration.isCommsSuppressed(id)) el.volume = 0;
-          this.audioEls.set(id, el);
+          this.audioEls.set(trackSid, el);
         },
-        detachAudio: (id) => {
-          this.audioEls.get(id)?.remove();
-          this.audioEls.delete(id);
+        detachAudio: (_id, trackSid) => {
+          this.audioEls.get(trackSid)?.remove();
+          this.audioEls.delete(trackSid);
         },
       });
       moderationAppliers.add(this.applyModeration);
       room.on(RoomEvent.ParticipantDisconnected, (p) => {
-        this.audioEls.get(p.identity)?.remove();
-        this.audioEls.delete(p.identity);
+        for (const [trackSid, el] of this.audioEls) {
+          if (el.dataset.identity !== p.identity) continue;
+          el.remove();
+          this.audioEls.delete(trackSid);
+        }
       });
       // A browser-initiated "Stop sharing" unpublishes the screen-share track
       // without going through our toggle — reflect it so the control bar's
@@ -450,12 +472,28 @@ class RoomVideo {
    * API on the meeting room's local participant; the grid renders the resulting
    * `ScreenShare` track like any other. A no-op (stays not-sharing) when the room
    * is unavailable or when the user cancels the browser picker.
+   *
+   * The picker also offers the tab's (or, for a whole screen, the system's) audio.
+   * When the presenter ticks it, LiveKit publishes a second `ScreenShareAudio`
+   * track, which every peer's routing attaches like any other room audio, and
+   * unpublishes it together with the video.
    */
   async setScreenShareEnabled(on: boolean): Promise<void> {
     const room = this.room;
     if (!room) return;
     try {
-      await room.localParticipant.setScreenShareEnabled(on);
+      if (on) {
+        await room.localParticipant.setScreenShareEnabled(true, SCREEN_CAPTURE, {
+          // Shared audio is usually music or a video's soundtrack: send it as
+          // stereo music (LiveKit's musicHighQualityStereo bitrate), and keep DTX
+          // off so quiet passages are not dropped.
+          audioPreset: { maxBitrate: 128_000 },
+          dtx: false,
+          forceStereo: true,
+        });
+      } else {
+        await room.localParticipant.setScreenShareEnabled(false);
+      }
       this.setSharing(on);
     } catch (e) {
       // Picker cancellation / permission denial: never leave a phantom "sharing".

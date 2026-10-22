@@ -16,17 +16,21 @@ const lk = vi.hoisted(() => {
   const localParticipant = {
     setMicrophoneEnabled: vi.fn(async () => {}),
     setCameraEnabled: vi.fn(async () => {}),
+    setScreenShareEnabled: vi.fn(async () => {}),
     getTrackPublications: () => [],
   };
+  // Room event handlers by name, so tests can replay what LiveKit would emit.
+  const handlers = new Map<string, (...args: unknown[]) => void>();
   class FakeRoom {
     localParticipant = localParticipant;
-    on() {
+    on(event: string, cb: (...args: unknown[]) => void) {
+      handlers.set(event, cb);
       return this;
     }
     connect = connect;
     disconnect = disconnect;
   }
-  return { connect, disconnect, localParticipant, FakeRoom };
+  return { connect, disconnect, localParticipant, handlers, FakeRoom };
 });
 
 vi.mock("livekit-client", () => ({
@@ -49,6 +53,7 @@ vi.mock("../net/auth", () => ({
 }));
 
 import { roomVideo } from "./livekit";
+import { localModeration } from "./localModeration";
 
 const okTokenFetch = () =>
   vi.fn(async () => ({
@@ -65,6 +70,8 @@ beforeEach(() => {
   lk.disconnect.mockReset().mockResolvedValue(undefined);
   lk.localParticipant.setMicrophoneEnabled.mockClear().mockResolvedValue(undefined);
   lk.localParticipant.setCameraEnabled.mockClear().mockResolvedValue(undefined);
+  lk.localParticipant.setScreenShareEnabled.mockClear().mockResolvedValue(undefined);
+  lk.handlers.clear();
   // The failure paths log via console.warn by design — keep test output clean.
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -132,5 +139,70 @@ describe("RoomVideo.join failure cleanup", () => {
     await roomVideo.join("42");
     // Pref failure is not a connection failure: stay on the LiveKit path.
     expect(roomVideo.lkRoom).not.toBeNull();
+  });
+});
+
+/** A remote audio track as LiveKit hands it to TrackSubscribed. */
+function remoteAudio() {
+  const el = document.createElement("audio");
+  return { el, track: { kind: "audio", attach: () => el, detach: () => [el] } };
+}
+
+describe("RoomVideo screen-share audio", () => {
+  it("asks the picker for tab/system audio and publishes it as music", async () => {
+    await roomVideo.join("42");
+
+    await roomVideo.setScreenShareEnabled(true);
+
+    const [on, capture, publish] = lk.localParticipant.setScreenShareEnabled.mock.calls[0] as unknown as [
+      boolean,
+      { audio: MediaTrackConstraints; systemAudio: string; suppressLocalAudioPlayback: boolean },
+      { audioPreset: unknown; dtx: boolean; forceStereo: boolean },
+    ];
+    expect(on).toBe(true);
+    // Voice processing would mangle music/video sound — capture it raw.
+    expect(capture.audio).toMatchObject({
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    });
+    expect(capture.systemAudio).toBe("include");
+    // The presenter keeps hearing their own tab.
+    expect(capture.suppressLocalAudioPlayback).toBe(false);
+    expect(publish).toMatchObject({ audioPreset: { maxBitrate: 128_000 }, dtx: false, forceStereo: true });
+  });
+
+  it("keeps a peer's mic and shared audio as separate elements", async () => {
+    await roomVideo.join("42");
+    const subscribed = lk.handlers.get("trackSubscribed")!;
+    const unsubscribed = lk.handlers.get("trackUnsubscribed")!;
+    const peer = { identity: "p1" };
+    const mic = remoteAudio();
+    const share = remoteAudio();
+
+    subscribed(mic.track, { trackSid: "TR_mic" }, peer);
+    subscribed(share.track, { trackSid: "TR_share" }, peer);
+    unsubscribed(mic.track, { trackSid: "TR_mic" }, peer);
+
+    // Stopping the mic must not cut the shared tab's sound.
+    expect(mic.el.isConnected).toBe(false);
+    expect(share.el.isConnected).toBe(true);
+  });
+
+  it("silences a muted peer's mic and shared audio alike", async () => {
+    await roomVideo.join("42");
+    const subscribed = lk.handlers.get("trackSubscribed")!;
+    const peer = { identity: "p1" };
+    const mic = remoteAudio();
+    const share = remoteAudio();
+    subscribed(mic.track, { trackSid: "TR_mic" }, peer);
+    subscribed(share.track, { trackSid: "TR_share" }, peer);
+
+    localModeration.toggleMute("p1");
+
+    expect(mic.el.volume).toBe(0);
+    expect(share.el.volume).toBe(0);
+    localModeration.toggleMute("p1");
+    expect(mic.el.volume).toBe(1);
   });
 });
