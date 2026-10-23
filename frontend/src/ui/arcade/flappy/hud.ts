@@ -27,15 +27,14 @@ export function drawReadyScreen(ctx: CanvasRenderingContext2D, state: FlappyStat
   ctx.shadowBlur = 14;
   ctx.shadowOffsetY = 6;
   outlinedText(ctx, "FLAPPY", cx, titleY, titleSize, "#ffe14d");
-  outlinedText(ctx, "BIRD", cx, titleY + titleSize * 0.92, titleSize);
   ctx.restore();
 
-  // Pulsing call to action.
+  // Pulsing call to action. Click and Space both serve (canvas pointer + keys).
   const promptSize = Math.min(40, state.width * 0.062);
   const pulse = 0.72 + Math.sin(state.time * 3.4) * 0.28;
   ctx.save();
   ctx.globalAlpha = pulse;
-  outlinedText(ctx, "TAP  TO  START", cx, state.groundY * 0.74, promptSize);
+  outlinedText(ctx, "CLICK  OR  SPACE", cx, state.groundY * 0.74, promptSize);
   ctx.restore();
 
   // The controls line and the pointing hand are deliberately absent: the

@@ -161,12 +161,14 @@ failure teardown, from PR #148 review) is still tracked as an open item — see 
 
 ## 9. Arcade cabinets
 
-**What it is:** Single-player mini-games playable at map-placed arcade cabinets: **Snake** and **Flappy**
-(a third game, **2048, has been retired** and is no longer offered).
+**What it is:** Single-player mini-games playable at map-placed arcade cabinets: **Snake**, **Flappy**,
+**Stellar Forge** (merge-drop), **Breakout**, and **Minesweeper** (2048 was retired and is no longer offered).
 
-**How to use it:** Walk up to a cabinet and interact; a lazy-loaded overlay (`ArcadeOverlay`) opens over the
-game world (which sleeps underneath, same pattern as meetings). Escape closes it instantly. Score is
-submitted when the run ends, and a high-score list is shown.
+**How to use it:** Walk south from spawn down the stone path into the Game Arcade. Walk up to a cabinet
+and press **E**. A lazy-loaded overlay opens (the world sleeps underneath). Escape pauses (Resume /
+Restart / Quit); F toggles fullscreen; M mutes arcade sound. Score is submitted when the run ends, and
+a high-score list is shown per cabinet. Breakout: A/D or mouse to aim, click or Space to serve.
+Minesweeper: click or Space to open, right-click or X to flag, Shift-click to chord.
 
 **Status & caveats:** Live. Game rules are pure, deterministic modules in `frontend/src/game/arcade/`
 (`snake.ts`, `flappy.ts`, plus a shared seeded PRNG) — no `Math.random`, everything replayable from a seed.

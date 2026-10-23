@@ -608,7 +608,7 @@ the feedback card.
 **Architecture — pure rules, thin renderers, audio-agnostic:**
 
 - **Rules** live in pure modules under `src/game/arcade/` — `snake.ts`,
-  `flappy.ts`, `mergedrop.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
+  `flappy.ts`, `mergedrop.ts`, `breakout.ts`, `minesweeper.ts`, plus a seeded PRNG (`prng.ts`). Plain values in,
   plain values out; no Phaser/net/DOM imports. Randomness flows through the
   serializable `rngSeed` in each state, so *a given seed + input script always
   reproduces a run* (asserted by determinism tests). Each module lands with its
@@ -660,6 +660,16 @@ the map — never hand-edit `campus.json`. Add a cabinet sprite via
 `scripts/gen_arcade_sprites.py` (+ BootScene key + an ATTRIBUTIONS row).
 
 #### Stellar Forge — the merge-drop cabinet (Arcade 2.0)
+
+**Breakout** (`breakout`, west wall of the Arcade Hall at tile 68,96). Aim the
+paddle with the mouse or A/D (or arrows); click or Space to serve. Clear the
+brick field to advance a level; three missed balls end the run. Combo multiplies
+brick points.
+
+**Minesweeper** (`minesweeper`, east of Stellar Forge at tile 85,96). 10×10
+board, 12 mines. Click or Space opens a cell (the first click is always safe);
+right-click or X flags; Shift-click / middle-click chords a numbered cell.
+Score is 10 per safe reveal plus a win bonus and leftover time.
 
 The flagship cabinet (`merge-drop`, east of the Arcade Hall doorway at tile
 82,96). You release celestial bodies into a gravity well; two touching bodies of

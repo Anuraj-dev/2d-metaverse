@@ -198,6 +198,8 @@ export default function FlappyGame({
     <canvas
       ref={canvasRef}
       className="arcade-canvas arcade-canvas--fill"
+      role="img"
+      aria-label="Flappy. Click or press Space, W, or Arrow Up to flap."
       onPointerDown={flap}
     />
   );

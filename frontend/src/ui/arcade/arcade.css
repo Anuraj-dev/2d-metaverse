@@ -99,12 +99,14 @@
   margin-bottom: var(--arc-s3);
   border-bottom: 1px solid var(--arc-line);
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 .arcade-title {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 .arcade-eyebrow {
   font-size: 0.66rem;
@@ -117,11 +119,16 @@
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+  overflow: visible;
+  white-space: nowrap;
 }
 .arcade-tools {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .arcade-sound {
   display: flex;
@@ -825,8 +832,31 @@
   .arcade-stage {
     padding: var(--arc-s2);
   }
+  /* Title on its own row so volume/quit never cover "Minesweeper" / "Stellar Forge". */
+  .arcade-header {
+    align-items: flex-start;
+  }
+  .arcade-title {
+    flex: 1 0 100%;
+  }
+  .arcade-header h2 {
+    white-space: nowrap;
+  }
   .arcade-tools {
+    flex: 1 1 100%;
+    justify-content: flex-end;
     gap: var(--arc-s2);
+  }
+  .arcade-vol {
+    width: 56px;
+  }
+}
+
+/* Portrait Breakout: the canvas fills the cabinet; the renderer uses a taller world. */
+@media (orientation: portrait) {
+  .arcade-canvas--breakout {
+    object-fit: fill;
+    image-rendering: auto;
   }
 }
 
@@ -844,6 +874,129 @@
     transition-duration: 0.001ms !important;
     transition-delay: 0ms !important;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Breakout / Minesweeper surfaces
+   -------------------------------------------------------------------------- */
+.arcade-mines {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--arc-s3);
+  padding: var(--arc-s3);
+  color: var(--arc-ink);
+  box-sizing: border-box;
+}
+.arcade-mines-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--arc-s3);
+  width: min(100%, 520px);
+}
+.arcade-mines-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+}
+.arcade-mines-meter-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--arc-dim);
+}
+.arcade-mines-meter-num {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--arc-amber);
+  line-height: 1;
+}
+.arcade-mines-status {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--arc-teal);
+}
+.arcade-mines-status.is-over {
+  color: var(--arc-amber);
+}
+.arcade-mines[data-reduced="true"] .arcade-mines-cell.is-boom {
+  box-shadow: none;
+}
+.arcade-mines-board {
+  display: grid;
+  gap: 3px;
+  width: min(100%, 520px);
+  aspect-ratio: 1;
+  padding: 8px;
+  box-sizing: border-box;
+  background: #0a0f1c;
+  border: 1px solid var(--arc-line);
+  border-radius: var(--arc-r-sm);
+}
+.arcade-mines-cell {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #243049;
+  color: var(--arc-ink);
+  font: 700 0.95rem/1 system-ui, sans-serif;
+  cursor: pointer;
+  min-width: 0;
+  min-height: 0;
+}
+.arcade-mines-cell:hover:not(:disabled) {
+  background: #2e3c5c;
+}
+.arcade-mines-cell:focus-visible {
+  outline: 2px solid var(--arc-teal);
+  outline-offset: 1px;
+  z-index: 1;
+}
+.arcade-mines-cell.is-cursor:not(:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--arc-amber);
+}
+.arcade-mines-cell.is-flag {
+  background: #3a2a1c;
+  color: var(--arc-amber);
+}
+.arcade-mines-cell.is-revealed {
+  background: #151b2b;
+  cursor: default;
+}
+.arcade-mines-cell.is-mine {
+  background: #3a1c22;
+  color: var(--arc-danger);
+}
+.arcade-mines-cell.is-boom {
+  background: var(--arc-danger);
+  color: #fff;
+}
+.arcade-mines-cell.is-n1 { color: #2196f3; }
+.arcade-mines-cell.is-n2 { color: #4caf50; }
+.arcade-mines-cell.is-n3 { color: #e2564d; }
+.arcade-mines-cell.is-n4 { color: #b082ff; }
+.arcade-mines-cell.is-n5 { color: #f2c14e; }
+.arcade-mines-cell.is-n6 { color: #7fd1b9; }
+.arcade-mines-cell.is-n7 { color: #e8ecf5; }
+.arcade-mines-cell.is-n8 { color: #9aa5c0; }
+.arcade-mines-help {
+  margin: 0;
+  max-width: 520px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--arc-dim);
+  line-height: 1.4;
 }
 
 /* ── Per-game run feedback ─────────────────────────────────────────────────── */

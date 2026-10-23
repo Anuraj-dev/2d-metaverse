@@ -5,6 +5,8 @@ export const TERMINAL_HOLD_MS: Readonly<Record<ArcadeGame, number>> = {
   snake: 830,
   flappy: 450,
   "merge-drop": 450,
+  breakout: 450,
+  minesweeper: 280,
 };
 
 /** Reduced motion removes decorative terminal effects and their delay. */

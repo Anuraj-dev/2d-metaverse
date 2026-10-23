@@ -71,5 +71,7 @@ describe("arcade score namespaces", () => {
     expect(scoreGameForArcadeGame("snake")).toBe("snake-v2");
     expect(scoreGameForArcadeGame("flappy")).toBe("flappy");
     expect(scoreGameForArcadeGame("merge-drop")).toBe("merge-drop");
+    expect(scoreGameForArcadeGame("breakout")).toBe("breakout");
+    expect(scoreGameForArcadeGame("minesweeper")).toBe("minesweeper");
   });
 });

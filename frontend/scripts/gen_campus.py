@@ -535,7 +535,19 @@ interactables_objs = [
     # tiles below it: the 32px solid cabinet body clears by row 98, so rows 98-99
     # give a collision-free approach strip that is still inside the findNear rect.
     # `game` selects the module. Snake/Flappy sit west of the north doorway
-    # (x=79-80), Stellar Forge east of it. (2048 was retired — PRD 25.36.)
+    # (x=79-80), Stellar Forge east of it. Breakout is against the west wall;
+    # Minesweeper sits east of Stellar Forge (the north-wall run east of the door).
+    # (2048 was retired — PRD 25.36.)
+    {
+        "id": 40013, "name": "arcade_breakout",
+        "x": 68 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "arcade"},
+            {"name": "label",        "type": "string", "value": "Breakout"},
+            {"name": "game",         "type": "string", "value": "breakout"},
+        ],
+    },
     {
         "id": 40010, "name": "arcade_snake",
         "x": 71 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
@@ -544,6 +556,16 @@ interactables_objs = [
             {"name": "interactType", "type": "string", "value": "arcade"},
             {"name": "label",        "type": "string", "value": "Snake"},
             {"name": "game",         "type": "string", "value": "snake"},
+        ],
+    },
+    {
+        "id": 40014, "name": "arcade_minesweeper",
+        "x": 85 * TS, "y": 96 * TS, "width": 2 * TS, "height": 4 * TS,
+        "rotation": 0, "type": "", "visible": True,
+        "properties": [
+            {"name": "interactType", "type": "string", "value": "arcade"},
+            {"name": "label",        "type": "string", "value": "Minesweeper"},
+            {"name": "game",         "type": "string", "value": "minesweeper"},
         ],
     },
     {
@@ -678,11 +700,14 @@ campus_decor.apply_district_furniture(_decor_furn_ctx)
 # Arcade Room (south) — solid cabinets lining the north wall; each pairs with an
 # arcade interactable zone at the same tile (see interactables_objs). Plus a
 # little themed dressing so the hall doesn't read empty.
+furn("f_arcade_breakout",   68, 96, True)
 furn("f_arcade_snake",      71, 96, True)
 furn("f_arcade_flappy",     76, 96, True)
-# Stellar Forge — east of the doorway (cols 78-81 free), west of the snack
-# corner dressing in campus_decor/arcade_hall.py. Same wall run as its neighbours.
+# Stellar Forge — east of the doorway (cols 78-81 free). Minesweeper continues
+# the same north-wall run east of it; the snack vending moves south along the
+# east wall in campus_decor/arcade_hall.py so the two 32px bodies do not overlap.
 furn("f_arcade_merge-drop", 82, 96, True)
+furn("f_arcade_minesweeper", 85, 96, True)
 # Arcade dressing: re-authored in scripts/campus_decor/ (LimeZu art pass).
 
 

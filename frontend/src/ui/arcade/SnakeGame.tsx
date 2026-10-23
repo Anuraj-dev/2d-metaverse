@@ -478,6 +478,8 @@ export default function SnakeGame({
       <canvas
         ref={canvasRef}
         className="arcade-canvas arcade-canvas--snake"
+        role="img"
+        aria-label="Snake. Choose a difficulty, then steer with the arrow keys or WASD."
         // Absolutely positioned: `layout` computes a whole-page-pixel offset
         // (flex centring would land on half pixels and smear the cell grid).
         // The art is smooth (rounded segments, radial gradients) and the backing
