@@ -110,3 +110,7 @@ Production runs the frontend on Vercel and the backend on one EC2 host with Dock
 ## Contributing
 
 Start with [docs/conventions.md](docs/conventions.md). Put any new payload shape in `shared/`, and never redeclare it in `backend/` or `frontend/`. Before you open a PR, run `npm test`, `npm run typecheck` and `npm run lint`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
